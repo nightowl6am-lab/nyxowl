@@ -1,5 +1,11 @@
 import type { ToolDefinition } from "../../tool.ts";
-import { nyxDepGuardTool, setDepGuardRegistryFetcher } from "./dep-guard.ts";
+import {
+  fetchRegistryMetadata,
+  nyxDepGuardTool,
+  queryOsvVulnerabilities,
+  setDepGuardFetchImpl,
+  setDepGuardRegistryFetcher,
+} from "./dep-guard.ts";
 import { nyxEnvInspectTool } from "./env-inspect.ts";
 import { nyxSanitizeUntrustedTool, sanitizeUntrustedContent } from "./sanitize.ts";
 import { nyxWebFetchTool, setWebFetchTestHooks } from "./web-fetch.ts";
@@ -12,6 +18,9 @@ export {
   setWebFetchTestHooks,
   nyxDepGuardTool,
   setDepGuardRegistryFetcher,
+  setDepGuardFetchImpl,
+  fetchRegistryMetadata,
+  queryOsvVulnerabilities,
 };
 
 export const shieldEngineTools: ToolDefinition[] = [
