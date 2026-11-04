@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BlackboardApiContractSchema",
+  "type": "object",
+  "required": ["endpoints"],
+  "additionalProperties": false,
+  "properties": {
+    "endpoints": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["method", "path", "responseShape"],
+        "additionalProperties": false,
+        "properties": {
+          "method": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+          "path": { "type": "string", "maxLength": 160 },
+          "requestShape": { "type": "string", "maxLength": 400 },
+          "responseShape": { "type": "string", "maxLength": 400 },
+          "auth": { "type": "string", "maxLength": 100 }
+        }
+      }
+    }
+  }
+}

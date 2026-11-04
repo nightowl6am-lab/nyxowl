@@ -1,0 +1,4 @@
+[
+  "rails", "rack", "sinatra", "puma", "sidekiq", "rspec", "rubocop", "pg",
+  "activerecord", "devise", "faraday", "nokogiri", "jwt", "bcrypt", "redis"
+]

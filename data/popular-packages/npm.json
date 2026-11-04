@@ -1,0 +1,13 @@
+[
+  "react", "react-dom", "next", "typescript", "zod", "express", "fastify", "hono",
+  "lodash", "axios", "chalk", "commander", "dotenv", "vitest", "jest", "eslint",
+  "prettier", "tsup", "esbuild", "vite", "tailwindcss", "prisma", "@prisma/client",
+  "drizzle-orm", "kysely", "pg", "mysql2", "ioredis", "redis", "bullmq", "ws",
+  "socket.io", "cors", "helmet", "jsonwebtoken", "jose", "bcrypt", "bcryptjs",
+  "argon2", "uuid", "ulid", "nanoid", "semver", "yaml", "smol-toml", "jsonc-parser",
+  "shell-quote", "cross-spawn", "execa", "glob", "minimatch", "picocolors",
+  "date-fns", "dayjs", "luxon", "rxjs", "immer", "zustand", "jotai", "redux",
+  "@tanstack/react-query", "trpc", "@trpc/server", "@trpc/client", "graphql",
+  "stripe", "openai", "@anthropic-ai/sdk", "@modelcontextprotocol/sdk",
+  "playwright", "puppeteer", "cheerio", "linkedom", "@mozilla/readability"
+]

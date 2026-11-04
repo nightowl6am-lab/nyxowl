@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BlackboardSecuritySchema",
+  "type": "object",
+  "required": ["findings", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "status": { "type": "string", "enum": ["pass", "fail", "review"] },
+    "findings": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["severity", "vector", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+          "vector": { "type": "string", "maxLength": 100 },
+          "description": { "type": "string", "maxLength": 300 },
+          "remediation": { "type": "string", "maxLength": 300 }
+        }
+      }
+    }
+  }
+}

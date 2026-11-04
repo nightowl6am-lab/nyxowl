@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NyxowlSkillRegistry",
+  "type": "object",
+  "required": ["version", "skills", "roles"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "skills": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["source", "license", "sha", "integrity", "delivery"],
+        "additionalProperties": false,
+        "properties": {
+          "source": { "type": "string" },
+          "license": { "type": "string" },
+          "sha": { "type": "string" },
+          "integrity": { "type": "string", "pattern": "^sha256-[A-Fa-f0-9]{64}$" },
+          "delivery": { "type": "string", "enum": ["vendored", "fetched"] },
+          "author": { "type": "string" }
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["always", "when", "custom"],
+        "additionalProperties": false,
+        "properties": {
+          "always": { "type": "array", "items": { "type": "string" } },
+          "when": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["dna", "skills"],
+              "additionalProperties": false,
+              "properties": {
+                "dna": { "type": "string" },
+                "skills": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "custom": { "type": "string" }
+        }
+      }
+    }
+  }
+}

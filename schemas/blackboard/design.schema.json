@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BlackboardDesignSchema",
+  "type": "object",
+  "required": ["tokens", "components"],
+  "additionalProperties": false,
+  "properties": {
+    "tokens": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "maxLength": 100 }
+    },
+    "components": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["name", "states"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "maxLength": 100 },
+          "states": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
+          "a11yNotes": { "type": "string", "maxLength": 240 }
+        }
+      }
+    }
+  }
+}

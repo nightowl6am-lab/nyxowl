@@ -1,0 +1,5 @@
+[
+  "serde", "serde_json", "tokio", "axum", "actix-web", "reqwest", "clap", "anyhow",
+  "thiserror", "tracing", "sqlx", "diesel", "sea-orm", "rand", "regex", "chrono",
+  "uuid", "futures", "hyper", "tower", "syn", "quote", "proc-macro2", "itertools"
+]

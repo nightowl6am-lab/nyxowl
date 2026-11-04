@@ -1,0 +1,4 @@
+[
+  "laravel/framework", "symfony/console", "symfony/http-foundation", "guzzlehttp/guzzle",
+  "monolog/monolog", "phpunit/phpunit", "doctrine/orm", "vlucas/phpdotenv", "predis/predis"
+]

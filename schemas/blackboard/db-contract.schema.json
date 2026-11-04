@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BlackboardDbContractSchema",
+  "type": "object",
+  "required": ["tables"],
+  "additionalProperties": false,
+  "properties": {
+    "tables": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["name", "columns"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "maxLength": 100 },
+          "columns": {
+            "type": "array",
+            "maxItems": 50,
+            "items": { "type": "string", "maxLength": 160 }
+          },
+          "rlsPolicy": { "type": "string", "maxLength": 240 }
+        }
+      }
+    }
+  }
+}

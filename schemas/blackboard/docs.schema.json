@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BlackboardDocsSchema",
+  "type": "object",
+  "required": ["topic", "summary", "apiSurface"],
+  "additionalProperties": false,
+  "properties": {
+    "topic": { "type": "string", "maxLength": 120 },
+    "summary": { "type": "string", "maxLength": 500 },
+    "apiSurface": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "type": "string", "maxLength": 240 }
+    }
+  }
+}

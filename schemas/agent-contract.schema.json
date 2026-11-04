@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NyxowlAgentContract",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "mode",
+    "description",
+    "model",
+    "host_tools",
+    "nyx_tools",
+    "skills",
+    "output_contract"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^nyx(owl|-[a-z]+)$" },
+    "title": { "type": "string", "minLength": 3, "maxLength": 100 },
+    "mode": { "type": "string", "enum": ["primary", "subagent"] },
+    "description": { "type": "string", "minLength": 10, "maxLength": 200 },
+    "model": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object", "additionalProperties": { "type": "string" } }
+      ]
+    },
+    "host_tools": {
+      "type": "object",
+      "required": ["read", "edit", "write", "bash", "webfetch"],
+      "additionalProperties": false,
+      "properties": {
+        "read": { "type": "string", "enum": ["allow", "deny"] },
+        "edit": { "type": "string", "enum": ["worktree", "tests", "deny"] },
+        "write": { "type": "string", "enum": ["worktree", "tests", "deny"] },
+        "bash": { "type": "string", "enum": ["worktree", "ask_redline", "deny"] },
+        "webfetch": { "type": "string", "enum": ["deny"] }
+      }
+    },
+    "nyx_tools": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "skills": { "type": "string", "const": "registry" },
+    "output_contract": {
+      "type": "string",
+      "enum": ["orchestrator-report-v1", "subagent-summary-v1"]
+    }
+  }
+}

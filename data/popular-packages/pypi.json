@@ -1,0 +1,8 @@
+[
+  "requests", "fastapi", "uvicorn", "pydantic", "sqlalchemy", "alembic", "pytest",
+  "httpx", "aiohttp", "flask", "django", "celery", "redis", "psycopg2", "psycopg",
+  "asyncpg", "pandas", "numpy", "scipy", "scikit-learn", "torch", "tensorflow",
+  "transformers", "openai", "anthropic", "boto3", "botocore", "cryptography",
+  "pyjwt", "passlib", "bcrypt", "python-dotenv", "click", "typer", "rich",
+  "jinja2", "beautifulsoup4", "lxml", "pyyaml", "toml", "ruff", "black", "mypy"
+]

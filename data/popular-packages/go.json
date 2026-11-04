@@ -1,0 +1,6 @@
+[
+  "github.com/go-chi/chi", "github.com/gin-gonic/gin", "github.com/labstack/echo",
+  "github.com/gofiber/fiber", "github.com/gorilla/mux", "github.com/spf13/cobra",
+  "github.com/spf13/viper", "github.com/stretchr/testify", "github.com/jackc/pgx",
+  "github.com/lib/pq", "gorm.io/gorm", "go.uber.org/zap", "github.com/google/uuid"
+]

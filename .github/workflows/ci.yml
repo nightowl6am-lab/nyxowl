@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node-version: ["22.13.1", "24.x"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Install dependencies (no scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Pack & Install Smoke Test
+        run: |
+          TARBALL=$(npm pack --ignore-scripts)
+          mkdir -p /tmp/nyxowl-smoke
+          npm install --prefix /tmp/nyxowl-smoke --ignore-scripts "./$TARBALL"
+          /tmp/nyxowl-smoke/node_modules/.bin/nyxowl --version
+          /tmp/nyxowl-smoke/node_modules/.bin/nyxowl doctor
