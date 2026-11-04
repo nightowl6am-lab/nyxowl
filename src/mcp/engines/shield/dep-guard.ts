@@ -33,12 +33,22 @@ export interface PackageRegistryMetadata {
 export type RegistryFetcherFn = (
   packageName: string,
   ecosystem: PackageEcosystem,
+  requestedVersion?: string,
 ) => Promise<PackageRegistryMetadata>;
 
 let customRegistryFetcher: RegistryFetcherFn | null = null;
+let customFetchImpl: typeof fetch | null = null;
 
 export function setDepGuardRegistryFetcher(fn: RegistryFetcherFn | null): void {
   customRegistryFetcher = fn;
+}
+
+export function setDepGuardFetchImpl(fn: typeof fetch | null): void {
+  customFetchImpl = fn;
+}
+
+function depGuardFetch(): typeof fetch {
+  return customFetchImpl ?? globalThis.fetch;
 }
 
 /**
@@ -112,66 +122,374 @@ export function findTyposquatMatch(
   return best;
 }
 
-const liveRegistryFetcher: RegistryFetcherFn = async (packageName, ecosystem) => {
-  if (ecosystem === "npm") {
-    // nyx-allow: hardcoded-url — official npm registry API endpoint
-    const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}`);
-    if (res.status === 404) {
-      return { exists: false, latestVersion: "0.0.0" };
-    }
-    if (!res.ok) {
-      throw new Error(`npm registry returned ${res.status}`);
-    }
-    const data = (await res.json()) as {
-      "dist-tags"?: { latest?: string };
-      time?: Record<string, string>;
-      versions?: Record<
-        string,
-        {
-          scripts?: Record<string, string>;
-          deprecated?: string;
-          repository?: unknown;
+// nyx-allow: hardcoded-url — official npm registry API endpoint
+const NPM_REGISTRY_BASE = "https://registry.npmjs.org";
+// nyx-allow: hardcoded-url — official npm downloads API endpoint
+const NPM_DOWNLOADS_BASE = "https://api.npmjs.org/downloads/point/last-week";
+// nyx-allow: hardcoded-url — official PyPI JSON API endpoint
+const PYPI_BASE = "https://pypi.org/pypi";
+// nyx-allow: hardcoded-url — official crates.io API endpoint
+const CRATES_BASE = "https://crates.io/api/v1/crates";
+// nyx-allow: hardcoded-url — official Go module proxy endpoint
+const GO_PROXY_BASE = "https://proxy.golang.org";
+// nyx-allow: hardcoded-url — official RubyGems API endpoint
+const RUBYGEMS_BASE = "https://rubygems.org/api/v1/gems";
+// nyx-allow: hardcoded-url — official Packagist API endpoint
+const PACKAGIST_BASE = "https://repo.packagist.org/p2";
+// nyx-allow: hardcoded-url — official Maven Central search API endpoint
+const MAVEN_SEARCH_BASE = "https://search.maven.org/solrsearch/select";
+// nyx-allow: hardcoded-url — official NuGet flat-container API endpoint
+const NUGET_BASE = "https://api.nuget.org/v3-flatcontainer";
+// nyx-allow: hardcoded-url — official Hex API endpoint
+const HEX_BASE = "https://hex.pm/api/packages";
+// nyx-allow: hardcoded-url — official OSV query API endpoint
+const OSV_QUERY_URL = "https://api.osv.dev/v1/query";
+
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): JsonRecord | undefined {
+  return isJsonRecord(value) ? value : undefined;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function asArray(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) ? value : undefined;
+}
+
+function firstRecord(value: unknown): JsonRecord | undefined {
+  const entries = asArray(value);
+  return entries ? asRecord(entries[0]) : undefined;
+}
+
+function toIsoString(ms: number | undefined): string | undefined {
+  if (ms === undefined) return undefined;
+  const date = new Date(ms);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+type RegistryJsonResult = { kind: "missing" } | { kind: "ok"; data: unknown };
+
+async function fetchRegistryJson(
+  url: string,
+  init?: RequestInit,
+): Promise<RegistryJsonResult> {
+  const res = await depGuardFetch()(url, init);
+  if (res.status === 404 || res.status === 410) {
+    return { kind: "missing" };
+  }
+  if (!res.ok) {
+    throw new Error(`Registry request failed (${res.status}) for ${url}`);
+  }
+  try {
+    return { kind: "ok", data: await res.json() };
+  } catch {
+    throw new Error(`Registry returned malformed JSON for ${url}`);
+  }
+}
+
+function missingPackage(): PackageRegistryMetadata {
+  return { exists: false, latestVersion: "0.0.0" };
+}
+
+export async function fetchRegistryMetadata(
+  packageName: string,
+  ecosystem: PackageEcosystem,
+): Promise<PackageRegistryMetadata> {
+  switch (ecosystem) {
+    case "npm": {
+      const result = await fetchRegistryJson(
+        `${NPM_REGISTRY_BASE}/${encodeURIComponent(packageName)}`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const distTags = asRecord(data["dist-tags"]);
+      const latest = asString(distTags?.["latest"]) ?? "1.0.0";
+      const time = asRecord(data["time"]);
+      const versions = asRecord(data["versions"]);
+      const latestMeta = asRecord(versions?.[latest]);
+      const scripts = asRecord(latestMeta?.["scripts"]);
+      const hasInstallScripts = Boolean(
+        asString(scripts?.["preinstall"]) ||
+          asString(scripts?.["install"]) ||
+          asString(scripts?.["postinstall"]),
+      );
+      const createdStr =
+        asString(time?.["created"]) ?? asString(time?.[latest]);
+
+      let weeklyDownloads: number | undefined;
+      try {
+        const downloadsRes = await depGuardFetch()(
+          `${NPM_DOWNLOADS_BASE}/${encodeURIComponent(packageName)}`,
+        );
+        if (downloadsRes.ok) {
+          const downloadsData = asRecord(await downloadsRes.json());
+          weeklyDownloads = asNumber(downloadsData?.["downloads"]);
         }
-      >;
-    };
-    const latest = data["dist-tags"]?.latest ?? "1.0.0";
-    const latestMeta = data.versions?.[latest];
-    const scripts = latestMeta?.scripts ?? {};
-    const hasInstallScripts = Boolean(
-      scripts["preinstall"] || scripts["install"] || scripts["postinstall"],
-    );
-    const createdStr = data.time?.["created"] ?? data.time?.[latest];
-    return {
-      exists: true,
-      latestVersion: latest,
-      ...(createdStr ? { publishedAt: createdStr } : {}),
-      hasInstallScripts,
-      deprecated: Boolean(latestMeta?.deprecated),
-      hasRepositoryUrl: Boolean(latestMeta?.repository),
-      osvVulnerabilities: [],
-    };
+      } catch {
+        // Optional enrichment: downloads lookup failure must not fail the audit.
+      }
+
+      return {
+        exists: true,
+        latestVersion: latest,
+        ...(createdStr !== undefined ? { publishedAt: createdStr } : {}),
+        ...(weeklyDownloads !== undefined ? { weeklyDownloads } : {}),
+        hasInstallScripts,
+        deprecated: Boolean(latestMeta?.["deprecated"]),
+        hasRepositoryUrl: Boolean(latestMeta?.["repository"]),
+      };
+    }
+
+    case "pypi": {
+      const result = await fetchRegistryJson(
+        `${PYPI_BASE}/${encodeURIComponent(packageName)}/json`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const info = asRecord(data["info"]);
+      const firstUrl = firstRecord(data["urls"]);
+      const publishedAt =
+        asString(firstUrl?.["upload_time_iso_8601"]) ??
+        asString(firstUrl?.["upload_time"]);
+      const projectUrls = asRecord(info?.["project_urls"]);
+      return {
+        exists: true,
+        latestVersion: asString(info?.["version"]) ?? "1.0.0",
+        ...(publishedAt !== undefined ? { publishedAt } : {}),
+        hasRepositoryUrl: Boolean(asString(info?.["home_page"]) || projectUrls),
+      };
+    }
+
+    case "crates": {
+      const result = await fetchRegistryJson(
+        `${CRATES_BASE}/${encodeURIComponent(packageName)}`,
+        { headers: { "user-agent": "nyxowl" } },
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const crate = asRecord(data["crate"]);
+      const recentDownloads = asNumber(crate?.["recent_downloads"]);
+      const publishedAt = asString(crate?.["created_at"]);
+      return {
+        exists: true,
+        latestVersion: asString(crate?.["max_version"]) ?? "0.0.0",
+        ...(publishedAt !== undefined ? { publishedAt } : {}),
+        ...(recentDownloads !== undefined
+          ? { weeklyDownloads: Math.floor(recentDownloads / 13) }
+          : {}),
+        hasRepositoryUrl: Boolean(asString(crate?.["repository"])),
+      };
+    }
+
+    case "go": {
+      const escapedModule = packageName.replace(/[A-Z]/g, (ch) => `!${ch.toLowerCase()}`);
+      const result = await fetchRegistryJson(
+        `${GO_PROXY_BASE}/${escapedModule}/@latest`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const publishedAt = asString(data["Time"]);
+      return {
+        exists: true,
+        latestVersion: asString(data["Version"]) ?? "0.0.0",
+        ...(publishedAt !== undefined ? { publishedAt } : {}),
+      };
+    }
+
+    case "rubygems": {
+      const result = await fetchRegistryJson(
+        `${RUBYGEMS_BASE}/${encodeURIComponent(packageName)}.json`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const publishedAt = asString(data["version_created_at"]);
+      return {
+        exists: true,
+        latestVersion: asString(data["version"]) ?? "0.0.0",
+        ...(publishedAt !== undefined ? { publishedAt } : {}),
+        hasRepositoryUrl: Boolean(
+          asString(data["source_code_uri"]) || asString(data["homepage_uri"]),
+        ),
+      };
+    }
+
+    case "packagist": {
+      const slash = packageName.indexOf("/");
+      if (slash <= 0 || slash >= packageName.length - 1) return missingPackage();
+      const vendor = packageName.slice(0, slash);
+      const pkg = packageName.slice(slash + 1);
+      const result = await fetchRegistryJson(
+        `${PACKAGIST_BASE}/${encodeURIComponent(vendor)}/${encodeURIComponent(pkg)}.json`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const packages = asRecord(data["packages"]);
+      const first = firstRecord(packages?.[packageName]);
+      const source = asRecord(first?.["source"]);
+      const publishedAt = asString(first?.["time"]);
+      return {
+        exists: true,
+        latestVersion: asString(first?.["version"]) ?? "0.0.0",
+        ...(publishedAt !== undefined ? { publishedAt } : {}),
+        hasRepositoryUrl: Boolean(asString(source?.["url"])),
+      };
+    }
+
+    case "maven": {
+      const colon = packageName.indexOf(":");
+      const group = colon > 0 ? packageName.slice(0, colon) : packageName;
+      const artifact = colon > 0 ? packageName.slice(colon + 1) : packageName;
+      const query = `g:"${group}" AND a:"${artifact}"`;
+      const result = await fetchRegistryJson(
+        `${MAVEN_SEARCH_BASE}?q=${encodeURIComponent(query)}&rows=1&wt=json`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const response = asRecord(data["response"]);
+      const first = firstRecord(response?.["docs"]);
+      const publishedAt = toIsoString(asNumber(first?.["timestamp"]));
+      return {
+        exists: true,
+        latestVersion: asString(first?.["latestVersion"]) ?? "0.0.0",
+        ...(publishedAt !== undefined ? { publishedAt } : {}),
+      };
+    }
+
+    case "nuget": {
+      const result = await fetchRegistryJson(
+        `${NUGET_BASE}/${encodeURIComponent(packageName.toLowerCase())}/index.json`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const versions = asArray(data["versions"]);
+      const lastVersion =
+        versions && versions.length > 0
+          ? asString(versions[versions.length - 1])
+          : undefined;
+      return {
+        exists: true,
+        latestVersion: lastVersion ?? "0.0.0",
+      };
+    }
+
+    case "hex": {
+      const result = await fetchRegistryJson(
+        `${HEX_BASE}/${encodeURIComponent(packageName)}`,
+      );
+      if (result.kind === "missing") return missingPackage();
+      const data = asRecord(result.data);
+      if (!data) return missingPackage();
+      const first = firstRecord(data["releases"]);
+      const downloads = asRecord(data["downloads"]);
+      const weeklyDownloads = asNumber(downloads?.["week"]);
+      const meta = asRecord(data["meta"]);
+      const links = asRecord(meta?.["links"]);
+      const publishedAt = asString(first?.["inserted_at"]);
+      return {
+        exists: true,
+        latestVersion: asString(first?.["version"]) ?? "0.0.0",
+        ...(publishedAt !== undefined ? { publishedAt } : {}),
+        ...(weeklyDownloads !== undefined ? { weeklyDownloads } : {}),
+        hasRepositoryUrl: Boolean(
+          asString(links?.["GitHub"]) || asString(links?.["Repository"]),
+        ),
+      };
+    }
+
+    default:
+      throw new Error(`Unsupported package ecosystem: ${String(ecosystem)}`);
+  }
+}
+
+const OSV_ECOSYSTEM_MAP: Record<PackageEcosystem, string> = {
+  npm: "npm",
+  pypi: "PyPI",
+  crates: "crates.io",
+  go: "Go",
+  rubygems: "RubyGems",
+  packagist: "Packagist",
+  maven: "Maven",
+  nuget: "NuGet",
+  hex: "Hex",
+};
+
+export async function queryOsvVulnerabilities(
+  packageName: string,
+  ecosystem: PackageEcosystem,
+  version: string,
+): Promise<string[]> {
+  const res = await depGuardFetch()(OSV_QUERY_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      package: { name: packageName, ecosystem: OSV_ECOSYSTEM_MAP[ecosystem] },
+      version,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`OSV API returned ${res.status}`);
   }
 
-  if (ecosystem === "pypi") {
-    // nyx-allow: hardcoded-url — official PyPI JSON API endpoint
-    const res = await fetch(`https://pypi.org/pypi/${encodeURIComponent(packageName)}/json`);
-    if (res.status === 404) {
-      return { exists: false, latestVersion: "0.0.0" };
-    }
-    if (!res.ok) {
-      throw new Error(`PyPI returned ${res.status}`);
-    }
-    const data = (await res.json()) as {
-      info?: { version?: string; home_page?: string; project_urls?: Record<string, string> };
-    };
-    return {
-      exists: true,
-      latestVersion: data.info?.version ?? "1.0.0",
-      hasRepositoryUrl: Boolean(data.info?.home_page || data.info?.project_urls),
-    };
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("OSV API returned malformed JSON");
   }
 
-  throw new Error(`Offline or unconfigured live registry for ${ecosystem}`);
+  const root = asRecord(data);
+  const vulns = asArray(root?.["vulns"]);
+  if (!vulns) return [];
+  const ids: string[] = [];
+  for (const vuln of vulns) {
+    const id = asRecord(vuln)?.["id"];
+    if (typeof id === "string") ids.push(id);
+  }
+  return ids;
+}
+
+export function resolveOsvVersion(
+  requestedVersion: string | undefined,
+  latestVersion: string,
+): string {
+  return requestedVersion && requestedVersion !== "latest"
+    ? requestedVersion
+    : latestVersion;
+}
+
+const liveRegistryFetcher: RegistryFetcherFn = async (
+  packageName,
+  ecosystem,
+  requestedVersion,
+) => {
+  const meta = await fetchRegistryMetadata(packageName, ecosystem);
+  if (!meta.exists) return meta;
+  const osvVersion = resolveOsvVersion(requestedVersion, meta.latestVersion);
+  const osvVulnerabilities = await queryOsvVulnerabilities(
+    packageName,
+    ecosystem,
+    osvVersion,
+  );
+  return { ...meta, osvVulnerabilities };
 };
 
 export const depGuardInputSchema = z.object({
@@ -280,7 +598,7 @@ export const nyxDepGuardTool = defineTool({
       // 2. Query registry (fail-closed when offline per §1.3.5)
       let meta: PackageRegistryMetadata;
       try {
-        meta = await fetcher(name, input.ecosystem);
+        meta = await fetcher(name, input.ecosystem, version);
       } catch (err) {
         if (ctx.config.network.depGuard === "fail-closed") {
           throw new NyxError(
