@@ -12,12 +12,82 @@ export interface SymbolTraceMatch {
   snippet: string;
 }
 
-function classifySymbolOccurrence(lineText: string, symbolName: string): "definition" | "import" | "call" {
-  const trimmed = lineText.trim();
-  const escaped = symbolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export type SymbolOccurrenceKind = "definition" | "import" | "call";
 
+export function classifySymbolOccurrence(
+  lineText: string,
+  symbolName: string,
+  filePath: string,
+): SymbolOccurrenceKind | null {
+  const trimmed = lineText.trimStart();
+
+  // Skip prefix comments for every language. A trailing comment never causes
+  // the code portion of a line to be discarded.
   if (
-    new RegExp(`^(?:import\\b|from\\b.*\\bimport\\b|const\\s+.*=\\s*require\\()`).test(trimmed)
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/*") ||
+    trimmed.startsWith("*") ||
+    trimmed.startsWith("#")
+  ) {
+    return null;
+  }
+
+  const escaped = symbolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const ext = path.extname(filePath).toLowerCase();
+  const symbolOnLine = new RegExp(`\\b${escaped}\\b`);
+  const definition = (pattern: string): boolean =>
+    new RegExp(`${pattern}\\s+${escaped}\\b`).test(trimmed);
+
+  if (ext === ".py") {
+    if (definition("^(?:async\\s+)?def") || definition("^class")) {
+      return "definition";
+    }
+    if (
+      new RegExp(`^import\\b.*\\b${escaped}\\b`).test(trimmed) ||
+      new RegExp(`^from\\s+.+\\s+import\\b.*\\b${escaped}\\b`).test(trimmed)
+    ) {
+      return "import";
+    }
+    return "call";
+  }
+
+  if (ext === ".go") {
+    if (
+      new RegExp(`^func\\s+(?:\\([^)]*\\)\\s+)?${escaped}\\b`).test(trimmed) ||
+      new RegExp(`^type\\s+${escaped}\\s+(?:struct|interface)\\b`).test(trimmed)
+    ) {
+      return "definition";
+    }
+    const pathSegment = new RegExp(
+      `(?:^|[/"\\s])${escaped}(?:[/"\\s]|$)`,
+    );
+    if (/^import\b/.test(trimmed) && pathSegment.test(trimmed)) {
+      return "import";
+    }
+    return "call";
+  }
+
+  if (ext === ".rs") {
+    if (
+      new RegExp(
+        `^(?:pub(?:\\([^)]*\\))?\\s+)?(?:async\\s+)?(?:fn|struct|enum|trait|type)\\s+${escaped}\\b`,
+      ).test(trimmed)
+    ) {
+      return "definition";
+    }
+    if (new RegExp(`^(?:pub\\s+)?use\\b.*\\b${escaped}\\b`).test(trimmed)) {
+      return "import";
+    }
+    return "call";
+  }
+
+  // TypeScript/JavaScript and unknown extensions keep the original heuristic,
+  // but an import line must actually mention the traced symbol.
+  if (
+    new RegExp(
+      `^(?:import\\b|from\\b.*\\bimport\\b|const\\s+.*=\\s*require\\()`,
+    ).test(trimmed) &&
+    symbolOnLine.test(trimmed)
   ) {
     return "import";
   }
@@ -123,12 +193,8 @@ export const nyxTraceSymbolTool = defineTool({
         const colNum = (msg.data.submatches?.[0]?.start ?? 0) + 1;
         const lineText = (msg.data.lines?.text ?? "").trim();
 
-        // Ignore pure comments
-        if (lineText.startsWith("//") || lineText.startsWith("#") || lineText.startsWith("*")) {
-          continue;
-        }
-
-        const kind = classifySymbolOccurrence(lineText, input.symbolName);
+        const kind = classifySymbolOccurrence(lineText, input.symbolName, relFile);
+        if (!kind) continue;
         const item = {
           filePath: relFile,
           line: lineNum,
