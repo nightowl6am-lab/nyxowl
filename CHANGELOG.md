@@ -4,7 +4,7 @@ All notable changes to `nyxowl` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-11-04
+## [1.0.0] - 2026-11-04
 
 ### Added
 - **Universal CLI & Zero-Footprint Launcher (`src/cli/`):**
@@ -23,3 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **10 Canonical Agents, 6 Slash Commands & 16 Vendored Skills (`agents/`, `skills-vendor/`):**
   - Principal Tech Lead (`nyxowl`) + 9 specialized subagents (`nyx-product`, `nyx-architect`, `nyx-designer`, `nyx-db`, `nyx-api`, `nyx-ui`, `nyx-sec`, `nyx-probe`, `nyx-devops`) with strict per-role MCP tool scoping and ≤1,200-token prompt budgets.
   - Verified all 10 §13 Acceptance Scenarios in automated E2E and unit test suites.
+
+### Fixed
+- CI type-stripping for TypeScript tests on Node.js 22.13.
+- Version reporting now derives from `package.json` instead of hardcoded literals.
+- Unsupported Node.js versions now get an actionable preflight upgrade message instead of a `node:sqlite` import crash.
