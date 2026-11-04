@@ -294,9 +294,16 @@ describe("Step 1 — Core & State Layer", () => {
         stateDb.close();
       `;
 
+      // Node >=22.18 / >=23.6 strip TS unflagged ("strip"); 22.13.1 has it false.
+      const tsFlag =
+        process.features.typescript === false ? ["--experimental-strip-types"] : [];
       const [p1, p2] = await Promise.all([
-        execCommand(process.execPath, ["--input-type=module", "-e", makeWorker("proc-A")]),
-        execCommand(process.execPath, ["--input-type=module", "-e", makeWorker("proc-B")]),
+        execCommand(process.execPath, [
+          ...tsFlag, "--input-type=module", "-e", makeWorker("proc-A"),
+        ]),
+        execCommand(process.execPath, [
+          ...tsFlag, "--input-type=module", "-e", makeWorker("proc-B"),
+        ]),
       ]);
 
       assert.equal(p1.exitCode, 0, `Worker 1 failed: ${p1.stderr}`);
