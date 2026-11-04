@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "nyxowl": "./dist/cli/index.js"
+    "nyxowl": "./dist/cli/bin.js"
   },
   "exports": {
     ".": "./dist/cli/index.js",

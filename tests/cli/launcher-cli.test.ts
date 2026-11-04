@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { execCommand } from "../../src/core/exec.ts";
 import { computeRepoId, computeWorkingTreeHash } from "../../src/core/git.ts";
 import { ensureProjectNyxowlDirs } from "../../src/core/paths.ts";
+import { NYXOWL_VERSION } from "../../src/core/version.ts";
 import { ensureReceiptKey, generateUlid, signReceipt } from "../../src/core/receipts.ts";
 import { openProjectDb } from "../../src/mcp/db/sqlite.ts";
 import { runCli } from "../../src/cli/index.ts";
@@ -169,7 +170,7 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
     // --version & --help
     const verRes = await runCli(["--version"], { nyxowlHome });
     expect(verRes.exitCode).toBe(0);
-    expect(verRes.stdout).toContain("nyxowl v0.1.0");
+    expect(verRes.stdout).toContain(`nyxowl v${NYXOWL_VERSION}`);
 
     const helpRes = await runCli(["--help"], { nyxowlHome });
     expect(helpRes.exitCode).toBe(0);

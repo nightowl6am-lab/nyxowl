@@ -4,6 +4,7 @@ import path from "node:path";
 import * as jsonc from "jsonc-parser";
 import * as smolToml from "smol-toml";
 import { resolveGlobalNyxowlPaths } from "../core/paths.ts";
+import { NYXOWL_VERSION } from "../core/version.ts";
 
 export interface ManifestEntry {
   targetPath: string;
@@ -36,7 +37,7 @@ export function loadInstallManifest(nyxowlHome?: string): InstallManifest {
     const now = new Date().toISOString();
     return {
       version: 1,
-      nyxowlVersion: "0.1.0",
+      nyxowlVersion: NYXOWL_VERSION,
       installedAt: now,
       updatedAt: now,
       entries: [],
@@ -48,7 +49,7 @@ export function loadInstallManifest(nyxowlHome?: string): InstallManifest {
     const now = new Date().toISOString();
     return {
       version: 1,
-      nyxowlVersion: "0.1.0",
+      nyxowlVersion: NYXOWL_VERSION,
       installedAt: now,
       updatedAt: now,
       entries: [],
