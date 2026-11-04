@@ -113,7 +113,12 @@ export async function launchNyxowlSession(options?: {
       "ERR_HOST_UNSUPPORTED",
       preferred
         ? `Requested host "${preferred}" is not installed on PATH.`
-        : "No supported coding host (claude, opencode, codex, gemini, agy, cursor, windsurf) found on PATH.",
+        : [
+            "No supported coding host (claude, opencode, codex, gemini, agy, cursor, windsurf) found on PATH.",
+            "Install one of:",
+            "  Claude Code: npm install -g @anthropic-ai/claude-code",
+            "  OpenCode: npm install -g opencode-ai",
+          ].join("\n"),
     );
   }
 

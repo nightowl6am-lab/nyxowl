@@ -5,6 +5,7 @@ import { NyxError } from "../core/errors.ts";
 import { execCommand } from "../core/exec.ts";
 import { ensureGlobalNyxowlDirs, resolveGlobalNyxowlPaths } from "../core/paths.ts";
 import { ensureReceiptKey } from "../core/receipts.ts";
+import { NYXOWL_VERSION } from "../core/version.ts";
 import { generateAntigravityHostPackage } from "./adapters/antigravity.ts";
 import { generateClaudeHostPackage } from "./adapters/claude.ts";
 import { generateCodexHostPackage } from "./adapters/codex.ts";
@@ -20,7 +21,7 @@ import {
 import { loadInstallManifest, saveInstallManifest } from "./manifest.ts";
 import { verifyVendoredSkillIntegrity } from "./skills.ts";
 
-export const NYXOWL_VERSION = "0.1.0";
+export { NYXOWL_VERSION };
 
 export interface SetupResult {
   firstRunOrUpgraded: boolean;

@@ -5,6 +5,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     "cli/index": "src/cli/index.ts",
+    "cli/bin": "src/cli/bin.ts",
     "mcp/server": "src/mcp/server.ts",
   },
   format: ["esm"],
@@ -36,9 +37,11 @@ export default defineConfig({
       }
     };
     walk(distDir);
-    const cliBin = path.join(distDir, "cli", "index.js");
-    if (fs.existsSync(cliBin)) {
-      fs.chmodSync(cliBin, 0o755);
+    for (const cliEntry of ["index.js", "bin.js"]) {
+      const cliBin = path.join(distDir, "cli", cliEntry);
+      if (fs.existsSync(cliBin)) {
+        fs.chmodSync(cliBin, 0o755);
+      }
     }
   },
 });
