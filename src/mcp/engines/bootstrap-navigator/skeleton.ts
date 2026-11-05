@@ -6,6 +6,7 @@ import { z } from "zod";
 import { NyxError } from "../../../core/errors.ts";
 import { estimateTokens } from "../../../core/tokens.ts";
 import { defineTool } from "../../tool.ts";
+import { extractWasmSkeleton } from "./wasm-extractor.ts";
 
 export interface SymbolSkeletonItem {
   name: string;
@@ -260,22 +261,27 @@ function extractPolyglotSkeleton(filePath: string, sourceText: string): SymbolSk
   return symbols;
 }
 
-export function computeFileSkeleton(filePath: string): {
+export async function computeFileSkeleton(filePath: string): Promise<{
   symbols: SymbolSkeletonItem[];
   outlineText: string;
   originalTokens: number;
   skeletonTokens: number;
   reductionRatio: number;
-} {
+}> {
   const absFile = path.resolve(filePath);
   if (!fs.existsSync(absFile) || !fs.statSync(absFile).isFile()) {
     throw new NyxError("ERR_INVALID_INPUT", `File "${absFile}" does not exist`);
   }
 
   const sourceText = fs.readFileSync(absFile, "utf8");
+  const ext = path.extname(absFile).toLowerCase();
   const contentHash = crypto.createHash("sha256").update(sourceText).digest("hex");
+  // Identical bytes can mean different things per language (e.g. the same text
+  // parsed as Python for `.py` and by the legacy regex outline for `.txt`), so
+  // the extension is part of the key to prevent cross-extractor collisions.
+  const cacheKey = `${ext}:${contentHash}`;
 
-  const cached = skeletonCache.get(contentHash);
+  const cached = skeletonCache.get(cacheKey);
   const originalTokens = Math.max(1, estimateTokens(sourceText));
 
   if (cached) {
@@ -289,18 +295,30 @@ export function computeFileSkeleton(filePath: string): {
     };
   }
 
-  const ext = path.extname(absFile).toLowerCase();
   const isTsJs = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"].includes(ext);
+  const isWasmLanguage = [".py", ".go", ".rs"].includes(ext);
 
-  const symbols = isTsJs
-    ? extractTsJsSkeleton(absFile, sourceText)
-    : extractPolyglotSkeleton(absFile, sourceText);
+  let symbols: SymbolSkeletonItem[];
+  if (isTsJs) {
+    symbols = extractTsJsSkeleton(absFile, sourceText);
+  } else if (isWasmLanguage) {
+    // Prefer the tree-sitter skeleton, but keep the legacy outline when a
+    // grammar is unavailable or yields no symbols for a file it can outline.
+    const legacySymbols = extractPolyglotSkeleton(absFile, sourceText);
+    const wasmSymbols = await extractWasmSkeleton(absFile, sourceText);
+    symbols =
+      wasmSymbols && (wasmSymbols.length > 0 || legacySymbols.length === 0)
+        ? wasmSymbols
+        : legacySymbols;
+  } else {
+    symbols = extractPolyglotSkeleton(absFile, sourceText);
+  }
 
   const outlineLines = symbols.map(
     (s) => `L${s.startLine}-L${s.endLine}: ${s.signature}`,
   );
   const outlineText = outlineLines.join("\n");
-  skeletonCache.set(contentHash, { symbols, outlineText });
+  skeletonCache.set(cacheKey, { symbols, outlineText });
 
   const skeletonTokens = estimateTokens(outlineText);
   const reductionRatio = Number(((1 - skeletonTokens / originalTokens) * 100).toFixed(2));
@@ -359,7 +377,7 @@ export const nyxSymbolSkeletonTool = defineTool({
   inputSchema: symbolSkeletonInputSchema,
   outputSchema: symbolSkeletonOutputSchema,
   handler: async (input) => {
-    const res = computeFileSkeleton(input.filePath);
+    const res = await computeFileSkeleton(input.filePath);
     return {
       filePath: input.filePath,
       originalTokens: res.originalTokens,

@@ -4,6 +4,11 @@ All notable changes to `nyxowl` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Engine 2 AST accuracy:** `nyx_symbol_skeleton` now parses Python, Go, and Rust with vendored tree-sitter WebAssembly grammars (offline, no runtime network) instead of regex-only outlines, preserving the legacy outline as a fallback when a grammar is unavailable. Added language-aware symbol classification to `nyx_trace_symbol` (definitions, imports, and call sites for Python/Go/Rust, with symbol-aware import detection for TS/JS). Vendored `tree-sitter-wasms@0.1.13` grammars for Python, Go, and Rust under `data/grammars/`.
+
 ## [1.0.0] - 2026-11-04
 
 ### Added
