@@ -1,0 +1,37 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String  @id
+  email        String
+  parent_id    Int
+  amount       Decimal
+  note         String
+  display_name String
+}
+
+model Category {
+  id   String @id
+  name String
+}
+
+model Address {
+  id     String @id
+  street String
+}
+
+model Status {
+  id   String @id
+  code String
+}
+
+model Company {
+  id   String @id
+  name String
+}
+
+model Analysis {
+  id     String @id
+  source String
+}
