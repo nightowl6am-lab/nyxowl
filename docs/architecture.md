@@ -36,3 +36,23 @@ All Nyxowl state lives outside the user's repository in `~/.nyxowl/` (`0700`, ov
   - **Strikes 1–2:** Returns reduced failure output to the writer role.
   - **Strike 3:** Automatically rewinds the worktree to the latest shadow slice via `nyx_slice_rewind` (`read-tree` + `checkout-index -a -f` + `git clean -fd`, preserving `.env` symlinks and `node_modules`) and requires escalation to `nyx-architect`.
   - **2 Failed Escalations:** Triggers `ERR_DOOM_LOOP_ESCALATION` to halt execution and report evidence to the user.
+
+---
+
+## 4. Grammar Integrity & Bounded Scanning
+
+Engine 2's tree-sitter path treats grammar files as a supply-chain boundary:
+
+- `data/grammars/manifest.json` pins `version: 1` plus the byte length and SHA-256 of each vendored `.wasm`.
+- The manifest is read from the same directory as the grammar, so `NYXOWL_GRAMMARS_DIR` overrides must ship matching pins.
+- Grammar bytes are read once, checked for size and digest, and the verified `Uint8Array` is handed directly to `Parser.Language.load`. A missing/invalid manifest, missing entry, size mismatch, hash mismatch, or read error returns `null` and the caller uses the legacy regex outline. Unverified bytes are never loaded.
+- Loaded languages are memoized by grammar path plus verified digest (FIFO, max 32 entries).
+
+Parsing and skeleton extraction are bounded before recursion:
+
+- Sources over 2,000,000 characters are not parsed.
+- An iterative AST pre-walk rejects trees deeper than 200 or larger than 50,000 named nodes, so recursive extractors cannot overflow the call stack; callers fall back to the legacy outline.
+- `nyx_symbol_skeleton` stats files before reading and rejects files over 2 MiB or 50,000 lines with `ERR_FILE_TOO_LARGE`.
+- Skeleton results are cached FIFO with a 256-entry cap.
+
+Version reporting in the MCP server, bootstrap commit trailers, and PR footer is sourced from `NYXOWL_VERSION` (`src/core/version.ts`), which resolves `package.json` at runtime.

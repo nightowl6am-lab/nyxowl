@@ -33,6 +33,7 @@ This document details the security boundaries, adversary capabilities, mitigatio
   - Known vulnerabilities via OSV.dev,
   - **Fail-closed offline:** if registries are unreachable, `nyx_dep_guard` rejects the dependency rather than silently approving.
 - `nyxowl hook guard` intercepts `npm i`, `pnpm add`, `yarn add`, `bun add`, `pip install`, `uv add`, `poetry add`, `cargo add`, `go get`, `gem install`, and `composer require` and blocks execution unless an approved row exists in `dep_approvals`.
+- Vendored parser grammars are pinned in `data/grammars/manifest.json` (byte length + SHA-256). The manifest is read from the same directory as the `.wasm`, and only bytes matching the pinned size and digest are passed to `Parser.Language.load`. A missing/invalid manifest, missing entry, size mismatch, or hash mismatch fails closed to the legacy regex outline; unverified grammar bytes are never loaded. This also applies to `NYXOWL_GRAMMARS_DIR` overrides, which must ship their own manifest.
 
 ---
 
@@ -50,3 +51,4 @@ This document details the security boundaries, adversary capabilities, mitigatio
 1. **Hook Evasion on Non-Sandboxed Hosts (Tier B/C):** Pattern-based shell guards can potentially be bypassed via obfuscated scripts on hosts without an OS-level filesystem sandbox. Nyxowl mitigates this by preferring Tier A sandboxed hosts (`claude`, `opencode`, `agy`), displaying the active host's Security Tier at launch, and running the Output Redactor and Diff Secret Scanner inside the trusted MCP server process.
 2. **Orchestrator Promotion Review:** While `nyx-product` cannot execute commands or edit files, `nyxowl` reads sanitized summaries when deciding whether to promote a Blackboard entry.
 3. **Host Config Drift:** Coding hosts evolve rapidly. `nyxowl doctor` compares installed host versions against `docs/host-matrix.md` and warns when a major version exceeds the last verified release.
+4. **Bounded Parsing/Skeleton Execution:** Hostile or pathologically deep source can exhaust memory or the call stack. Nyxowl rejects sources over 2,000,000 characters, ASTs deeper than 200 or larger than 50,000 named nodes (falling back to the legacy outline), and skeleton files over 2 MiB or 50,000 lines (`ERR_FILE_TOO_LARGE`). Grammar and skeleton caches are FIFO-bounded (32 and 256 entries). Residual risk: extremely large files are rejected rather than partially analyzed, so callers must inspect oversized files with narrower tooling.

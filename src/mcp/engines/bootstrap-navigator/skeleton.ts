@@ -17,10 +17,36 @@ export interface SymbolSkeletonItem {
   exported: boolean;
 }
 
+/** Hard cap on file bytes read into the skeleton pipeline (2 MiB). */
+export const MAX_SKELETON_FILE_BYTES = 2 * 1024 * 1024;
+/** Hard cap on lines in a skeleton source file. */
+export const MAX_SKELETON_LINES = 50_000;
+/** FIFO bound on cached skeletons to prevent unbounded memory growth. */
+export const MAX_SKELETON_CACHE_ENTRIES = 256;
+
 const skeletonCache = new Map<
   string,
   { symbols: SymbolSkeletonItem[]; outlineText: string }
 >();
+
+export function clearSkeletonCache(): void {
+  skeletonCache.clear();
+}
+
+export function getSkeletonCacheSize(): number {
+  return skeletonCache.size;
+}
+
+function cacheSkeleton(
+  cacheKey: string,
+  value: { symbols: SymbolSkeletonItem[]; outlineText: string },
+): void {
+  skeletonCache.set(cacheKey, value);
+  if (skeletonCache.size > MAX_SKELETON_CACHE_ENTRIES) {
+    const oldest = skeletonCache.keys().next().value;
+    if (oldest !== undefined) skeletonCache.delete(oldest);
+  }
+}
 
 function extractTsJsSkeleton(filePath: string, sourceText: string): SymbolSkeletonItem[] {
   const sf = ts.createSourceFile(
@@ -269,11 +295,29 @@ export async function computeFileSkeleton(filePath: string): Promise<{
   reductionRatio: number;
 }> {
   const absFile = path.resolve(filePath);
-  if (!fs.existsSync(absFile) || !fs.statSync(absFile).isFile()) {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(absFile);
+  } catch {
     throw new NyxError("ERR_INVALID_INPUT", `File "${absFile}" does not exist`);
+  }
+  if (!stat.isFile()) {
+    throw new NyxError("ERR_INVALID_INPUT", `File "${absFile}" does not exist`);
+  }
+  if (stat.size > MAX_SKELETON_FILE_BYTES) {
+    throw new NyxError(
+      "ERR_FILE_TOO_LARGE",
+      `File "${absFile}" is ${stat.size} bytes, exceeding the ${MAX_SKELETON_FILE_BYTES}-byte skeleton limit.`,
+    );
   }
 
   const sourceText = fs.readFileSync(absFile, "utf8");
+  if (sourceText.split(/\r?\n/).length > MAX_SKELETON_LINES) {
+    throw new NyxError(
+      "ERR_FILE_TOO_LARGE",
+      `File "${absFile}" exceeds the ${MAX_SKELETON_LINES}-line skeleton limit.`,
+    );
+  }
   const ext = path.extname(absFile).toLowerCase();
   const contentHash = crypto.createHash("sha256").update(sourceText).digest("hex");
   // Identical bytes can mean different things per language (e.g. the same text
@@ -318,7 +362,7 @@ export async function computeFileSkeleton(filePath: string): Promise<{
     (s) => `L${s.startLine}-L${s.endLine}: ${s.signature}`,
   );
   const outlineText = outlineLines.join("\n");
-  skeletonCache.set(cacheKey, { symbols, outlineText });
+  cacheSkeleton(cacheKey, { symbols, outlineText });
 
   const skeletonTokens = estimateTokens(outlineText);
   const reductionRatio = Number(((1 - skeletonTokens / originalTokens) * 100).toFixed(2));

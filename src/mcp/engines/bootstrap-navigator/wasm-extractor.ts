@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,12 +14,27 @@ const EXTENSION_LANGUAGE: Readonly<Record<string, SupportedLanguage>> = {
   ".rs": "rust",
 };
 
+/** Hard cap on source characters handed to the tree-sitter parser. */
+const MAX_SOURCE_CHARS = 2_000_000;
+/** Hard cap on AST nesting to keep recursive extraction off the stack limit. */
+const MAX_AST_DEPTH = 200;
+/** Hard cap on visited AST nodes per parse (traversal budget). */
+const MAX_AST_NODES = 50_000;
+/** FIFO bound so hostile grammar-directory overrides cannot grow the cache. */
+const MAX_LANGUAGE_CACHE_ENTRIES = 32;
+
+interface GrammarManifestEntry {
+  sha256: string;
+  bytes: number;
+}
+
 let parserInitPromise: Promise<void> | null = null;
 
 /**
- * Languages are memoized by grammar path (one path per language in normal use).
- * Keying on the path keeps NYXOWL_GRAMMARS_DIR overrides isolated instead of
- * serving a grammar loaded from a previous directory.
+ * Languages are memoized by grammar path and verified digest (one path per
+ * language in normal use). Keying on both keeps NYXOWL_GRAMMARS_DIR overrides
+ * isolated instead of serving a grammar loaded from a previous directory or
+ * content, and ensures tampered bytes are never reused from cache.
  */
 const languageCache = new Map<string, Promise<Parser.Language | null>>();
 
@@ -51,13 +67,116 @@ async function ensureParserInit(): Promise<void> {
   await parserInitPromise;
 }
 
-function loadLanguage(grammarPath: string): Promise<Parser.Language | null> {
-  const cached = languageCache.get(grammarPath);
+/**
+ * Reads `manifest.json` from the same directory as the grammar so that
+ * NYXOWL_GRAMMARS_DIR overrides must ship their own pinned digests. Returns
+ * null for any malformed manifest or entry, which callers treat as fail-closed.
+ */
+function readManifestEntry(grammarPath: string): GrammarManifestEntry | null {
+  const manifestPath = path.join(path.dirname(grammarPath), "manifest.json");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch {
+    return null;
+  }
+
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const manifest = parsed as Record<string, unknown>;
+  if (manifest["version"] !== 1) return null;
+
+  const files = manifest["files"];
+  if (typeof files !== "object" || files === null || Array.isArray(files)) {
+    return null;
+  }
+
+  const entry = (files as Record<string, unknown>)[path.basename(grammarPath)];
+  if (typeof entry !== "object" || entry === null) return null;
+
+  const record = entry as Record<string, unknown>;
+  const sha256 = record["sha256"];
+  const bytes = record["bytes"];
+  if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) return null;
+  if (typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0) {
+    return null;
+  }
+
+  return { sha256, bytes };
+}
+
+/**
+ * Loads grammar bytes from disk, verifies size and SHA-256 against the pinned
+ * manifest entry, then hands the verified bytes to web-tree-sitter. Passing
+ * bytes (not a path) closes the time-of-check/time-of-use window between
+ * verification and load.
+ */
+async function loadVerifiedLanguage(
+  grammarPath: string,
+  entry: GrammarManifestEntry,
+): Promise<Parser.Language | null> {
+  try {
+    await ensureParserInit();
+    const bytes = fs.readFileSync(grammarPath);
+    if (bytes.length !== entry.bytes) return null;
+
+    const digest = crypto.createHash("sha256").update(bytes).digest("hex");
+    if (digest !== entry.sha256) return null;
+
+    return await Parser.Language.load(new Uint8Array(bytes));
+  } catch {
+    return null;
+  }
+}
+
+function loadLanguage(
+  grammarPath: string,
+  entry: GrammarManifestEntry,
+): Promise<Parser.Language | null> {
+  const cacheKey = `${grammarPath}:${entry.sha256}`;
+  const cached = languageCache.get(cacheKey);
   if (cached) return cached;
 
-  const loading = Parser.Language.load(grammarPath).catch(() => null);
-  languageCache.set(grammarPath, loading);
+  const loading = loadVerifiedLanguage(grammarPath, entry);
+  languageCache.set(cacheKey, loading);
+
+  // FIFO eviction keeps the cache bounded when an attacker cycles grammar dirs.
+  if (languageCache.size > MAX_LANGUAGE_CACHE_ENTRIES) {
+    const oldest = languageCache.keys().next().value;
+    if (oldest !== undefined) languageCache.delete(oldest);
+  }
+
   return loading;
+}
+
+/** Test-only hook: clears memoized languages so env overrides are re-verified. */
+export function __resetWasmCachesForTests(): void {
+  languageCache.clear();
+}
+
+/**
+ * Iterative pre-walk so a pathologically deep AST is rejected before the
+ * recursive extractors run. Depth and node-count budgets are enforced here.
+ */
+function exceedsTraversalBudget(root: SyntaxNode): boolean {
+  const stack: Array<{ node: SyntaxNode; depth: number }> = [
+    { node: root, depth: 0 },
+  ];
+  let visited = 0;
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) break;
+
+    visited += 1;
+    if (visited > MAX_AST_NODES) return true;
+    if (current.depth > MAX_AST_DEPTH) return true;
+
+    for (const child of current.node.namedChildren) {
+      stack.push({ node: child, depth: current.depth + 1 });
+    }
+  }
+
+  return false;
 }
 
 function compactSignature(text: string): string {
@@ -332,21 +451,26 @@ export async function extractWasmSkeleton(
   const extension = path.extname(filePath).toLowerCase();
   const language = EXTENSION_LANGUAGE[extension];
   if (!language) return null;
+  if (sourceText.length > MAX_SOURCE_CHARS) return null;
 
   const grammarPath = resolveGrammarPath(language);
   if (!grammarPath || !fs.existsSync(grammarPath)) return null;
+
+  const manifestEntry = readManifestEntry(grammarPath);
+  if (!manifestEntry) return null;
 
   let parser: Parser | null = null;
   let tree: Parser.Tree | null = null;
   try {
     await ensureParserInit();
-    const loadedLanguage = await loadLanguage(grammarPath);
+    const loadedLanguage = await loadLanguage(grammarPath, manifestEntry);
     if (!loadedLanguage) return null;
 
     parser = new Parser();
     parser.setLanguage(loadedLanguage);
     tree = parser.parse(sourceText);
     if (!tree) return null;
+    if (exceedsTraversalBudget(tree.rootNode)) return null;
 
     if (language === "python") return extractPython(tree.rootNode, sourceText);
     if (language === "go") return extractGo(tree.rootNode, sourceText);
