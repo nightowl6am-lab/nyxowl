@@ -10,9 +10,7 @@ import { generateAntigravityHostPackage } from "./adapters/antigravity.ts";
 import { generateClaudeHostPackage } from "./adapters/claude.ts";
 import { generateCodexHostPackage } from "./adapters/codex.ts";
 import { generateCursorHostPackage } from "./adapters/cursor.ts";
-import { generateGeminiHostPackage } from "./adapters/gemini.ts";
 import { generateOpenCodeHostPackage } from "./adapters/opencode.ts";
-import { generateWindsurfHostPackage } from "./adapters/windsurf.ts";
 import {
   type DetectedHost,
   detectInstalledHosts,
@@ -44,6 +42,12 @@ export async function runPreflightChecks(options?: {
     throw new NyxError(
       "ERR_EXEC_FAILED",
       "Native Windows is not supported in Nyxowl v1. Please install WSL2 (`wsl --install -d Ubuntu`) and run `nyxowl` inside WSL2. See docs/windows-wsl.md.",
+    );
+  }
+  if (platform !== "linux") {
+    throw new NyxError(
+      "ERR_EXEC_FAILED",
+      `Nyxowl v1 requires Linux (including WSL2 on Windows); detected platform "${platform}". Only Linux is supported. See docs/windows-wsl.md.`,
     );
   }
 
@@ -82,7 +86,6 @@ export async function ensureFirstRunSetup(options?: {
   envPath?: string;
   force?: boolean;
   userCursorDir?: string;
-  userWindsurfDir?: string;
   userCodexHome?: string;
 }): Promise<SetupResult> {
   const { nodeVersion, gitVersion } = await runPreflightChecks({
@@ -121,35 +124,37 @@ export async function ensureFirstRunSetup(options?: {
   const defaultHost = selectHostToLaunch(detectedHosts);
 
   if (!alreadyInitialized) {
-    // Always generate session-scoped Tier-A/B packages inside ~/.nyxowl/hosts/<host>
-    generateClaudeHostPackage({
-      ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-    });
+    const isInstalled = (id: DetectedHost["id"]): boolean =>
+      detectedHosts.some((h) => h.id === id && h.installed);
+
+    // OpenCode is the first-class/default host: always generate its session-scoped package.
     generateOpenCodeHostPackage({
       ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
     });
-    generateCodexHostPackage({
-      ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-      ...(options?.userCodexHome ? { userCodexHome: options.userCodexHome } : {}),
-    });
-    generateGeminiHostPackage({
-      ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-    });
-    generateAntigravityHostPackage({
-      ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-    });
 
-    // Only generate user-level Cursor/Windsurf files if those hosts are detected or explicitly requested
-    if (detectedHosts.some((h) => h.id === "cursor" && h.installed) || options?.userCursorDir) {
+    // Generate other session-scoped packages only for hosts detected on PATH.
+    if (isInstalled("claude")) {
+      generateClaudeHostPackage({
+        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
+      });
+    }
+    if (isInstalled("codex")) {
+      generateCodexHostPackage({
+        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
+        ...(options?.userCodexHome ? { userCodexHome: options.userCodexHome } : {}),
+      });
+    }
+    if (isInstalled("antigravity")) {
+      generateAntigravityHostPackage({
+        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
+      });
+    }
+
+    // Only generate user-level Cursor files if that host is detected or explicitly requested.
+    if (isInstalled("cursor") || options?.userCursorDir) {
       generateCursorHostPackage({
         ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
         ...(options?.userCursorDir ? { userCursorDir: options.userCursorDir } : {}),
-      });
-    }
-    if (detectedHosts.some((h) => h.id === "windsurf" && h.installed) || options?.userWindsurfDir) {
-      generateWindsurfHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        ...(options?.userWindsurfDir ? { userWindsurfDir: options.userWindsurfDir } : {}),
       });
     }
 

@@ -64,9 +64,7 @@ export async function detectInstalledHosts(): Promise<DetectedHostStatus[]> {
     { id: "opencode", binary: "opencode", tier: "A", deliveryMode: "session-scoped" },
     { id: "antigravity", binary: "agy", tier: "A (+sandbox)", deliveryMode: "session-scoped" },
     { id: "codex", binary: "codex", tier: "B (+sandbox)", deliveryMode: "session-scoped" },
-    { id: "gemini", binary: "gemini", tier: "A", deliveryMode: "session-scoped" },
     { id: "cursor", binary: "cursor", tier: "B", deliveryMode: "user-level" },
-    { id: "windsurf", binary: "windsurf", tier: "C", deliveryMode: "user-level" },
   ];
 
   const results: DetectedHostStatus[] = [];

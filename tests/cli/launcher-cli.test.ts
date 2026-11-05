@@ -85,9 +85,9 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
     expect(cDirty.mainCheckoutDirty).toBe(true);
   });
 
-  it("launches fake host binaries in priority order (claude > opencode > codex > gemini > agy) with zero project footprint", async () => {
+  it("launches fake host binaries with OpenCode first (opencode > claude > agy) and zero project footprint", async () => {
     createFakeHostBin(fakeBinDir, "claude", "1.0.0");
-    createFakeHostBin(fakeBinDir, "opencode", "0.2.0");
+    createFakeHostBin(fakeBinDir, "opencode", "2.2.5");
     createFakeHostBin(fakeBinDir, "agy", "1.5.0");
 
     const projectDir = path.join(tmpRoot, "zero-footprint-repo");
@@ -105,13 +105,13 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
     const recordFile = path.join(tmpRoot, "host-invocation.json");
     process.env["FAKE_HOST_RECORD_FILE"] = recordFile;
     try {
-      // 1. Default priority selects `claude`
+      // 1. Default priority selects `opencode`
       const res1 = await launchNyxowlSession({
         targetPath: projectDir,
         nyxowlHome,
         envPath: envPathWithFakeHosts,
       });
-      expect(res1.selectedHost.id).toBe("claude");
+      expect(res1.selectedHost.id).toBe("opencode");
       expect(res1.exitCode).toBe(0);
 
       const rec1 = JSON.parse(fs.readFileSync(recordFile, "utf8")) as {
@@ -119,31 +119,39 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
         argv: string[];
         nyxowlSession: string;
         nyxowlProject: string;
+        opencodeConfig: string | null;
       };
-      expect(rec1.host).toBe("claude");
-      expect(rec1.argv).toContain("--plugin-dir");
-      expect(rec1.argv).toContain("--settings");
-      expect(rec1.argv).toContain("--agent");
-      expect(rec1.argv).toContain("nyxowl");
+      expect(rec1.host).toBe("opencode");
+      expect(rec1.argv).toEqual(["--standalone", projectDir]);
+      expect(rec1.opencodeConfig).toContain("opencode.json");
       expect(rec1.nyxowlSession).toBe("1");
       expect(rec1.nyxowlProject).toBe(projectDir);
 
-      // 2. Explicit `--host opencode` selects `opencode` and sets `OPENCODE_CONFIG`
+      // First-run generation covers OpenCode plus only the hosts detected on PATH.
+      const hostDirs = fs
+        .readdirSync(path.join(nyxowlHome, "hosts"), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+      expect(hostDirs).toEqual(["antigravity", "claude", "opencode", "opencode-plugin"]);
+
+      // 2. Explicit `--host claude` still selects Claude Code with its plugin flags
       const res2 = await launchNyxowlSession({
         targetPath: projectDir,
-        hostOverride: "opencode",
+        hostOverride: "claude",
         nyxowlHome,
         envPath: envPathWithFakeHosts,
       });
-      expect(res2.selectedHost.id).toBe("opencode");
+      expect(res2.selectedHost.id).toBe("claude");
       const rec2 = JSON.parse(fs.readFileSync(recordFile, "utf8")) as {
         host: string;
         argv: string[];
-        opencodeConfig: string | null;
       };
-      expect(rec2.host).toBe("opencode");
+      expect(rec2.host).toBe("claude");
+      expect(rec2.argv).toContain("--plugin-dir");
+      expect(rec2.argv).toContain("--settings");
       expect(rec2.argv).toContain("--agent");
-      expect(rec2.opencodeConfig).toContain("opencode.json");
+      expect(rec2.argv).toContain("nyxowl");
 
       // 3. Assert project tree is 100% byte-identical before and after `nyxowl <path>`!
       const afterTreeHash = await computeWorkingTreeHash(projectDir);

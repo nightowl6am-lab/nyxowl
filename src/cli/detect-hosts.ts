@@ -7,10 +7,8 @@ export type HostId =
   | "claude"
   | "opencode"
   | "codex"
-  | "gemini"
   | "antigravity"
-  | "cursor"
-  | "windsurf";
+  | "cursor";
 
 export type SecurityTier = "A" | "B" | "C";
 
@@ -35,6 +33,17 @@ export interface DetectedHost extends HostSpec {
 
 export const HOST_SPECS: readonly HostSpec[] = [
   {
+    id: "opencode",
+    displayName: "OpenCode",
+    binaries: ["opencode"],
+    tier: "A",
+    deliveryLevel: 1,
+    supportsExternalWorktree: true,
+    supportsNativeSubagents: true,
+    verifiedVersion: "2.2.5",
+    priority: 1,
+  },
+  {
     id: "claude",
     displayName: "Claude Code",
     binaries: ["claude"],
@@ -43,17 +52,6 @@ export const HOST_SPECS: readonly HostSpec[] = [
     supportsExternalWorktree: true,
     supportsNativeSubagents: true,
     verifiedVersion: "1.0.0",
-    priority: 1,
-  },
-  {
-    id: "opencode",
-    displayName: "OpenCode",
-    binaries: ["opencode"],
-    tier: "A",
-    deliveryLevel: 1,
-    supportsExternalWorktree: true,
-    supportsNativeSubagents: true,
-    verifiedVersion: "0.2.0",
     priority: 2,
   },
   {
@@ -68,17 +66,6 @@ export const HOST_SPECS: readonly HostSpec[] = [
     priority: 3,
   },
   {
-    id: "gemini",
-    displayName: "Gemini CLI",
-    binaries: ["gemini"],
-    tier: "B",
-    deliveryLevel: 1,
-    supportsExternalWorktree: true,
-    supportsNativeSubagents: false,
-    verifiedVersion: "0.1.0",
-    priority: 4,
-  },
-  {
     id: "antigravity",
     displayName: "Google Antigravity (agy)",
     binaries: ["agy", "antigravity"],
@@ -87,7 +74,7 @@ export const HOST_SPECS: readonly HostSpec[] = [
     supportsExternalWorktree: true,
     supportsNativeSubagents: true,
     verifiedVersion: "1.5.0",
-    priority: 5,
+    priority: 4,
   },
   {
     id: "cursor",
@@ -98,18 +85,7 @@ export const HOST_SPECS: readonly HostSpec[] = [
     supportsExternalWorktree: false,
     supportsNativeSubagents: false,
     verifiedVersion: "0.45.0",
-    priority: 6,
-  },
-  {
-    id: "windsurf",
-    displayName: "Windsurf",
-    binaries: ["windsurf"],
-    tier: "C",
-    deliveryLevel: 2,
-    supportsExternalWorktree: false,
-    supportsNativeSubagents: false,
-    verifiedVersion: "1.0.0",
-    priority: 7,
+    priority: 5,
   },
 ] as const;
 
@@ -199,7 +175,7 @@ export async function detectInstalledHosts(options?: {
 
 /**
  * Selects the best host to launch based on explicit `--host`, `config.preferredHost`, or priority order (§0.3):
- * Claude Code > OpenCode > Codex > Gemini CLI > Antigravity > Cursor > Windsurf.
+ * OpenCode > Claude Code > Codex > Antigravity > Cursor.
  */
 export function selectHostToLaunch(
   detected: DetectedHost[],

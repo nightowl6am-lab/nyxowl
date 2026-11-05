@@ -15,8 +15,7 @@
     "node": ">=22.13"
   },
   "os": [
-    "linux",
-    "darwin"
+    "linux"
   ],
   "files": [
     "dist",

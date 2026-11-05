@@ -569,8 +569,8 @@ export function evaluateGuardPayload(
 
 export function formatHookOutput(decision: GuardDecision): string {
   const reason = decision.reason ?? "Permitted by Nyxowl guard.";
-  // Unified response format compatible with Claude Code (hookSpecificOutput),
-  // Antigravity (permissionDecision), and Gemini CLI (decision)
+  // Unified response format compatible with Claude Code (hookSpecificOutput)
+  // and Antigravity (permissionDecision)
   return JSON.stringify({
     decision: decision.decision === "deny" ? "deny" : "allow",
     reason,

@@ -1,6 +1,6 @@
 # Running Nyxowl on Windows via WSL2
 
-Nyxowl v1 supports **Linux** and **macOS** natively, and supports **Windows via WSL2 (Windows Subsystem for Linux 2)**.
+Nyxowl v1 supports **Linux** only, including **Windows via WSL2 (Windows Subsystem for Linux 2)**.
 
 Running `nyxowl` directly inside native Windows (`cmd.exe` or PowerShell outside WSL2) exits immediately with setup instructions for WSL2.
 

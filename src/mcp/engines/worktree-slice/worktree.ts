@@ -84,7 +84,7 @@ export const nyxWorktreeStartTool = defineTool({
 
     const requestedMode = input.worktreeMode ?? ctx.config.worktreeRoot;
     const hostEnv = process.env["NYXOWL_HOST"] ?? "";
-    const isFallbackHost = hostEnv === "cursor" || hostEnv === "windsurf";
+    const isFallbackHost = hostEnv === "cursor";
     const rootMode: "external" | "in-repo" =
       requestedMode === "in-repo" || (requestedMode === "auto" && isFallbackHost)
         ? "in-repo"

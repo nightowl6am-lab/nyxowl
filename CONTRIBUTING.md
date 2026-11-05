@@ -6,7 +6,7 @@ Thank you for contributing to Nyxowl!
 
 - **Node.js** `>= 22.13.0` (Node 22 LTS or Node 24)
 - **Git** `>= 2.30.0`
-- **OS:** Linux, macOS, or Windows via WSL2 (`docs/windows-wsl.md`)
+- **OS:** Linux only (Windows via WSL2; see `docs/windows-wsl.md`)
 
 ## Development Workflow
 

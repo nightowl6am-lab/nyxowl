@@ -8,6 +8,7 @@ import {
   formatNodeUpgradeMessage,
   isSupportedNodeVersion,
 } from "../../src/cli/preflight.ts";
+import { runPreflightChecks } from "../../src/cli/setup.ts";
 import { NYXOWL_VERSION } from "../../src/core/version.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -42,6 +43,11 @@ describe("Version single source of truth & Node preflight", () => {
     for (const version of ["22.13.0", "22.13.1", "24.22.2", "v22.13.0"]) {
       expect(isSupportedNodeVersion(version), version).toBe(true);
     }
+  });
+
+  it("rejects non-Linux platforms with a Linux/WSL2 message", async () => {
+    await expect(runPreflightChecks({ platform: "darwin" })).rejects.toThrow(/Linux/);
+    await expect(runPreflightChecks({ platform: "win32" })).rejects.toThrow(/WSL2/);
   });
 
   it("formats an actionable Node upgrade message", () => {

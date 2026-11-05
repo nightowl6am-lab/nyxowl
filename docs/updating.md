@@ -4,6 +4,7 @@ Nyxowl is installed and updated through npm. It has no self-update command; npm 
 
 ## Requirements
 
+- Linux (including WSL2); no other operating system is supported
 - Node.js **>= 22.13**
 - Git **>= 2.30**
 - npm (bundled with Node.js)
@@ -58,7 +59,7 @@ Upgrades do not reset your local state. Nyxowl keeps it under `~/.nyxowl/` (over
 - The HMAC-SHA256 receipt signing key in `~/.nyxowl/secrets/receipt.key`.
 - Global configuration in `~/.nyxowl/config.json`.
 - Per-project SQLite state under `~/.nyxowl/projects/<repo-id>/`.
-- Worktrees under `~/.nyxowl/worktrees/<repo-id>/`. Tier C hosts (Cursor and Windsurf) may instead use the repository's `.nyxowl/worktrees/`; those worktrees persist with the repository.
+- Worktrees under `~/.nyxowl/worktrees/<repo-id>/`. The Tier C Cursor host may instead use the repository's `.nyxowl/worktrees/`; those worktrees persist with the repository.
 - Receipts and project artifacts.
 
 Nyxowl does not modify repository files during an upgrade. Optional files written by `nyxowl init --project` are owned by that command, not by the upgrade.
@@ -66,7 +67,7 @@ Nyxowl does not modify repository files during an upgrade. Optional files writte
 ## What regenerates
 
 - `~/.nyxowl/hosts/<host>/` is regenerated when the version recorded in the install manifest differs from the running version. This happens on the next launch or on `nyxowl doctor`.
-- Cursor and Windsurf user-level managed blocks regenerate only when those hosts are detected.
+- Cursor user-level managed blocks regenerate only when Cursor is detected.
 - The MCP server starts from the installed package on the next host session.
 
 ## Post-upgrade checklist
