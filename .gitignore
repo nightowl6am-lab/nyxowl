@@ -15,3 +15,6 @@ coverage/
 *.p12
 *.pfx
 .nyxowl/
+
+# Local-only readiness tracker (never commit)
+READINESS.md

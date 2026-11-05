@@ -5,18 +5,12 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const docsDir = path.join(repoRoot, "docs");
-const readinessFile = path.join(repoRoot, ".github", "READINESS.md");
 
 const SKIPPED_PREFIXES = ["http://", "https://", "mailto:"];
 
 interface MarkdownLink {
   readonly source: string;
   readonly target: string;
-}
-
-interface SliceRow {
-  readonly id: number;
-  readonly priority: string;
 }
 
 function listDocsFiles(): string[] {
@@ -48,60 +42,6 @@ function extractLinks(source: string, contents: string): MarkdownLink[] {
     links.push({ source, target });
   }
   return links;
-}
-
-const TABLE_SEPARATOR = /^:?-+:?$/;
-
-/**
- * Parses the Markdown table inside the `## Slices` section.
- * Rows are the pipe-delimited lines after the header and separator; each row
- * must supply a numeric ID and a priority cell.
- */
-function parseSliceRows(contents: string): SliceRow[] {
-  const lines = contents.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === "## Slices");
-  if (start === -1) {
-    return [];
-  }
-
-  const tableLines: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (line.startsWith("## ")) {
-      break;
-    }
-    if (line.trim().startsWith("|")) {
-      tableLines.push(line);
-    } else if (tableLines.length > 0) {
-      // Table ended; stop at the first non-table content after it.
-      break;
-    }
-  }
-
-  if (tableLines.length < 2) {
-    return [];
-  }
-
-  const splitRow = (line: string): string[] =>
-    line
-      .trim()
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((cell) => cell.trim());
-
-  // The first table line is the header, the second is the separator.
-  const separator = splitRow(tableLines[1] ?? "");
-  if (!separator.every((cell) => TABLE_SEPARATOR.test(cell))) {
-    return [];
-  }
-
-  return tableLines.slice(2).map((line) => {
-    const cells = splitRow(line);
-    return {
-      id: Number(cells[0] ?? Number.NaN),
-      priority: cells[1] ?? "",
-    };
-  });
 }
 
 describe("documentation links", () => {
@@ -154,31 +94,18 @@ describe("package publishing manifest", () => {
     expect(files).toContain("README.md");
   });
 
-  it("does not ship the internal .github readiness tracker", () => {
+  it("does not ship the local readiness tracker or the .github directory", () => {
     const files = readPublishedFiles();
-    const internal = files.filter((entry) => entry === ".github" || entry.startsWith(".github/"));
-    expect(internal).toEqual([]);
+    expect(files).not.toContain("READINESS.md");
+    expect(files).not.toContain(".github");
+    expect(files).not.toContain(".github/");
+    expect(files.filter((entry) => entry === ".github" || entry.startsWith(".github/"))).toEqual([]);
   });
 });
 
-describe("internal readiness tracker", () => {
-  it("stays outside the shipped docs directory", () => {
-    expect(fs.existsSync(readinessFile)).toBe(true);
-    expect(fs.existsSync(path.join(docsDir, "readiness.md"))).toBe(false);
-  });
-
-  it("records the frozen 0/8 and 0/6 snapshots", () => {
-    const contents = fs.readFileSync(readinessFile, "utf8");
-    expect(contents).toContain("0/8 complete");
-    expect(contents).toContain("0/6 P0 complete");
-  });
-
-  it("has exactly 8 slices with numeric IDs 1-8 and 6 P0 / 2 P1 priorities", () => {
-    const contents = fs.readFileSync(readinessFile, "utf8");
-    const rows = parseSliceRows(contents);
-
-    expect(rows.map((row) => row.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(rows.filter((row) => row.priority === "P0")).toHaveLength(6);
-    expect(rows.filter((row) => row.priority === "P1")).toHaveLength(2);
+describe("local readiness tracker", () => {
+  it("stays gitignored so it is never committed or shipped", () => {
+    const gitignoreLines = fs.readFileSync(path.join(repoRoot, ".gitignore"), "utf8").split(/\r?\n/);
+    expect(gitignoreLines).toContain("READINESS.md");
   });
 });
