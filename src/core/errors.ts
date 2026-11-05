@@ -31,6 +31,9 @@ export type ErrorCode =
   | "ERR_DB_FAILURE"
   | "ERR_ARTIFACT_NOT_FOUND"
   | "ERR_FILE_TOO_LARGE"
+  | "ERR_TESTWRITER_UNAVAILABLE"
+  | "ERR_TESTWRITER_PROTOCOL"
+  | "ERR_TESTWRITER_TEST_MISSING"
   | "ERR_INTERNAL";
 
 export class NyxError extends Error {

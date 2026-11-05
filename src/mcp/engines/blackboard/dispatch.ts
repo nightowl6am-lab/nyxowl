@@ -74,6 +74,11 @@ const DEFAULT_ROLE_SKILLS: Record<string, RoleSkillConfig> = {
     when: [],
     custom: "nyx-devops",
   },
+  "nyx-testwriter": {
+    always: ["security", "handling-untrusted-content"],
+    when: [],
+    custom: "nyx-testwriter",
+  },
 };
 
 function resolveRepoPackageRoot(): string {
@@ -175,6 +180,7 @@ export const taskDispatchInputSchema = z.object({
     "nyx-sec",
     "nyx-probe",
     "nyx-devops",
+    "nyx-testwriter",
   ]),
   taskSummary: z.string().min(1).max(500),
   filePathsToLock: z.array(z.string()).optional(),

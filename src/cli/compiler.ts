@@ -38,6 +38,8 @@ export const ROLE_ALLOWED_NYX_TOOLS: Record<string, readonly string[]> = {
     "blackboard_publish",
     "env_inspect",
     "artifact_read",
+    "testwriter_prepare",
+    "testwriter_status",
   ],
   "nyx-product": [
     "web_fetch",
@@ -152,6 +154,13 @@ export const ROLE_ALLOWED_NYX_TOOLS: Record<string, readonly string[]> = {
     "proc",
     "blackboard_read",
     "artifact_read",
+  ],
+  "nyx-testwriter": [
+    "testwriter_job",
+    "testwriter_write",
+    "testwriter_lint",
+    "testwriter_gate",
+    "testwriter_finish",
   ],
 };
 

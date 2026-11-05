@@ -4,7 +4,7 @@
 
 Nyxowl consists of three tightly integrated subsystems:
 1. **Core & State Layer (`src/core/`, `src/mcp/db/`):** Zero-native-addon SQLite WAL state engine (`node:sqlite`), HMAC-SHA256 receipt signer, Exact-Value + Entropy Redactor, token budgeter, and Git temporary-index worktree manager.
-2. **7-Engine Heavy Runtime MCP Server (`src/mcp/engines/`):** 31 deterministic tools (`nyx_*`) exposed over stdio MCP (`nyxowl mcp`) with strict Zod input/output schemas, MCP annotations, token budget truncation + overflow artifacts, and `audit_log` recording.
+2. **8-Engine Heavy Runtime MCP Server (`src/mcp/engines/`):** 38 deterministic tools (`nyx_*`) exposed over stdio MCP (`nyxowl mcp`) with strict Zod input/output schemas, MCP annotations, token budget truncation + overflow artifacts, and `audit_log` recording.
 3. **Universal CLI, Compiler, Hooks & Host Adapters (`src/cli/`):** Compiles canonical Markdown agents (`agents/primary/`, `agents/subagents/`) and DNA-conditional skills (`agents/skills/registry.json`, `skills-vendor/`) into session-scoped host packages under `~/.nyxowl/hosts/<host>/`.
 
 ```mermaid
@@ -12,7 +12,7 @@ flowchart LR
     U["User: nyxowl /path/to/repo"] --> L["Launcher (src/cli/launcher.ts)"]
     L --> H["Host Session (OpenCode (default) / Claude / Antigravity / Codex / Cursor)"]
     H -- "PreToolUse / SessionStart" --> HK["Hooks (guard / edit-guard / session-start)"]
-    H -- "stdio MCP" --> M["Nyxowl MCP Server (31 nyx_* tools)"]
+    H -- "stdio MCP" --> M["Nyxowl MCP Server (38 nyx_* tools)"]
     M --> DB[("~/.nyxowl/projects/<repo-id>/state.db (SQLite WAL)")]
     M --> WT["Isolated Worktree (~/.nyxowl/worktrees/<repo-id>/<slug>/)"]
 ```

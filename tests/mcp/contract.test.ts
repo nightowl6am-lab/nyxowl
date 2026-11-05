@@ -44,10 +44,10 @@ describe("Step 2 — MCP Server Contract & Engines 5 (Blackboard/Locks) and 7 (C
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it("registers all 31 nyx_* tools with valid schemas, annotations, <=200 char descriptions, and tools/list <= 4000 tokens", async () => {
+  it("registers all 38 nyx_* tools with valid schemas, annotations, <=200 char descriptions, and tools/list <= 4000 tokens", async () => {
     const listRes = await client.listTools();
-    expect(listRes.tools.length).toBe(31);
-    expect(ALL_NYX_TOOLS.length).toBe(31);
+    expect(listRes.tools.length).toBe(38);
+    expect(ALL_NYX_TOOLS.length).toBe(38);
 
     for (const tool of listRes.tools) {
       expect(tool.name).toMatch(/^nyx_/);

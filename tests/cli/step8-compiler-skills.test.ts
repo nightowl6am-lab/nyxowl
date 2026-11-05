@@ -16,7 +16,7 @@ describe("Step 8 — Canonical Agents, Commands, Skill Registry & Vendoring", ()
     const registry = loadAndValidateSkillRegistry();
     expect(registry.version).toBe(1);
     expect(Object.keys(registry.skills).length).toBe(16);
-    expect(Object.keys(registry.roles).length).toBe(10);
+    expect(Object.keys(registry.roles).length).toBe(11);
 
     const integrity = verifyVendoredSkillIntegrity();
     expect(integrity.valid).toBe(true);
@@ -24,13 +24,13 @@ describe("Step 8 — Canonical Agents, Commands, Skill Registry & Vendoring", ()
     expect(integrity.mismatches).toEqual([]);
   });
 
-  it("compiles all 10 canonical agents and 6 slash commands within prompt budgets and tool scoping (§4.2, §4.4)", () => {
+  it("compiles all 11 canonical agents and 6 slash commands within prompt budgets and tool scoping (§4.2, §4.4)", () => {
     const bundle = compileAllAgentsAndCommands({
       includeConditionalAll: true,
       maxPromptTokens: 1200,
     });
 
-    expect(bundle.agents.length).toBe(10);
+    expect(bundle.agents.length).toBe(11);
     expect(bundle.commands.length).toBe(6);
 
     for (const agent of bundle.agents) {

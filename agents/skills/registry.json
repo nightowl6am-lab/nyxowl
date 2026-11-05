@@ -263,6 +263,14 @@
       ],
       "when": [],
       "custom": "nyx-devops"
+    },
+    "nyx-testwriter": {
+      "always": [
+        "security",
+        "handling-untrusted-content"
+      ],
+      "when": [],
+      "custom": "nyx-testwriter"
     }
   }
 }
