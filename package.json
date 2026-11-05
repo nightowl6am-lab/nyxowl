@@ -29,6 +29,7 @@
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
+    "CHANGELOG.md",
     "README.md"
   ],
   "scripts": {

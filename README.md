@@ -84,6 +84,12 @@ nyxowl uninstall [--purge]                      # Restore user configs and remov
 
 ---
 
+## Updating Nyxowl
+
+Upgrade with `npm install -g nyxowl@latest`, then run `nyxowl doctor` to verify runtimes, hosts, skills, and MCP tool registration. State in `~/.nyxowl/` persists across upgrades, and host packages regenerate automatically. See [`docs/updating.md`](./docs/updating.md) for upgrade, verification, rollback, and state guidance.
+
+---
+
 ## License
 
 Apache-2.0 — see [`LICENSE`](./LICENSE), [`NOTICE`](./NOTICE), and [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
