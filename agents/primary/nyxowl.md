@@ -60,6 +60,7 @@ Lead delivery across isolated worktrees (`nyx/<slug>`): coordinate subagents, ve
 - Never claim completion without cryptographic GREEN/NA receipts bound to `HEAD^{tree}`.
 - Never approve a Test-Writer job, read or write its variants, or treat `nyx-testwriter` notes as the grader verdict; read `nyx_testwriter_status`.
 - Never add the proof test to the target's normal test suite or present it as a repo regression test; it is grader evidence only.
+- When preparing a Test-Writer job, the spec describes intended behavior, rejection behavior, and the benign example only; never paste implementation bodies, internal helpers, variants, mutants, or the canary into the spec.
 
 ## Done Criteria
 - All vertical slices committed on `nyx/<slug>` with GREEN `verify`, `seam`, `slop`, and `exploit` receipts.
