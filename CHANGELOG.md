@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - First-run setup now always generates the OpenCode package and only generates Claude, Codex, Antigravity, and Cursor packages when those hosts are detected.
 
 ### Added
+- **Test-Writer subagent:** Added `nyx-testwriter` and seven brokered tools (`nyx_testwriter_job`, `nyx_testwriter_write`, `nyx_testwriter_lint`, `nyx_testwriter_gate`, `nyx_testwriter_finish`, `nyx_testwriter_prepare`, `nyx_testwriter_status`) with per-role tool scoping, Python-only v1 jobs, and a fail-closed `/opt/test-writer` broker that never receives the canary, variants, mutants, or raw target output.
 - **Docs:** Added `docs/updating.md` (upgrade, verification, rollback, and state-preservation guide), an "Updating Nyxowl" section in the README, and `CHANGELOG.md` to the published package files. Added docs link-integrity and package-manifest tests.
 - **Grammar integrity:** Added `data/grammars/manifest.json` pinning the byte length and SHA-256 of the vendored Python, Go, and Rust tree-sitter grammars. Grammars are verified from the same directory as the `.wasm`, and only verified bytes are passed to the loader.
 - **Bounded scanning:** `nyx_symbol_skeleton` now enforces a 2 MiB file cap and a 50,000-line cap, rejecting oversized files with `ERR_FILE_TOO_LARGE`. A 2,000,000-character parse cap, a maximum AST depth of 200, and a 50,000-node traversal budget make parsing fall back to the legacy regex outline when exceeded.

@@ -20,6 +20,7 @@ import {
 } from "./engines/probe-exploit/index.ts";
 import { seamEngineTools } from "./engines/seam/index.ts";
 import { shieldEngineTools } from "./engines/shield/index.ts";
+import { testwriterEngineTools } from "./engines/testwriter/index.ts";
 import { worktreeSliceEngineTools } from "./engines/worktree-slice/index.ts";
 import {
   invokeToolDefinition,
@@ -37,6 +38,7 @@ export const ALL_NYX_TOOLS: ToolDefinition[] = [
   ...blackboardEngineTools,
   ...probeExploitEngineTools,
   ...contextEngineTools,
+  ...testwriterEngineTools,
 ];
 
 const TOOL_MAP = new Map<string, ToolDefinition>(

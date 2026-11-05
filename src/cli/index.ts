@@ -44,7 +44,7 @@ export async function runCli(
 
   if (args.includes("--help") || args.includes("-h")) {
     const help = [
-      `nyxowl v${NYXOWL_VERSION} — Principal Tech Lead, 9 Subagents & 7-Engine Runtime MCP`,
+      `nyxowl v${NYXOWL_VERSION} — Principal Tech Lead, 10 Subagents & 8-Engine Runtime MCP`,
       "",
       "Usage:",
       "  nyxowl [path] [--host <id>] [--include-dirty]   Setup (if first run) and launch host session",
@@ -118,7 +118,7 @@ export async function runCli(
               : "not found"
           }${h.versionDriftWarning ? ` [WARN: ${h.versionDriftWarning}]` : ""}`,
       ),
-      "MCP Smoke Test: OK (31 tools registered)",
+      "MCP Smoke Test: OK (38 tools registered)",
     ];
     return { exitCode: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };
   }

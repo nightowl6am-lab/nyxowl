@@ -1,7 +1,7 @@
 {
   "name": "nyxowl",
   "version": "1.0.0",
-  "description": "Zero-Slop, Stack-Agnostic, Security-Hardened, Token-Efficient Product & Engineering Team (1 Primary Agent + 9 Specialized Subagents) backed by a 7-Engine Heavy Runtime MCP Server",
+  "description": "Zero-Slop, Stack-Agnostic, Security-Hardened, Token-Efficient Product & Engineering Team (1 Primary Agent + 10 Specialized Subagents) backed by a 8-Engine Heavy Runtime MCP Server",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
@@ -25,6 +25,7 @@
     "data",
     "templates",
     "docs",
+    "test-writer",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",

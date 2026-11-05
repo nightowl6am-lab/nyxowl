@@ -20,6 +20,12 @@ This document details the security boundaries, adversary capabilities, mitigatio
    - `nyx_web_fetch` enforces an SSRF firewall blocking private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`, `::1`), link-local/cloud metadata (`169.254.0.0/16`), and CGNAT (`100.64.0.0/10`) addresses on initial DNS resolution **and** every HTTP redirect hop.
    - HTML is stripped to readable text via `linkedom` + `@mozilla/readability`, scrubbed for hidden Unicode/bidi/comment prompt injections (`src/mcp/engines/shield/sanitize.ts`), and wrapped in `<untrusted_data>`.
    - Entries written to the Blackboard by `nyx-product` are stored with `trust = 'untrusted'`. Writer subagents (`nyx-db`, `nyx-api`, `nyx-ui`, `nyx-designer`, `nyx-devops`) cannot read `untrusted` entries until `nyxowl` reviews and promotes them (`promote: true`).
+4. **Test-Writer Proof Boundary:**
+   - `nyx-testwriter` has no host read/edit/write/shell/webfetch tools. Its only tools are five `nyx_testwriter_*` MCP tools.
+   - Those tools broker fixed `/opt/test-writer/bin/tw-gate` and `tw-status` wrappers as the separate `tw-grader` OS user via `sudo -n`; `tw-new-job` runs as the owner. The grader store `/var/lib/test-writer` is `0700` and is never read by the owner or the subagent.
+   - The subagent sees only the approved spec, detector, interface, helper API, and budget. It never sees target implementation bodies, variants, mutants, raw grader output, or the canary.
+   - Proof tests are grader evidence, not repository regression tests: they depend on the grader-only `detector` fixture and must not be added to the target's normal test discovery.
+   - The broker fails closed when the runtime or sudoers rule is absent, and sanitizes grader feedback to a fixed key set. No new receipt kind is introduced; the existing verify/seam/slop/exploit PR gate is unchanged.
 
 ---
 

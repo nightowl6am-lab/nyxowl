@@ -339,7 +339,7 @@ describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall",
         findings: unknown[];
       };
       expect(parsed.name).toBe("nyxowl");
-      expect(parsed.components.agents).toBe(10);
+      expect(parsed.components.agents).toBe(11);
       expect(parsed.components.hooks).toBe(1);
       expect(parsed.components.mcpServers).toBe(1);
       expect(parsed.findings).toEqual([]);
