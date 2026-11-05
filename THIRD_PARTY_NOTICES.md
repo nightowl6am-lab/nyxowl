@@ -38,3 +38,5 @@ The following WebAssembly grammars are vendored verbatim from `tree-sitter-wasms
   - `data/grammars/tree-sitter-go.wasm`
   - `data/grammars/tree-sitter-rust.wasm`
 
+`data/grammars/manifest.json` pins each vendored grammar's byte length and SHA-256, and runtime loading verifies those pins before parsing.
+

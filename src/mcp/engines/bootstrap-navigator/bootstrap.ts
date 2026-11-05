@@ -5,6 +5,7 @@ import { NyxError } from "../../../core/errors.ts";
 import { execCommand } from "../../../core/exec.ts";
 import { getGitCommonDir, getHeadCommitHash } from "../../../core/git.ts";
 import { isSecretEnvFileName } from "../../../core/redact.ts";
+import { NYXOWL_VERSION } from "../../../core/version.ts";
 import { defineTool } from "../../tool.ts";
 import { scanContentForSecrets } from "../worktree-slice/secret-scan.ts";
 
@@ -221,7 +222,7 @@ export const nyxProjectBootstrapTool = defineTool({
       const trailer =
         ctx.config.github.attribution === "none"
           ? ""
-          : `\n\nAssisted-by: Nyxowl v1.0.0`;
+          : `\n\nAssisted-by: Nyxowl v${NYXOWL_VERSION}`;
       await execCommand(
         "git",
         ["commit", "-m", `chore: initial greenfield scaffold (nyxowl)${trailer}`],
@@ -331,7 +332,7 @@ export const nyxProjectBootstrapTool = defineTool({
     const trailer =
       ctx.config.github.attribution === "none"
         ? ""
-        : `\n\nAssisted-by: Nyxowl v1.0.0`;
+        : `\n\nAssisted-by: Nyxowl v${NYXOWL_VERSION}`;
     await execCommand(
       "git",
       ["commit", "--allow-empty", "-m", `chore: baseline (nyxowl adopt)${trailer}`],

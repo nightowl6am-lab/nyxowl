@@ -8,9 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - **Docs:** Added `docs/updating.md` (upgrade, verification, rollback, and state-preservation guide), an "Updating Nyxowl" section in the README, and `CHANGELOG.md` to the published package files. Added docs link-integrity and package-manifest tests.
+- **Grammar integrity:** Added `data/grammars/manifest.json` pinning the byte length and SHA-256 of the vendored Python, Go, and Rust tree-sitter grammars. Grammars are verified from the same directory as the `.wasm`, and only verified bytes are passed to the loader.
+- **Bounded scanning:** `nyx_symbol_skeleton` now enforces a 2 MiB file cap and a 50,000-line cap, rejecting oversized files with `ERR_FILE_TOO_LARGE`. A 2,000,000-character parse cap, a maximum AST depth of 200, and a 50,000-node traversal budget make parsing fall back to the legacy regex outline when exceeded.
 
 ### Changed
 - **Engine 2 AST accuracy:** `nyx_symbol_skeleton` now parses Python, Go, and Rust with vendored tree-sitter WebAssembly grammars (offline, no runtime network) instead of regex-only outlines, preserving the legacy outline as a fallback when a grammar is unavailable. Added language-aware symbol classification to `nyx_trace_symbol` (definitions, imports, and call sites for Python/Go/Rust, with symbol-aware import detection for TS/JS). Vendored `tree-sitter-wasms@0.1.13` grammars for Python, Go, and Rust under `data/grammars/`.
+- **Cache bounds:** Grammar languages are cached per path plus verified digest (FIFO, max 32), and skeleton results are cached FIFO with a maximum of 256 entries.
+- **Version single-source:** The MCP server version, bootstrap commit trailers, and PR footer now derive from `NYXOWL_VERSION` instead of hardcoded `1.0.0` literals.
 
 ## [1.0.0] - 2026-11-04
 

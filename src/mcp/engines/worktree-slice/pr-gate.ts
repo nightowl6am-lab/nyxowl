@@ -14,6 +14,7 @@ import {
   type ReceiptKind,
   type SignedReceipt,
 } from "../../../core/receipts.ts";
+import { NYXOWL_VERSION } from "../../../core/version.ts";
 import { defineTool } from "../../tool.ts";
 import { scanDiffForSecrets } from "./secret-scan.ts";
 
@@ -302,7 +303,7 @@ export const nyxWorktreePrTool = defineTool({
     prBodyLines.push(
       ``,
       `---`,
-      `*Opened by Nyxowl v1.0.0 — Zero-Slop Autonomous Engineering Team*`,
+      `*Opened by Nyxowl v${NYXOWL_VERSION} — Zero-Slop Autonomous Engineering Team*`,
     );
 
     const prBody = prBodyLines.join("\n");

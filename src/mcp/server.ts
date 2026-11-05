@@ -8,6 +8,7 @@ import { z } from "zod";
 import { computeRepoId } from "../core/git.ts";
 import { createLogger } from "../core/logger.ts";
 import { ensureProjectLayout } from "../core/paths.ts";
+import { NYXOWL_VERSION } from "../core/version.ts";
 import { StateDb } from "./db/sqlite.ts";
 import { blackboardEngineTools } from "./engines/blackboard/index.ts";
 import { bootstrapNavigatorEngineTools } from "./engines/bootstrap-navigator/index.ts";
@@ -59,7 +60,7 @@ export function createNyxMcpServer(options: ExecuteToolOptions = {}): Server {
   const server = new Server(
     {
       name: "nyxowl",
-      version: "1.0.0",
+      version: NYXOWL_VERSION,
     },
     {
       capabilities: {

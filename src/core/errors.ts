@@ -30,6 +30,7 @@ export type ErrorCode =
   | "ERR_HOST_UNSUPPORTED"
   | "ERR_DB_FAILURE"
   | "ERR_ARTIFACT_NOT_FOUND"
+  | "ERR_FILE_TOO_LARGE"
   | "ERR_INTERNAL";
 
 export class NyxError extends Error {

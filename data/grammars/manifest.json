@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "files": {
+    "tree-sitter-go.wasm": {
+      "sha256": "9963ca89b616eaf04b08a43bc1fb0f07b85395bec313330851f1f1ead2f755b6",
+      "bytes": 235957
+    },
+    "tree-sitter-python.wasm": {
+      "sha256": "9056d0fb0c337810d019fae350e8167786119da98f0f282aceae7ab89ee8253b",
+      "bytes": 476105
+    },
+    "tree-sitter-rust.wasm": {
+      "sha256": "4409921a70d0aa5bec7d1d7ce809a557a8ee1cf6ace901e3ac6a76e62cfea903",
+      "bytes": 818756
+    }
+  }
+}
