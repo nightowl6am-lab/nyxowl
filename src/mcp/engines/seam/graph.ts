@@ -26,6 +26,21 @@ export interface SeamMismatch {
   message: string;
 }
 
+export function routePathMatches(endpointPath: string, callPath: string): boolean {
+  const endpointSegments = endpointPath.split("/").filter(Boolean);
+  const callSegments = callPath.split("/").filter(Boolean);
+
+  for (let i = 0; i < endpointSegments.length; i++) {
+    const endpointSegment = endpointSegments[i];
+    if (endpointSegment === "*") return true;
+    const callSegment = callSegments[i];
+    if (callSegment === undefined) return false;
+    if (endpointSegment !== ":param" && endpointSegment !== callSegment) return false;
+  }
+
+  return endpointSegments.length === callSegments.length;
+}
+
 function walkAllProjectFiles(
   rootDir: string,
   currentDir = rootDir,
@@ -136,9 +151,11 @@ export const nyxSeamCheckTool = defineTool({
     if (apiEndpoints.length > 0 && clientCalls.length > 0) {
       checkedLayers.push("api-client");
       for (const call of clientCalls) {
-        const matchedEndpoint = apiEndpoints.find(
-          (ep) => ep.path === call.path && ep.method === call.method,
-        );
+        const matchedEndpoint =
+          apiEndpoints.find((ep) => ep.path === call.path && ep.method === call.method) ??
+          apiEndpoints.find(
+            (ep) => ep.method === call.method && routePathMatches(ep.path, call.path),
+          );
         if (!matchedEndpoint) {
           mismatches.push({
             kind: "api-client-drift",
