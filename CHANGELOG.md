@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- **Docs:** Added `docs/updating.md` (upgrade, verification, rollback, and state-preservation guide), an "Updating Nyxowl" section in the README, and `CHANGELOG.md` to the published package files. Added docs link-integrity and package-manifest tests.
+
 ### Changed
 - **Engine 2 AST accuracy:** `nyx_symbol_skeleton` now parses Python, Go, and Rust with vendored tree-sitter WebAssembly grammars (offline, no runtime network) instead of regex-only outlines, preserving the legacy outline as a fallback when a grammar is unavailable. Added language-aware symbol classification to `nyx_trace_symbol` (definitions, imports, and call sites for Python/Go/Rust, with symbol-aware import detection for TS/JS). Vendored `tree-sitter-wasms@0.1.13` grammars for Python, Go, and Rust under `data/grammars/`.
 
