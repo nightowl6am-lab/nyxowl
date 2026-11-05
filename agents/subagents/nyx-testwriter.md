@@ -16,7 +16,7 @@ nyx_tools:
   - testwriter_lint
   - testwriter_gate
   - testwriter_finish
-skills: registry
+skills: local
 output_contract: subagent-summary-v1
 ---
 

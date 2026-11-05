@@ -41,7 +41,7 @@
       "type": "array",
       "items": { "type": "string" }
     },
-    "skills": { "type": "string", "const": "registry" },
+    "skills": { "type": "string", "const": "local" },
     "output_contract": {
       "type": "string",
       "enum": ["orchestrator-report-v1", "subagent-summary-v1"]

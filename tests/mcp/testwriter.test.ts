@@ -215,7 +215,6 @@ describe("Test-Writer broker and tools", () => {
 
     const agent = parseAndCompileAgentFile({
       filePath: path.join(process.cwd(), "agents", "subagents", "nyx-testwriter.md"),
-      includeConditionalAll: true,
       maxPromptTokens: 1200,
       pkgRoot: process.cwd(),
     });
@@ -226,13 +225,15 @@ describe("Test-Writer broker and tools", () => {
       bash: "deny",
       webfetch: "deny",
     });
-    expect(agent.claudeToolsAllowlist).toEqual([
-      "mcp__nyxowl__nyx_testwriter_job",
-      "mcp__nyxowl__nyx_testwriter_write",
-      "mcp__nyxowl__nyx_testwriter_lint",
-      "mcp__nyxowl__nyx_testwriter_gate",
-      "mcp__nyxowl__nyx_testwriter_finish",
+    expect(agent.contract.nyx_tools).toEqual([
+      "testwriter_job",
+      "testwriter_write",
+      "testwriter_lint",
+      "testwriter_gate",
+      "testwriter_finish",
     ]);
+    expect(agent.skillLoaded).toBe(false);
+    expect(agent.skillPath.endsWith(path.join("nyx-testwriter", "SKILL.md"))).toBe(true);
     expect(ROLE_ALLOWED_NYX_TOOLS["nyxowl"]).toContain("testwriter_prepare");
     expect(ROLE_ALLOWED_NYX_TOOLS["nyxowl"]).toContain("testwriter_status");
   });

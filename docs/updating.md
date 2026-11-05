@@ -29,7 +29,7 @@ nyxowl doctor
 nyxowl /path/to/project
 ```
 
-`nyxowl doctor` checks runtimes and detected hosts, verifies bundled skill SHA-256 hashes, and reports the registered MCP tool count. Your existing state and host packages are reused or regenerated as described below.
+`nyxowl doctor` checks runtimes, reports OpenCode status, reports the 11 per-agent skill slots, and reports the registered MCP tool count. Your existing state and the OpenCode package are reused or regenerated as described below.
 
 ## No-install / npx
 
@@ -59,22 +59,21 @@ Upgrades do not reset your local state. Nyxowl keeps it under `~/.nyxowl/` (over
 - The HMAC-SHA256 receipt signing key in `~/.nyxowl/secrets/receipt.key`.
 - Global configuration in `~/.nyxowl/config.json`.
 - Per-project SQLite state under `~/.nyxowl/projects/<repo-id>/`.
-- Worktrees under `~/.nyxowl/worktrees/<repo-id>/`. The Tier C Cursor host may instead use the repository's `.nyxowl/worktrees/`; those worktrees persist with the repository.
+- Worktrees under `~/.nyxowl/worktrees/<repo-id>/`; these worktrees persist with the local Nyxowl state.
 - Receipts and project artifacts.
 
 Nyxowl does not modify repository files during an upgrade. Optional files written by `nyxowl init --project` are owned by that command, not by the upgrade.
 
 ## What regenerates
 
-- `~/.nyxowl/hosts/<host>/` is regenerated when the version recorded in the install manifest differs from the running version. This happens on the next launch or on `nyxowl doctor`.
-- Cursor user-level managed blocks regenerate only when Cursor is detected.
-- The MCP server starts from the installed package on the next host session.
+- `~/.nyxowl/hosts/opencode/` is regenerated when the version recorded in the install manifest differs from the running version. This happens on the next launch or on `nyxowl doctor`.
+- The MCP server starts from the installed package on the next OpenCode session.
 
 ## Post-upgrade checklist
 
 1. `nyxowl --version` — confirm the expected version.
-2. `nyxowl doctor` — confirm hosts, skill SHA-256 hashes, and runtimes.
-3. Relaunch your host so it loads the regenerated package.
+2. `nyxowl doctor` — confirm OpenCode status, the 11 skill slots, and runtimes.
+3. Relaunch OpenCode so it loads the regenerated package.
 4. `nyxowl status [path]` — confirm worktrees, slices, locks, and receipts are intact.
 5. If a repository moved, run `nyxowl relink <old-path> <new-path>`.
 
@@ -94,8 +93,8 @@ Local SQLite schema migrations are forward-only (`PRAGMA user_version`; only mig
 | Symptom | Action |
 | :--- | :--- |
 | Node.js is too old | Install Node.js >= 22.13 and rerun the command. |
-| `nyxowl doctor` reports host version drift | Update the host binary, or treat the warning as advisory until the adapter is verified against the new major version. |
-| Host configuration looks stale | Relaunch the host; `nyxowl doctor` also regenerates host packages when the install-manifest version differs. |
+| `nyxowl doctor` reports OpenCode version drift | Update the OpenCode binary, or treat the warning as advisory until the adapter is verified against the new major version. |
+| OpenCode configuration looks stale | Relaunch OpenCode; `nyxowl doctor` also regenerates the package when the install-manifest version differs. |
 | Stale worktrees | `nyxowl worktree list` inspects recorded worktrees; `prune` is currently an alias of `list` and does not delete anything. `nyxowl worktree remove <slug>` only marks the database record removed; delete any leftover directory manually. |
 | Full reset | Back up `~/.nyxowl` first (see Rollback); `nyxowl uninstall [--purge] [--yes]` restores user configs and removes Nyxowl files. |
 | Source installer | Build and run from the checkout instead of npm; source installers do not use the published package. |

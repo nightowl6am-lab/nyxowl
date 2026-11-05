@@ -1,10 +1,9 @@
-import fs from "node:fs";
 import { NYXOWL_VERSION } from "../../core/version.ts";
 import path from "node:path";
 import { resolveGlobalNyxowlPaths } from "../../core/paths.ts";
 import { compileAllAgentsAndCommands } from "../compiler.ts";
+import { resolveNyxowlCliCommand } from "../cli-command.ts";
 import { writeTrackedFile } from "../manifest.ts";
-import { resolveNyxowlCliCommand } from "./claude.ts";
 
 export interface OpenCodePackageResult {
   packageDir: string;
@@ -343,7 +342,6 @@ export function generateOpenCodeHostPackage(options?: {
   nyxowlHome?: string;
   projectPath?: string;
   worktreeRoot?: string;
-  dnaTags?: Iterable<string>;
   pkgRoot?: string;
 }): OpenCodePackageResult {
   const globalPaths = resolveGlobalNyxowlPaths(options?.nyxowlHome);
@@ -352,8 +350,6 @@ export function generateOpenCodeHostPackage(options?: {
   const cliCmd = resolveNyxowlCliCommand(options?.pkgRoot);
 
   const bundle = compileAllAgentsAndCommands({
-    ...(options?.dnaTags ? { dnaTags: options.dnaTags } : {}),
-    includeConditionalAll: !options?.dnaTags,
     ...(options?.pkgRoot ? { pkgRoot: options.pkgRoot } : {}),
   });
 
@@ -373,19 +369,6 @@ export function generateOpenCodeHostPackage(options?: {
       description: cmd.description,
       template: cmd.bodyMarkdown,
     };
-  }
-
-  // Copy resolved skills into packageDir/skills
-  for (const skill of bundle.allResolvedSkills) {
-    const srcMd = path.join(skill.sourcePath, "SKILL.md");
-    if (fs.existsSync(srcMd)) {
-      writeTrackedFile({
-        targetPath: path.join(packageDir, "skills", skill.name, "SKILL.md"),
-        content: fs.readFileSync(srcMd, "utf8"),
-        host: "opencode",
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-      });
-    }
   }
 
   // OpenCode v2 auto-discovers plugins inside the config directory, so keep the

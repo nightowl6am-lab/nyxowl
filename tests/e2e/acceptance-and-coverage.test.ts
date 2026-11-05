@@ -198,6 +198,12 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
     );
     expect(dispatchDb.isError).toBeFalsy();
     expect(dispatchDb.structuredContent?.["outputContract"]).toBe("subagent-summary-v1");
+    expect(dispatchDb.structuredContent?.["skillLoaded"]).toBe(false);
+    expect(
+      String(dispatchDb.structuredContent?.["skillPath"]).endsWith(
+        path.join("nyx-db", "SKILL.md"),
+      ),
+    ).toBe(true);
 
     const dispatchApi = await invokeToolDefinition(
       nyxTaskDispatchTool,
@@ -322,7 +328,7 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
       "{",
       "  // Full config override test",
       '  "version": 1,',
-      '  "preferredHost": "claude",',
+      '  "preferredHost": "opencode",',
       '  "baseBranch": "main",',
       '  "protectedBranches": ["main", "production"],',
       '  "worktreeRoot": "external",',
@@ -340,7 +346,7 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
     fs.writeFileSync(path.join(repoDir, ".nyxowl", "config.json"), jsoncText, "utf8");
 
     const parsedJsonc = parseJsonc<Record<string, unknown>>(jsoncText);
-    expect(parsedJsonc["preferredHost"]).toBe("claude");
+    expect(parsedJsonc["preferredHost"]).toBe("opencode");
 
     const cfg = loadConfig({
       projectPath: repoDir,
@@ -481,24 +487,29 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
     });
     expect(fs.readFileSync(tomlFile, "utf8")).toContain("[mcp_servers.nyxowl]");
 
-    // Dry-run launch across codex, antigravity, cursor
-    const fakeBin = path.join(tmpRoot, "all-hosts-bin");
+    // Dry-run launch against a fake OpenCode binary
+    const fakeBin = path.join(tmpRoot, "opencode-bin");
     fs.mkdirSync(fakeBin, { recursive: true });
-    for (const h of ["codex", "agy", "cursor"]) {
-      const p = path.join(fakeBin, h);
-      fs.writeFileSync(p, `#!/usr/bin/env node\nconsole.log("${h} 1.0.0");\n`, { mode: 0o755 });
-    }
-    const envPathAll = `${fakeBin}${path.delimiter}${process.env["PATH"] ?? ""}`;
-    for (const hostId of ["codex", "antigravity", "cursor"] as const) {
-      const lr = await launchNyxowlSession({
-        targetPath: repoDir,
-        hostOverride: hostId,
-        nyxowlHome: nyxHome,
-        envPath: envPathAll,
-        dryRun: true,
-      });
-      expect(lr.selectedHost.id).toBe(hostId);
-    }
+    const fakeOpenCode = path.join(fakeBin, "opencode");
+    fs.writeFileSync(
+      fakeOpenCode,
+      [
+        "#!/usr/bin/env node",
+        'if (process.argv.includes("--version")) { console.log("opencode 2.2.5"); process.exit(0); }',
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const envPathOpenCode = `${fakeBin}${path.delimiter}${process.env["PATH"] ?? ""}`;
+    const lr = await launchNyxowlSession({
+      targetPath: repoDir,
+      nyxowlHome: nyxHome,
+      envPath: envPathOpenCode,
+      dryRun: true,
+    });
+    expect(lr.selectedHost.id).toBe("opencode");
+    expect(lr.launchArgs).toEqual(["--standalone", repoDir]);
   });
 
   it("Dogfooding (§12): Nyxowl's own src/ codebase passes nyx_slop_check with 0 blocking findings", async () => {

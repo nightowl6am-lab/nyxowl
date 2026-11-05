@@ -569,8 +569,7 @@ export function evaluateGuardPayload(
 
 export function formatHookOutput(decision: GuardDecision): string {
   const reason = decision.reason ?? "Permitted by Nyxowl guard.";
-  // Unified response format compatible with Claude Code (hookSpecificOutput)
-  // and Antigravity (permissionDecision)
+  // Unified response consumed by the OpenCode plugin (permissionDecision) and Nyxowl hooks.
   return JSON.stringify({
     decision: decision.decision === "deny" ? "deny" : "allow",
     reason,

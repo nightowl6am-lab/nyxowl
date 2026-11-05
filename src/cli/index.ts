@@ -8,7 +8,7 @@ import { resolveGlobalNyxowlPaths, resolveProjectNyxowlPaths } from "../core/pat
 import { ensureReceiptKey, type ReceiptPayload, verifyReceiptHmac } from "../core/receipts.ts";
 import { openProjectDb } from "../mcp/db/sqlite.ts";
 import { startStdioMcpServer } from "../mcp/server.ts";
-import { buildCompactCodexAgentsBlock } from "./compiler.ts";
+import { buildProjectAgentsBlock } from "./compiler.ts";
 import { type HostId } from "./detect-hosts.ts";
 import { runEditGuardCli } from "./hooks/edit-guard.ts";
 import { runGuardCli } from "./hooks/guard.ts";
@@ -47,14 +47,14 @@ export async function runCli(
       `nyxowl v${NYXOWL_VERSION} — Principal Tech Lead, 10 Subagents & 8-Engine Runtime MCP`,
       "",
       "Usage:",
-      "  nyxowl [path] [--host <id>] [--include-dirty]   Setup (if first run) and launch host session",
-      "  nyxowl doctor                                   Verify runtimes, hosts, skills, and MCP server",
+      "  nyxowl [path] [--host opencode] [--include-dirty]   Setup (if first run) and launch an OpenCode session",
+      "  nyxowl doctor                                   Verify runtimes, OpenCode status, skill slots, and MCP server",
       "  nyxowl status [path]                            Show worktrees, slices, strikes, locks, receipts",
       "  nyxowl handoff [path]                           Print latest task handoff & hydrate digest",
       "  nyxowl worktree list|prune|remove [<slug>]      Manage isolated Nyxowl worktrees",
       "  nyxowl receipts verify [<id>]                   Verify receipt HMACs and working-tree bindings",
       "  nyxowl github connect                           Configure optional Mode A GitHub App credentials",
-      "  nyxowl init --project [--target <host>]         Write optional committable project config",
+      "  nyxowl init --project                            Write optional committable project config",
       "  nyxowl relink <old-path> <new-path>             Migrate state after moving a repository",
       "  nyxowl uninstall [--purge] [--yes]              Restore user configs and remove Nyxowl files",
       "  nyxowl mcp                                      Start stdio MCP server",
@@ -109,7 +109,7 @@ export async function runCli(
     });
     const lines = [
       ...setupRes.summaryLines,
-      "Host Matrix Status:",
+      "OpenCode Status:",
       ...setupRes.detectedHosts.map(
         (h) =>
           `  - ${h.id} (${h.displayName}): ${
@@ -334,7 +334,7 @@ export async function runCli(
     }
     upsertManagedBlockFile({
       targetPath: path.join(cwd, "AGENTS.md"),
-      blockBody: buildCompactCodexAgentsBlock(),
+      blockBody: buildProjectAgentsBlock(),
       ...(nyxowlHome ? { nyxowlHome } : {}),
     });
     return {
@@ -389,7 +389,7 @@ export async function runCli(
     };
   }
 
-  // 12. Default command: nyxowl [path] [--host <id>] [--include-dirty]
+  // 12. Default command: nyxowl [path] [--host opencode] [--include-dirty]
   let targetPath = cwd;
   let hostOverride: HostId | undefined;
   let includeDirty = false;
@@ -397,7 +397,15 @@ export async function runCli(
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--host" && args[i + 1]) {
-      hostOverride = args[i + 1] as HostId;
+      const hostValue = args[i + 1]!;
+      if (hostValue !== "opencode") {
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: `Unsupported host "${hostValue}". OpenCode is the only supported host.\n`,
+        };
+      }
+      hostOverride = hostValue as HostId;
       i++;
     } else if (arg === "--include-dirty") {
       includeDirty = true;

@@ -1,76 +1,108 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  buildCompactCodexAgentsBlock,
+  buildProjectAgentsBlock,
   compileAllAgentsAndCommands,
   ROLE_ALLOWED_NYX_TOOLS,
 } from "../../src/cli/compiler.ts";
-import {
-  loadAndValidateSkillRegistry,
-  resolveSkillsForAgentRole,
-  verifyVendoredSkillIntegrity,
-} from "../../src/cli/skills.ts";
+import { AGENT_SKILL_IDS, agentSkillPath, getSkillSlotReport } from "../../src/cli/skills.ts";
+import { NyxError } from "../../src/core/errors.ts";
 import { estimateTokens } from "../../src/core/tokens.ts";
 
-describe("Step 8 — Canonical Agents, Commands, Skill Registry & Vendoring", () => {
-  it("validates agents/skills/registry.json and verifies SHA-256 integrity of all 16 vendored skills", () => {
-    const registry = loadAndValidateSkillRegistry();
-    expect(registry.version).toBe(1);
-    expect(Object.keys(registry.skills).length).toBe(16);
-    expect(Object.keys(registry.roles).length).toBe(11);
+const repoRoot = process.cwd();
 
-    const integrity = verifyVendoredSkillIntegrity();
-    expect(integrity.valid).toBe(true);
-    expect(integrity.checked).toBe(16);
-    expect(integrity.mismatches).toEqual([]);
+describe("Step 8 — Canonical Agents, Commands & Per-Agent Skill Slots", () => {
+  it("ships exactly 11 empty per-agent skill slots and no vendored/registry skill system", () => {
+    expect(AGENT_SKILL_IDS.length).toBe(11);
+    expect(new Set(AGENT_SKILL_IDS).size).toBe(11);
+
+    const report = getSkillSlotReport();
+    expect(report.length).toBe(11);
+    for (const slot of report) {
+      expect(fs.existsSync(slot.path)).toBe(true);
+      expect(fs.statSync(slot.path).size).toBe(0);
+      expect(slot.loaded).toBe(false);
+      expect(slot.path.endsWith(path.join(slot.agentId, "SKILL.md"))).toBe(true);
+    }
+
+    expect(fs.existsSync(path.join(repoRoot, "skills-vendor"))).toBe(false);
+    expect(fs.existsSync(path.join(repoRoot, "agents", "skills", "registry.json"))).toBe(false);
   });
 
-  it("compiles all 11 canonical agents and 6 slash commands within prompt budgets and tool scoping (§4.2, §4.4)", () => {
-    const bundle = compileAllAgentsAndCommands({
-      includeConditionalAll: true,
-      maxPromptTokens: 1200,
-    });
+  it("rejects unknown and path-traversal agent skill ids before building a path", () => {
+    for (const agentId of ["unknown-agent", "../nyx-api", "nyx-api/../../escape"]) {
+      let caught: unknown;
+      try {
+        agentSkillPath(agentId);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(NyxError);
+      expect((caught as NyxError).code).toBe("ERR_CONFIG_INVALID");
+      expect((caught as Error).message).toBe(`Unknown agent skill id "${agentId}"`);
+    }
+  });
+
+  it("compiles all 11 canonical agents and 6 slash commands with empty skill slots", () => {
+    const bundle = compileAllAgentsAndCommands({ maxPromptTokens: 1200 });
 
     expect(bundle.agents.length).toBe(11);
     expect(bundle.commands.length).toBe(6);
 
     for (const agent of bundle.agents) {
       expect(agent.tokenCount).toBeLessThanOrEqual(1200);
-      expect(agent.excludedPlaceholders.length).toBe(1);
+      expect(agent.skillLoaded).toBe(false);
+      expect(agent.skillPath.endsWith(path.join(agent.contract.id, "SKILL.md"))).toBe(true);
+      expect(agent.compiledPrompt).not.toContain("## Agent Skill");
       const expectedTools = ROLE_ALLOWED_NYX_TOOLS[agent.contract.id];
       expect(expectedTools).toBeDefined();
       expect(agent.contract.nyx_tools).toEqual(expectedTools);
     }
 
-    const codexBlock = buildCompactCodexAgentsBlock();
-    expect(estimateTokens(codexBlock)).toBeLessThanOrEqual(300);
+    const projectBlock = buildProjectAgentsBlock();
+    expect(estimateTokens(projectBlock)).toBeLessThanOrEqual(300);
   });
 
-  it("resolves DNA-conditional skills for nyx-db, nyx-api, and nyx-probe only when DNA matches", () => {
-    const dbNoPostgres = resolveSkillsForAgentRole({
-      role: "nyx-db",
-      dnaTags: ["sqlite"],
-    });
-    expect(dbNoPostgres.resolved.map((s) => s.name)).toEqual(["database-migrations"]);
-    expect(dbNoPostgres.excludedPlaceholders).toEqual(["nyx-database"]);
+  describe("custom skill slot injection", () => {
+    let tmpRoot: string;
+    let pkgRoot: string;
 
-    const dbPostgres = resolveSkillsForAgentRole({
-      role: "nyx-db",
-      dnaTags: ["postgres"],
+    beforeEach(() => {
+      tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-skill-slot-"));
+      pkgRoot = path.join(tmpRoot, "pkg");
+      fs.mkdirSync(pkgRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(pkgRoot, "package.json"),
+        JSON.stringify({ name: "nyx-skill-slot-fixture", version: "1.0.0" }),
+      );
+      fs.cpSync(path.join(repoRoot, "agents"), path.join(pkgRoot, "agents"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(pkgRoot, "agents", "skills", "nyx-api", "SKILL.md"),
+        "Custom skill content.",
+      );
     });
-    expect(dbPostgres.resolved.map((s) => s.name)).toEqual([
-      "database-migrations",
-      "supabase-postgres-best-practices",
-      "postgres-rls-audit",
-    ]);
 
-    const apiFastifyUpstash = resolveSkillsForAgentRole({
-      role: "nyx-api",
-      dnaTags: ["fastify", "upstash"],
+    afterEach(() => {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
     });
-    expect(apiFastifyUpstash.resolved.map((s) => s.name)).toEqual([
-      "fastify-best-practices",
-      "upstash-redis-js",
-      "upstash-ratelimit-js",
-    ]);
+
+    it("appends the slot content only to the matching agent prompt", () => {
+      const bundle = compileAllAgentsAndCommands({ pkgRoot });
+      expect(bundle.agents.length).toBe(11);
+
+      for (const agent of bundle.agents) {
+        if (agent.contract.id === "nyx-api") {
+          expect(agent.skillLoaded).toBe(true);
+          expect(agent.compiledPrompt).toContain("## Agent Skill\nCustom skill content.");
+        } else {
+          expect(agent.skillLoaded).toBe(false);
+          expect(agent.compiledPrompt).not.toContain("## Agent Skill");
+        }
+      }
+    });
   });
 });
