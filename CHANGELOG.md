@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Removed
+- Removed **Gemini CLI** and **Windsurf** host adapters, templates, detection entries, configuration values, and documentation. Claude Code, OpenCode, Codex CLI, Antigravity (`agy`), and Cursor remain supported.
+- Nyxowl is now **Linux-only** (including WSL2). macOS is no longer supported; `package.json`, CI, and preflight checks reject non-Linux platforms.
+
+### Changed
+- **OpenCode is now the first-class/default host (priority 1)**, followed by Claude Code, Codex, Antigravity, and Cursor.
+- Migrated the OpenCode adapter and plugin to the installed **OpenCode v2.2.5** contract: native `opencode.json` (`default_agent`, ordered `permissions`, `agents` with inline `system`, `commands`, `mcp.servers.nyxowl`, and a `plugins` directory), plus an ESM plugin using `ctx.permission.hook("evaluate")` and `ctx.session.hook("context")`. Launch is now `opencode --standalone <path>`.
+- First-run setup now always generates the OpenCode package and only generates Claude, Codex, Antigravity, and Cursor packages when those hosts are detected.
+
 ### Added
 - **Docs:** Added `docs/updating.md` (upgrade, verification, rollback, and state-preservation guide), an "Updating Nyxowl" section in the README, and `CHANGELOG.md` to the published package files. Added docs link-integrity and package-manifest tests.
 - **Grammar integrity:** Added `data/grammars/manifest.json` pinning the byte length and SHA-256 of the vendored Python, Go, and Rust tree-sitter grammars. Grammars are verified from the same directory as the `.wasm`, and only verified bytes are passed to the loader.

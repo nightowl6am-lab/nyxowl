@@ -10,7 +10,7 @@ Nyxowl consists of three tightly integrated subsystems:
 ```mermaid
 flowchart LR
     U["User: nyxowl /path/to/repo"] --> L["Launcher (src/cli/launcher.ts)"]
-    L --> H["Host Session (Claude / OpenCode / Antigravity / Codex / Gemini)"]
+    L --> H["Host Session (OpenCode (default) / Claude / Antigravity / Codex / Cursor)"]
     H -- "PreToolUse / SessionStart" --> HK["Hooks (guard / edit-guard / session-start)"]
     H -- "stdio MCP" --> M["Nyxowl MCP Server (31 nyx_* tools)"]
     M --> DB[("~/.nyxowl/projects/<repo-id>/state.db (SQLite WAL)")]

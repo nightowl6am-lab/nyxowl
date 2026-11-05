@@ -17,7 +17,7 @@ nyxowl /path/to/your/project
 That's it. On first run, `nyxowl` automatically:
 1. Initializes `~/.nyxowl/` (`0700`) and generates your local HMAC-SHA256 receipt signing key (`0600`).
 2. Verifies the SHA-256 integrity of all 16 bundled third-party skills (`skills-vendor/`).
-3. Detects your installed coding hosts (`claude`, `opencode`, `codex`, `gemini`, `agy`, `cursor`, `windsurf`) and builds session-scoped packages under `~/.nyxowl/hosts/<host>/`.
+3. Detects your installed coding hosts (`opencode`, `claude`, `codex`, `agy`, `cursor`) and builds session-scoped packages under `~/.nyxowl/hosts/<host>/`. **OpenCode is the first-class/default host (priority 1).** Nyxowl v1 is **Linux-only** (including WSL2).
 4. Classifies `/path/to/your/project` (empty folder → Greenfield bootstrap; untracked files → Adopt mode with secret & 50 MB guard; Git repo → isolated worktree) and launches your preferred host with the `nyxowl` Principal Tech Lead agent preselected.
 
 **Zero project footprint:** Nyxowl never writes `.claude/`, `.cursor/`, `AGENTS.md`, or SQLite files into your repository unless you explicitly run `nyxowl init --project`.
@@ -26,15 +26,15 @@ That's it. On first run, `nyxowl` automatically:
 
 ## Host Support & Security Tiers
 
+OpenCode is the first-class/default host (priority 1). Nyxowl v1 runs on **Linux only** (including WSL2).
+
 | Host | Binary | Security Tier | Delivery Mode | Worktree Root |
 | :--- | :--- | :---: | :--- | :--- |
-| **Claude Code** | `claude` | **Tier A** | Session-scoped (`--plugin-dir`, `--settings`, `--agent nyxowl`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **OpenCode** | `opencode` | **Tier A** | Session-scoped (`OPENCODE_CONFIG`, `--agent nyxowl`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **Google Antigravity** | `agy` | **Tier A** | Session-scoped (`--agent nyxowl`, `--add-dir`, `--sandbox`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **OpenAI Codex CLI** | `codex` | **Tier B** | Session-scoped (`CODEX_HOME`, `--profile nyxowl`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **Gemini CLI** | `gemini` | **Tier B** | Session-scoped (`--extensions`, `--include-directories`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **Cursor** | `cursor` | **Tier C** | User-level namespaced (`~/.cursor/rules/nyxowl.mdc`) | In-repo fallback (`.nyxowl/worktrees/`) |
-| **Windsurf** | `windsurf` | **Tier C** | User-level namespaced (`global_rules.md` managed block) | In-repo fallback (`.nyxowl/worktrees/`) |
+| **OpenCode** (default, priority 1) | `opencode` | **Tier A** | Session-scoped (`OPENCODE_CONFIG`, native v2 config + plugin directory) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
+| **Claude Code** (priority 2) | `claude` | **Tier A** | Session-scoped (`--plugin-dir`, `--settings`, `--agent nyxowl`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
+| **OpenAI Codex CLI** (priority 3) | `codex` | **Tier B** | Session-scoped (`CODEX_HOME`, `--profile nyxowl`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
+| **Google Antigravity** (priority 4) | `agy` | **Tier A** | Session-scoped (`--agent nyxowl`, `--add-dir`, `--sandbox`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
+| **Cursor** (priority 5) | `cursor` | **Tier C** | User-level namespaced (`~/.cursor/rules/nyxowl.mdc`) | In-repo fallback (`.nyxowl/worktrees/`) |
 
 See [`docs/host-matrix.md`](./docs/host-matrix.md) for the full capability verification matrix.
 

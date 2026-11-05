@@ -465,8 +465,9 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
     });
     expect(hookCompactRes.exitCode).toBe(0);
 
-    // Preflight checks for win32 (WSL2 instructions) and old Node (<22.13)
+    // Preflight checks for win32 (WSL2 instructions), non-Linux platforms, and old Node (<22.13)
     await expect(runPreflightChecks({ platform: "win32" })).rejects.toThrow(/WSL2/);
+    await expect(runPreflightChecks({ platform: "darwin" })).rejects.toThrow(/Linux/);
     await expect(runPreflightChecks({ nodeVersion: "20.11.0" })).rejects.toThrow(/>= 22\.13\.0/);
 
     // TOML section merge helper
@@ -480,15 +481,15 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
     });
     expect(fs.readFileSync(tomlFile, "utf8")).toContain("[mcp_servers.nyxowl]");
 
-    // Dry-run launch across codex, gemini, antigravity, cursor, windsurf
+    // Dry-run launch across codex, antigravity, cursor
     const fakeBin = path.join(tmpRoot, "all-hosts-bin");
     fs.mkdirSync(fakeBin, { recursive: true });
-    for (const h of ["codex", "gemini", "agy", "cursor", "windsurf"]) {
+    for (const h of ["codex", "agy", "cursor"]) {
       const p = path.join(fakeBin, h);
       fs.writeFileSync(p, `#!/usr/bin/env node\nconsole.log("${h} 1.0.0");\n`, { mode: 0o755 });
     }
     const envPathAll = `${fakeBin}${path.delimiter}${process.env["PATH"] ?? ""}`;
-    for (const hostId of ["codex", "gemini", "antigravity", "cursor", "windsurf"] as const) {
+    for (const hostId of ["codex", "antigravity", "cursor"] as const) {
       const lr = await launchNyxowlSession({
         targetPath: repoDir,
         hostOverride: hostId,

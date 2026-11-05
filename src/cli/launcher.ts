@@ -13,9 +13,7 @@ import { generateAntigravityHostPackage } from "./adapters/antigravity.ts";
 import { generateClaudeHostPackage } from "./adapters/claude.ts";
 import { generateCodexHostPackage } from "./adapters/codex.ts";
 import { generateCursorHostPackage } from "./adapters/cursor.ts";
-import { generateGeminiHostPackage } from "./adapters/gemini.ts";
 import { generateOpenCodeHostPackage } from "./adapters/opencode.ts";
-import { generateWindsurfHostPackage } from "./adapters/windsurf.ts";
 import {
   type DetectedHost,
   type HostId,
@@ -114,7 +112,7 @@ export async function launchNyxowlSession(options?: {
       preferred
         ? `Requested host "${preferred}" is not installed on PATH.`
         : [
-            "No supported coding host (claude, opencode, codex, gemini, agy, cursor, windsurf) found on PATH.",
+            "No supported coding host (claude, opencode, codex, agy, cursor) found on PATH.",
             "Install one of:",
             "  Claude Code: npm install -g @anthropic-ai/claude-code",
             "  OpenCode: npm install -g opencode-ai",
@@ -184,16 +182,6 @@ export async function launchNyxowlSession(options?: {
       adapterEnv = pkg.launchEnv;
       break;
     }
-    case "gemini": {
-      const pkg = generateGeminiHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        projectPath: folderInfo.projectPath,
-        worktreeRoot,
-      });
-      launchArgs = pkg.launchArgs;
-      adapterEnv = pkg.launchEnv;
-      break;
-    }
     case "antigravity": {
       const pkg = generateAntigravityHostPackage({
         ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
@@ -206,15 +194,6 @@ export async function launchNyxowlSession(options?: {
     }
     case "cursor": {
       const pkg = generateCursorHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        projectPath: folderInfo.projectPath,
-      });
-      launchArgs = pkg.launchArgs;
-      adapterEnv = pkg.launchEnv;
-      break;
-    }
-    case "windsurf": {
-      const pkg = generateWindsurfHostPackage({
         ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
         projectPath: folderInfo.projectPath,
       });

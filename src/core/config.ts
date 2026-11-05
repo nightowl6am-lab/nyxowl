@@ -7,10 +7,8 @@ export type HostId =
   | "claude"
   | "opencode"
   | "codex"
-  | "gemini"
   | "antigravity"
-  | "cursor"
-  | "windsurf";
+  | "cursor";
 
 export type GatePolicy = "required" | "auto" | "off";
 
@@ -134,10 +132,8 @@ const VALID_HOSTS = new Set<string>([
   "claude",
   "opencode",
   "codex",
-  "gemini",
   "antigravity",
   "cursor",
-  "windsurf",
 ]);
 
 const VALID_GATES = new Set<string>(["required", "auto", "off"]);

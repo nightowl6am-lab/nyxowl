@@ -8,7 +8,7 @@
     "version": { "type": "integer", "const": 1, "default": 1 },
     "preferredHost": {
       "type": ["string", "null"],
-      "enum": ["claude", "opencode", "codex", "gemini", "antigravity", "cursor", "windsurf", null],
+      "enum": ["claude", "opencode", "codex", "antigravity", "cursor", null],
       "default": null
     },
     "baseBranch": { "type": "string", "default": "auto" },
