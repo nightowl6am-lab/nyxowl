@@ -59,13 +59,7 @@ export async function detectInstalledHosts(): Promise<DetectedHostStatus[]> {
     binary: string;
     tier: "A (+sandbox)" | "A" | "B (+sandbox)" | "B" | "C";
     deliveryMode: "session-scoped" | "user-level";
-  }> = [
-    { id: "claude", binary: "claude", tier: "A (+sandbox)", deliveryMode: "session-scoped" },
-    { id: "opencode", binary: "opencode", tier: "A", deliveryMode: "session-scoped" },
-    { id: "antigravity", binary: "agy", tier: "A (+sandbox)", deliveryMode: "session-scoped" },
-    { id: "codex", binary: "codex", tier: "B (+sandbox)", deliveryMode: "session-scoped" },
-    { id: "cursor", binary: "cursor", tier: "B", deliveryMode: "user-level" },
-  ];
+  }> = [{ id: "opencode", binary: "opencode", tier: "A", deliveryMode: "session-scoped" }];
 
   const results: DetectedHostStatus[] = [];
   for (const s of specs) {
@@ -114,7 +108,7 @@ export const envDoctorOutputSchema = z.object({
 
 export const nyxEnvDoctorTool = defineTool({
   name: "nyx_env_doctor",
-  description: "Checks installed runtimes/toolchains, detected AI hosts with enforcement tiers, and gh auth status.",
+  description: "Checks installed runtimes/toolchains, the OpenCode host with its enforcement tier, and gh auth status.",
   annotations: {
     title: "Environment & Toolchain Doctor",
     readOnlyHint: true,

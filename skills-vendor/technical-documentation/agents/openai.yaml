@@ -1,6 +1,0 @@
-interface:
-  display_name: "Technical Documentation"
-  short_description: "Write and review clear developer documentation"
-  default_prompt: "Use $technical-documentation to write or review this technical documentation."
-policy:
-  allow_implicit_invocation: true

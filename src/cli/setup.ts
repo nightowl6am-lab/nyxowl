@@ -6,10 +6,6 @@ import { execCommand } from "../core/exec.ts";
 import { ensureGlobalNyxowlDirs, resolveGlobalNyxowlPaths } from "../core/paths.ts";
 import { ensureReceiptKey } from "../core/receipts.ts";
 import { NYXOWL_VERSION } from "../core/version.ts";
-import { generateAntigravityHostPackage } from "./adapters/antigravity.ts";
-import { generateClaudeHostPackage } from "./adapters/claude.ts";
-import { generateCodexHostPackage } from "./adapters/codex.ts";
-import { generateCursorHostPackage } from "./adapters/cursor.ts";
 import { generateOpenCodeHostPackage } from "./adapters/opencode.ts";
 import {
   type DetectedHost,
@@ -17,7 +13,7 @@ import {
   selectHostToLaunch,
 } from "./detect-hosts.ts";
 import { loadInstallManifest, saveInstallManifest } from "./manifest.ts";
-import { verifyVendoredSkillIntegrity } from "./skills.ts";
+import { getSkillSlotReport } from "./skills.ts";
 
 export { NYXOWL_VERSION };
 
@@ -28,7 +24,7 @@ export interface SetupResult {
   gitVersion: string;
   detectedHosts: DetectedHost[];
   defaultHost: DetectedHost | null;
-  skillsChecked: number;
+  skillSlots: Array<{ agentId: string; path: string; loaded: boolean }>;
   summaryLines: string[];
 }
 
@@ -85,8 +81,6 @@ export async function ensureFirstRunSetup(options?: {
   nyxowlHome?: string;
   envPath?: string;
   force?: boolean;
-  userCursorDir?: string;
-  userCodexHome?: string;
 }): Promise<SetupResult> {
   const { nodeVersion, gitVersion } = await runPreflightChecks({
     ...(options?.envPath ? { envPath: options.envPath } : {}),
@@ -110,13 +104,7 @@ export async function ensureFirstRunSetup(options?: {
     manifest.nyxowlVersion === NYXOWL_VERSION &&
     fs.existsSync(globalPaths.hostsDir);
 
-  const integrity = verifyVendoredSkillIntegrity();
-  if (!integrity.valid) {
-    throw new NyxError(
-      "ERR_CONFIG_INVALID",
-      `Bundled skill integrity check failed: ${JSON.stringify(integrity.mismatches)}`,
-    );
-  }
+  const skillSlots = getSkillSlotReport();
 
   const detectedHosts = await detectInstalledHosts({
     ...(options?.envPath ? { envPath: options.envPath } : {}),
@@ -124,39 +112,9 @@ export async function ensureFirstRunSetup(options?: {
   const defaultHost = selectHostToLaunch(detectedHosts);
 
   if (!alreadyInitialized) {
-    const isInstalled = (id: DetectedHost["id"]): boolean =>
-      detectedHosts.some((h) => h.id === id && h.installed);
-
-    // OpenCode is the first-class/default host: always generate its session-scoped package.
     generateOpenCodeHostPackage({
       ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
     });
-
-    // Generate other session-scoped packages only for hosts detected on PATH.
-    if (isInstalled("claude")) {
-      generateClaudeHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-      });
-    }
-    if (isInstalled("codex")) {
-      generateCodexHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        ...(options?.userCodexHome ? { userCodexHome: options.userCodexHome } : {}),
-      });
-    }
-    if (isInstalled("antigravity")) {
-      generateAntigravityHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-      });
-    }
-
-    // Only generate user-level Cursor files if that host is detected or explicitly requested.
-    if (isInstalled("cursor") || options?.userCursorDir) {
-      generateCursorHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        ...(options?.userCursorDir ? { userCursorDir: options.userCursorDir } : {}),
-      });
-    }
 
     const updatedManifest = loadInstallManifest(options?.nyxowlHome);
     updatedManifest.nyxowlVersion = NYXOWL_VERSION;
@@ -168,12 +126,13 @@ export async function ensureFirstRunSetup(options?: {
     .map((h) => `${h.displayName} (Tier ${h.tier})`)
     .join(", ");
 
+  const filledSlots = skillSlots.filter((slot) => slot.loaded).length;
   const summaryLines = [
     `Nyxowl v${NYXOWL_VERSION} initialized at ${resolveGlobalNyxowlPaths(options?.nyxowlHome).homeDir} (0700)`,
     `Runtimes verified: Node v${nodeVersion}, git v${gitVersion}`,
-    `Skills verified: ${integrity.checked} bundled skills (SHA-256 OK, 0 network fetches required)`,
-    `Detected hosts: ${installedNames || "none on PATH"}`,
-    `Default host: ${defaultHost ? `${defaultHost.displayName} (Tier ${defaultHost.tier})` : "none"}`,
+    `Skill slots: ${skillSlots.length} total (${filledSlots} filled, ${skillSlots.length - filledSlots} empty)`,
+    `Detected host: ${installedNames || "none on PATH"}`,
+    `OpenCode: ${defaultHost ? `${defaultHost.displayName} (Tier ${defaultHost.tier})` : "none"}`,
   ];
 
   return {
@@ -183,7 +142,7 @@ export async function ensureFirstRunSetup(options?: {
     gitVersion,
     detectedHosts,
     defaultHost,
-    skillsChecked: integrity.checked,
+    skillSlots,
     summaryLines,
   };
 }

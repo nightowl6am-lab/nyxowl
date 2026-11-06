@@ -12,7 +12,7 @@ Nyxowl's security and isolation guarantees rely on POSIX semantics:
 - `0700` and `0600` filesystem permissions on `~/.nyxowl/` and `~/.nyxowl/secrets/receipt.key`,
 - Symbolic links for `.env*` worktree provisioning without copying secrets,
 - Process-group signaling (`-pid` `SIGTERM`/`SIGKILL`) for deterministic test timeout cleanup and `nyx_proc` daemon reaping,
-- Host sandboxes (Bubblewrap / Seatbelt) and POSIX shell hook execution.
+- POSIX shell hook execution and Linux filesystem permission rules.
 
 All of these work identically to Linux inside WSL2.
 
@@ -49,4 +49,4 @@ npm install -g nyxowl
 nyxowl ~/projects/my-app
 ```
 
-If you use **Cursor** or **VS Code / Antigravity** on Windows, connect to your WSL2 environment using the **Remote - WSL** extension and run `nyxowl` from the integrated WSL2 terminal.
+If you use an editor with WSL2 remote support on Windows, connect to your WSL2 environment using its **Remote - WSL** integration and run `nyxowl` from the integrated WSL2 terminal.

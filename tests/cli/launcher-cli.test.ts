@@ -85,10 +85,8 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
     expect(cDirty.mainCheckoutDirty).toBe(true);
   });
 
-  it("launches fake host binaries with OpenCode first (opencode > claude > agy) and zero project footprint", async () => {
-    createFakeHostBin(fakeBinDir, "claude", "1.0.0");
+  it("launches the fake OpenCode binary with zero project footprint", async () => {
     createFakeHostBin(fakeBinDir, "opencode", "2.2.5");
-    createFakeHostBin(fakeBinDir, "agy", "1.5.0");
 
     const projectDir = path.join(tmpRoot, "zero-footprint-repo");
     fs.mkdirSync(projectDir, { recursive: true });
@@ -127,33 +125,15 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
       expect(rec1.nyxowlSession).toBe("1");
       expect(rec1.nyxowlProject).toBe(projectDir);
 
-      // First-run generation covers OpenCode plus only the hosts detected on PATH.
+      // First-run generation covers OpenCode only.
       const hostDirs = fs
         .readdirSync(path.join(nyxowlHome, "hosts"), { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
         .sort();
-      expect(hostDirs).toEqual(["antigravity", "claude", "opencode", "opencode-plugin"]);
+      expect(hostDirs).toEqual(["opencode", "opencode-plugin"]);
 
-      // 2. Explicit `--host claude` still selects Claude Code with its plugin flags
-      const res2 = await launchNyxowlSession({
-        targetPath: projectDir,
-        hostOverride: "claude",
-        nyxowlHome,
-        envPath: envPathWithFakeHosts,
-      });
-      expect(res2.selectedHost.id).toBe("claude");
-      const rec2 = JSON.parse(fs.readFileSync(recordFile, "utf8")) as {
-        host: string;
-        argv: string[];
-      };
-      expect(rec2.host).toBe("claude");
-      expect(rec2.argv).toContain("--plugin-dir");
-      expect(rec2.argv).toContain("--settings");
-      expect(rec2.argv).toContain("--agent");
-      expect(rec2.argv).toContain("nyxowl");
-
-      // 3. Assert project tree is 100% byte-identical before and after `nyxowl <path>`!
+      // 2. Assert project tree is 100% byte-identical before and after `nyxowl <path>`!
       const afterTreeHash = await computeWorkingTreeHash(projectDir);
       const afterFiles = fs.readdirSync(projectDir).sort();
       expect(afterFiles).toEqual(beforeFiles);
@@ -163,8 +143,25 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
     }
   });
 
+  it("rejects an unsupported --host value with an OpenCode-only error", async () => {
+    createFakeHostBin(fakeBinDir, "opencode", "2.2.5");
+    const projectDir = path.join(tmpRoot, "unsupported-host-repo");
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const res = await runCli(["--host", "unknown", projectDir], {
+      nyxowlHome,
+      envPath: envPathWithFakeHosts,
+      cwd: projectDir,
+    });
+    expect(res.exitCode).toBe(1);
+    expect(res.stdout).toBe("");
+    expect(res.stderr).toBe(
+      'Unsupported host "unknown". OpenCode is the only supported host.\n',
+    );
+  });
+
   it("executes CLI subcommands: doctor, status, handoff, receipts verify (detecting forgery), relink, and uninstall", async () => {
-    createFakeHostBin(fakeBinDir, "claude", "1.0.0");
+    createFakeHostBin(fakeBinDir, "opencode", "2.2.5");
 
     const projectDir = path.join(tmpRoot, "cli-subcommands-repo");
     fs.mkdirSync(projectDir, { recursive: true });
@@ -191,7 +188,7 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
       cwd: projectDir,
     });
     expect(docRes.exitCode).toBe(0);
-    expect(docRes.stdout).toContain("Skills verified: 16 bundled skills");
+    expect(docRes.stdout).toContain("Skill slots: 11");
     expect(docRes.stdout).toContain("MCP Smoke Test: OK");
 
     // Seed a valid signed receipt in SQLite and verify `nyxowl receipts verify` passes, then tamper with it and assert rejection (§13 Scenario 9)

@@ -9,10 +9,6 @@ import {
   resolveGlobalNyxowlPaths,
 } from "../core/paths.ts";
 import { openProjectDb } from "../mcp/db/sqlite.ts";
-import { generateAntigravityHostPackage } from "./adapters/antigravity.ts";
-import { generateClaudeHostPackage } from "./adapters/claude.ts";
-import { generateCodexHostPackage } from "./adapters/codex.ts";
-import { generateCursorHostPackage } from "./adapters/cursor.ts";
 import { generateOpenCodeHostPackage } from "./adapters/opencode.ts";
 import {
   type DetectedHost,
@@ -92,6 +88,14 @@ export async function launchNyxowlSession(options?: {
   envPath?: string;
   dryRun?: boolean;
 }): Promise<LaunchSessionResult> {
+  const requestedHost = options?.hostOverride as string | undefined;
+  if (requestedHost !== undefined && requestedHost !== "opencode") {
+    throw new NyxError(
+      "ERR_HOST_UNSUPPORTED",
+      `Unsupported host "${String(requestedHost)}". OpenCode is the only supported host.`,
+    );
+  }
+
   const setupRes = await ensureFirstRunSetup({
     ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
     ...(options?.envPath ? { envPath: options.envPath } : {}),
@@ -109,14 +113,10 @@ export async function launchNyxowlSession(options?: {
   if (!selectedHost || !selectedHost.binaryPath) {
     throw new NyxError(
       "ERR_HOST_UNSUPPORTED",
-      preferred
-        ? `Requested host "${preferred}" is not installed on PATH.`
-        : [
-            "No supported coding host (claude, opencode, codex, agy, cursor) found on PATH.",
-            "Install one of:",
-            "  Claude Code: npm install -g @anthropic-ai/claude-code",
-            "  OpenCode: npm install -g opencode-ai",
-          ].join("\n"),
+      [
+        "OpenCode is not installed on PATH.",
+        "Install OpenCode: npm install -g opencode-ai",
+      ].join("\n"),
     );
   }
 
@@ -140,68 +140,16 @@ export async function launchNyxowlSession(options?: {
   }
 
   const globalPaths = resolveGlobalNyxowlPaths(options?.nyxowlHome);
-  const worktreeRoot = selectedHost.supportsExternalWorktree
-    ? projPaths.worktreesRootDir
-    : path.join(folderInfo.projectPath, ".nyxowl", "worktrees");
+  const worktreeRoot = projPaths.worktreesRootDir;
+  fs.mkdirSync(worktreeRoot, { recursive: true, mode: 0o700 });
 
-  if (selectedHost.supportsExternalWorktree) {
-    fs.mkdirSync(worktreeRoot, { recursive: true, mode: 0o700 });
-  }
-
-  let launchArgs: string[] = [];
-  let adapterEnv: Record<string, string> = {};
-
-  switch (selectedHost.id) {
-    case "claude": {
-      const pkg = generateClaudeHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        projectPath: folderInfo.projectPath,
-        worktreeRoot,
-      });
-      launchArgs = pkg.launchArgs;
-      adapterEnv = pkg.launchEnv;
-      break;
-    }
-    case "opencode": {
-      const pkg = generateOpenCodeHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        projectPath: folderInfo.projectPath,
-        worktreeRoot,
-      });
-      launchArgs = pkg.launchArgs;
-      adapterEnv = pkg.launchEnv;
-      break;
-    }
-    case "codex": {
-      const pkg = generateCodexHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        projectPath: folderInfo.projectPath,
-        worktreeRoot,
-      });
-      launchArgs = pkg.launchArgs;
-      adapterEnv = pkg.launchEnv;
-      break;
-    }
-    case "antigravity": {
-      const pkg = generateAntigravityHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        projectPath: folderInfo.projectPath,
-        worktreeRoot,
-      });
-      launchArgs = pkg.launchArgs;
-      adapterEnv = pkg.launchEnv;
-      break;
-    }
-    case "cursor": {
-      const pkg = generateCursorHostPackage({
-        ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-        projectPath: folderInfo.projectPath,
-      });
-      launchArgs = pkg.launchArgs;
-      adapterEnv = pkg.launchEnv;
-      break;
-    }
-  }
+  const openCodePackage = generateOpenCodeHostPackage({
+    ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
+    projectPath: folderInfo.projectPath,
+    worktreeRoot,
+  });
+  const launchArgs = openCodePackage.launchArgs;
+  const adapterEnv: Record<string, string> = openCodePackage.launchEnv;
 
   const launchEnv: Record<string, string> = {
     ...(process.env as Record<string, string>),
@@ -210,7 +158,6 @@ export async function launchNyxowlSession(options?: {
     NYXOWL_SESSION: "1",
     NYXOWL_PROJECT: folderInfo.projectPath,
     NYXOWL_HOME: globalPaths.homeDir,
-    NYXOWL_HOST: selectedHost.id,
     NYXOWL_FOLDER_STATE: folderInfo.classification,
     ...(options?.includeDirty ? { NYXOWL_INCLUDE_DIRTY: "1" } : {}),
   };

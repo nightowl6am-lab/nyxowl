@@ -1,6 +1,6 @@
 # Nyxowl (`nyxowl`)
 
-**Principal Tech Lead, 10 Specialized Subagents & 8-Engine Runtime MCP Server for Terminal and IDE Coding Hosts.**
+**OpenCode-only: Principal Tech Lead, 10 Specialized Subagents & 8-Engine Runtime MCP Server.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Node.js >= 22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)](https://nodejs.org)
@@ -9,6 +9,8 @@
 
 ## 2-Command Quickstart
 
+Requires OpenCode v2.2.5 on PATH (`npm install -g opencode-ai`).
+
 ```bash
 npm install -g nyxowl
 nyxowl /path/to/your/project
@@ -16,27 +18,23 @@ nyxowl /path/to/your/project
 
 That's it. On first run, `nyxowl` automatically:
 1. Initializes `~/.nyxowl/` (`0700`) and generates your local HMAC-SHA256 receipt signing key (`0600`).
-2. Verifies the SHA-256 integrity of all 16 bundled third-party skills (`skills-vendor/`).
-3. Detects your installed coding hosts (`opencode`, `claude`, `codex`, `agy`, `cursor`) and builds session-scoped packages under `~/.nyxowl/hosts/<host>/`. **OpenCode is the first-class/default host (priority 1).** Nyxowl v1 is **Linux-only** (including WSL2).
-4. Classifies `/path/to/your/project` (empty folder → Greenfield bootstrap; untracked files → Adopt mode with secret & 50 MB guard; Git repo → isolated worktree) and launches your preferred host with the `nyxowl` Principal Tech Lead agent preselected.
+2. Ships 11 per-agent skill slots at `agents/skills/<agent-id>/SKILL.md` (empty until the owner authors them) and reports the filled/empty count.
+3. Detects your installed OpenCode host (`opencode`) and builds its session-scoped package under `~/.nyxowl/hosts/opencode/`. **OpenCode v2.2.5 is the only supported host.** Nyxowl v1 is **Linux-only** (including WSL2).
+4. Classifies `/path/to/your/project` (empty folder → Greenfield bootstrap; untracked files → Adopt mode with secret & 50 MB guard; Git repo → isolated worktree) and launches OpenCode with the `nyxowl` Principal Tech Lead agent preselected.
 
-**Zero project footprint:** Nyxowl never writes `.claude/`, `.cursor/`, `AGENTS.md`, or SQLite files into your repository unless you explicitly run `nyxowl init --project`.
+**Zero project footprint:** Nyxowl never writes `AGENTS.md` or SQLite files into your repository unless you explicitly run `nyxowl init --project`.
 
 ---
 
 ## Host Support & Security Tiers
 
-OpenCode is the first-class/default host (priority 1). Nyxowl v1 runs on **Linux only** (including WSL2).
+OpenCode v2.2.5 is the only supported host. Nyxowl v1 runs on **Linux only** (including WSL2).
 
 | Host | Binary | Security Tier | Delivery Mode | Worktree Root |
 | :--- | :--- | :---: | :--- | :--- |
-| **OpenCode** (default, priority 1) | `opencode` | **Tier A** | Session-scoped (`OPENCODE_CONFIG`, native v2 config + plugin directory) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **Claude Code** (priority 2) | `claude` | **Tier A** | Session-scoped (`--plugin-dir`, `--settings`, `--agent nyxowl`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **OpenAI Codex CLI** (priority 3) | `codex` | **Tier B** | Session-scoped (`CODEX_HOME`, `--profile nyxowl`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **Google Antigravity** (priority 4) | `agy` | **Tier A** | Session-scoped (`--agent nyxowl`, `--add-dir`, `--sandbox`) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
-| **Cursor** (priority 5) | `cursor` | **Tier C** | User-level namespaced (`~/.cursor/rules/nyxowl.mdc`) | In-repo fallback (`.nyxowl/worktrees/`) |
+| **OpenCode** (v2.2.5) | `opencode` | **Tier A** | Session-scoped (`OPENCODE_CONFIG`, native v2 config + plugin directory) | External (`~/.nyxowl/worktrees/<repo-id>/`) |
 
-See [`docs/host-matrix.md`](./docs/host-matrix.md) for the full capability verification matrix.
+See [`docs/host-matrix.md`](./docs/host-matrix.md) for the full capability details.
 
 ---
 
@@ -72,14 +70,14 @@ See [`docs/host-matrix.md`](./docs/host-matrix.md) for the full capability verif
 ## CLI Reference
 
 ```bash
-nyxowl [path] [--host <id>] [--include-dirty]   # Setup (if first run) and launch host session
-nyxowl doctor                                   # Verify runtimes, hosts, skills, and MCP server
+nyxowl [path] [--host <id>] [--include-dirty]   # Setup (if first run) and launch OpenCode
+nyxowl doctor                                   # Verify runtimes, OpenCode status, skill slots, and MCP server
 nyxowl status [path]                            # Show worktrees, slices, strikes, locks, receipts
 nyxowl handoff [path]                           # Print latest task handoff & hydrate digest
 nyxowl worktree list|prune|remove [<slug>]      # Manage isolated Nyxowl worktrees
 nyxowl receipts verify [<id>]                   # Verify receipt HMACs and working-tree bindings
 nyxowl github connect                           # Configure optional Mode A GitHub App credentials
-nyxowl init --project [--target <host>]         # Write optional committable project config
+nyxowl init --project                           # Write optional committable project config
 nyxowl relink <old-path> <new-path>             # Migrate state after moving a repository
 nyxowl uninstall [--purge]                      # Restore user configs and remove Nyxowl files
 ```
@@ -88,7 +86,7 @@ nyxowl uninstall [--purge]                      # Restore user configs and remov
 
 ## Updating Nyxowl
 
-Upgrade with `npm install -g nyxowl@latest`, then run `nyxowl doctor` to verify runtimes, hosts, skills, and MCP tool registration. State in `~/.nyxowl/` persists across upgrades, and host packages regenerate automatically. See [`docs/updating.md`](./docs/updating.md) for upgrade, verification, rollback, and state guidance.
+Upgrade with `npm install -g nyxowl@latest`, then run `nyxowl doctor` to verify runtimes, OpenCode status, skill slots, and MCP tool registration. State in `~/.nyxowl/` persists across upgrades, and the OpenCode package regenerates automatically. See [`docs/updating.md`](./docs/updating.md) for upgrade, verification, rollback, and state guidance.
 
 ---
 

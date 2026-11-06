@@ -25,7 +25,7 @@ nyx_tools:
   - verify_slice
   - proc
   - artifact_read
-skills: registry
+skills: local
 output_contract: subagent-summary-v1
 ---
 

@@ -6,9 +6,9 @@ import { NyxError } from "../core/errors.ts";
 import { estimateTokens } from "../core/tokens.ts";
 import { NYXOWL_VERSION } from "../core/version.ts";
 import {
-  type ResolvedSkill,
+  agentSkillPath,
+  loadAgentSkill,
   resolvePackageRoot,
-  resolveSkillsForAgentRole,
 } from "./skills.ts";
 
 export const REQUIRED_AGENT_SECTIONS = [
@@ -178,7 +178,7 @@ export const agentContractSchema = z.object({
     webfetch: z.literal("deny"),
   }),
   nyx_tools: z.array(z.string()),
-  skills: z.literal("registry"),
+  skills: z.literal("local"),
   output_contract: z.enum(["orchestrator-report-v1", "subagent-summary-v1"]),
 });
 
@@ -189,9 +189,8 @@ export interface CompiledAgentIR {
   bodyMarkdown: string;
   compiledPrompt: string;
   tokenCount: number;
-  claudeToolsAllowlist: string[];
-  resolvedSkills: ResolvedSkill[];
-  excludedPlaceholders: string[];
+  skillPath: string;
+  skillLoaded: boolean;
   sourceFile: string;
 }
 
@@ -205,7 +204,6 @@ export interface CompiledCommandIR {
 export interface CompiledBundleIR {
   agents: CompiledAgentIR[];
   commands: CompiledCommandIR[];
-  allResolvedSkills: ResolvedSkill[];
 }
 
 function splitMarkdownFrontmatter(raw: string, filePath: string): {
@@ -219,35 +217,8 @@ function splitMarkdownFrontmatter(raw: string, filePath: string): {
   return { frontmatterRaw: match[1], body: match[2].trim() };
 }
 
-export function buildClaudeToolsAllowlist(contract: AgentContractFrontmatter): string[] {
-  const tools: string[] = [];
-  if (contract.host_tools.read === "allow") {
-    tools.push("Read", "Glob", "Grep");
-  }
-  if (contract.host_tools.edit !== "deny") {
-    tools.push("Edit");
-  }
-  if (contract.host_tools.write !== "deny") {
-    tools.push("Write");
-  }
-  if (contract.host_tools.bash !== "deny") {
-    tools.push("Bash");
-  }
-  if (contract.mode === "primary") {
-    tools.push("Task");
-  }
-  for (const nyxTool of contract.nyx_tools) {
-    const fullTool = nyxTool.startsWith("nyx_") ? nyxTool : `nyx_${nyxTool}`;
-    tools.push(`mcp__nyxowl__${fullTool}`);
-  }
-  return tools;
-}
-
 export function parseAndCompileAgentFile(options: {
   filePath: string;
-  dnaTags?: Iterable<string>;
-  includeConditionalAll?: boolean;
-  userSkillsDir?: string;
   maxPromptTokens?: number;
   pkgRoot?: string;
 }): CompiledAgentIR {
@@ -302,28 +273,13 @@ export function parseAndCompileAgentFile(options: {
     }
   }
 
-  const skillRes = resolveSkillsForAgentRole({
-    role: contract.id,
-    ...(options.dnaTags ? { dnaTags: options.dnaTags } : {}),
-    ...(options.includeConditionalAll !== undefined
-      ? { includeConditionalAll: options.includeConditionalAll }
-      : {}),
-    ...(options.userSkillsDir ? { userSkillsDir: options.userSkillsDir } : {}),
-    ...(options.pkgRoot ? { pkgRoot: options.pkgRoot } : {}),
-  });
+  const pkgRoot = options.pkgRoot ?? resolvePackageRoot();
+  const skillPath = agentSkillPath(contract.id, pkgRoot);
+  const skillContent = loadAgentSkill(contract.id, pkgRoot);
 
-  const skillsSection =
-    skillRes.resolved.length > 0
-      ? `\n\n## Auto-Bound Skills\n${skillRes.resolved
-          .map((s) => {
-            const shortDesc =
-              s.description.length > 120 ? `${s.description.slice(0, 117)}...` : s.description;
-            return `- \`${s.name}\`: ${shortDesc}`;
-          })
-          .join("\n")}`
-      : "";
-
-  const compiledPrompt = `${body}${skillsSection}\n`;
+  const compiledPrompt = skillContent
+    ? `${body}\n\n## Agent Skill\n${skillContent}\n`
+    : body;
   const tokenCount = estimateTokens(compiledPrompt);
   if (tokenCount > maxPromptTokens) {
     throw new NyxError(
@@ -337,17 +293,13 @@ export function parseAndCompileAgentFile(options: {
     bodyMarkdown: body,
     compiledPrompt,
     tokenCount,
-    claudeToolsAllowlist: buildClaudeToolsAllowlist(contract),
-    resolvedSkills: skillRes.resolved,
-    excludedPlaceholders: skillRes.excludedPlaceholders,
+    skillPath,
+    skillLoaded: skillContent !== null,
     sourceFile: options.filePath,
   };
 }
 
 export function compileAllAgentsAndCommands(options?: {
-  dnaTags?: Iterable<string>;
-  includeConditionalAll?: boolean;
-  userSkillsDir?: string;
   maxPromptTokens?: number;
   pkgRoot?: string;
 }): CompiledBundleIR {
@@ -367,25 +319,16 @@ export function compileAllAgentsAndCommands(options?: {
   }
 
   const agents: CompiledAgentIR[] = [];
-  const skillMap = new Map<string, ResolvedSkill>();
 
   for (const filePath of agentFiles) {
     const compiled = parseAndCompileAgentFile({
       filePath,
-      ...(options?.dnaTags ? { dnaTags: options.dnaTags } : {}),
-      ...(options?.includeConditionalAll !== undefined
-        ? { includeConditionalAll: options.includeConditionalAll }
-        : {}),
-      ...(options?.userSkillsDir ? { userSkillsDir: options.userSkillsDir } : {}),
       ...(options?.maxPromptTokens !== undefined
         ? { maxPromptTokens: options.maxPromptTokens }
         : {}),
       pkgRoot,
     });
     agents.push(compiled);
-    for (const s of compiled.resolvedSkills) {
-      skillMap.set(s.name, s);
-    }
   }
 
   const commands: CompiledCommandIR[] = [];
@@ -414,14 +357,13 @@ export function compileAllAgentsAndCommands(options?: {
   return {
     agents,
     commands,
-    allResolvedSkills: Array.from(skillMap.values()),
   };
 }
 
 /**
- * Generates the compact <= 300-token Codex user-level fallback AGENTS.md managed block (§8.5, §12).
+ * Generates the compact <= 300-token generic nyx_* AGENTS.md managed block (§8.5, §12).
  */
-export function buildCompactCodexAgentsBlock(): string {
+export function buildProjectAgentsBlock(): string {
   const block = [
     "<!-- nyxowl:begin -->",
     `# Nyxowl Orchestrator Rules (generated by nyxowl v${NYXOWL_VERSION})`,
@@ -439,7 +381,7 @@ export function buildCompactCodexAgentsBlock(): string {
   if (tokens > 300) {
     throw new NyxError(
       "ERR_BUDGET_EXCEEDED",
-      `Codex AGENTS.md block exceeds 300-token budget (${tokens} tokens)`,
+      `AGENTS.md managed block exceeds 300-token budget (${tokens} tokens)`,
     );
   }
   return block;

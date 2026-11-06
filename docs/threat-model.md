@@ -8,11 +8,11 @@ This document details the security boundaries, adversary capabilities, mitigatio
 
 1. **User Main Checkout (Protected Read-Only Boundary):**
    - The user's main working tree may contain uncommitted work in progress.
-   - `nyxowl hook edit-guard` blocks direct edits to the main checkout during a Nyxowl session. All code modifications occur inside isolated Git worktrees (`~/.nyxowl/worktrees/<repo-id>/<slug>/` on Tier A/B hosts, or `<repo>/.nyxowl/worktrees/<slug>/` on Tier C hosts).
+   - `nyxowl hook edit-guard` blocks direct edits to the main checkout during a Nyxowl session. All code modifications occur inside isolated external Git worktrees (`~/.nyxowl/worktrees/<repo-id>/<slug>/`).
 2. **Local Secrets & Nyxowl State (`~/.nyxowl/secrets/`, `~/.nyxowl/projects/`, `.env*`):**
    - `.env` and `.env.*` (excluding `.env.example`, `.env.sample`, `.env.template`), `*.pem`, `*.key`, `*credentials*.json`, `~/.nyxowl/secrets/receipt.key` (`0600`), and `~/.nyxowl/projects/<repo-id>/state.db` are off-limits to agents.
    - Enforced at three layers:
-     1. Host-level permission rules (`deny` before `allow` in Claude Code; `.env.example` after `.env*` in OpenCode).
+     1. OpenCode v2.2.5 permission rules (ordered last-match-wins; `.env.example` after `.env*`).
      2. Pre-tool execution hooks (`nyxowl hook guard` and `nyxowl hook edit-guard`) parsing compound shell commands via `shell-quote`.
      3. Exact-Value + Entropy Output Redactor (`src/core/redact.ts`) applied to every MCP tool response and subprocess output stream.
 3. **External Web & Third-Party Content (Untrusted Data Boundary):**
@@ -54,7 +54,7 @@ This document details the security boundaries, adversary capabilities, mitigatio
 
 ## 4. Residual Risks
 
-1. **Hook Evasion on Non-Sandboxed Hosts (Tier B/C):** Pattern-based shell guards can potentially be bypassed via obfuscated scripts on hosts without an OS-level filesystem sandbox. Nyxowl mitigates this by preferring Tier A sandboxed hosts (`claude`, `opencode`, `agy`), displaying the active host's Security Tier at launch, and running the Output Redactor and Diff Secret Scanner inside the trusted MCP server process.
+1. **Hook Evasion in OpenCode v2.2.5:** OpenCode v2.2.5 provides no OS-level filesystem sandbox; pattern-based shell guards can potentially be bypassed via obfuscated scripts. Nyxowl mitigates this with ordered OpenCode permission rules (deny secret paths before broad allows), pre-tool `guard`/`edit-guard` hooks, worktree-only edits, red-line shell blocks, and the Output Redactor and Diff Secret Scanner running inside the trusted MCP server process. Reviewed permissions remain a defense-in-depth layer, not a kernel boundary, so the owner must still review every worktree change before merge.
 2. **Orchestrator Promotion Review:** While `nyx-product` cannot execute commands or edit files, `nyxowl` reads sanitized summaries when deciding whether to promote a Blackboard entry.
-3. **Host Config Drift:** Coding hosts evolve rapidly. `nyxowl doctor` compares installed host versions against `docs/host-matrix.md` and warns when a major version exceeds the last verified release.
+3. **OpenCode Config Drift:** OpenCode evolves rapidly. `nyxowl doctor` compares the installed OpenCode version against `docs/host-matrix.md` and warns when a major version exceeds the last verified release (v2.2.5).
 4. **Bounded Parsing/Skeleton Execution:** Hostile or pathologically deep source can exhaust memory or the call stack. Nyxowl rejects sources over 2,000,000 characters, ASTs deeper than 200 or larger than 50,000 named nodes (falling back to the legacy outline), and skeleton files over 2 MiB or 50,000 lines (`ERR_FILE_TOO_LARGE`). Grammar and skeleton caches are FIFO-bounded (32 and 256 entries). Residual risk: extremely large files are rejected rather than partially analyzed, so callers must inspect oversized files with narrower tooling.

@@ -4,6 +4,8 @@ This document is the source of truth for how the Test-Writer agent fits the
 Nyxowl flow. The runtime is installed separately; this file describes the
 contract the code and prompts must satisfy.
 
+**OpenCode v2.2.5 is the only supported host.**
+
 ## 1. Actors and order
 
 | Actor | Responsibility |

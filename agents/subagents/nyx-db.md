@@ -28,7 +28,7 @@ nyx_tools:
   - env_inspect
   - seam_check
   - artifact_read
-skills: registry
+skills: local
 output_contract: subagent-summary-v1
 ---
 

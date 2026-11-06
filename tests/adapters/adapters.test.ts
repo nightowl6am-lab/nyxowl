@@ -3,22 +3,17 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { execCommand } from "../../src/core/exec.ts";
-import { generateAntigravityHostPackage } from "../../src/cli/adapters/antigravity.ts";
-import {
-  buildClaudeSessionSettings,
-  evaluateClaudePermissionPrecedence,
-  generateClaudeHostPackage,
-} from "../../src/cli/adapters/claude.ts";
-import { generateCodexHostPackage } from "../../src/cli/adapters/codex.ts";
-import { generateCursorHostPackage } from "../../src/cli/adapters/cursor.ts";
 import {
   buildOpenCodePermissions,
   generateOpenCodeHostPackage,
 } from "../../src/cli/adapters/opencode.ts";
-import { uninstallFromManifest } from "../../src/cli/manifest.ts";
+import {
+  uninstallFromManifest,
+  upsertJsoncPropertyFile,
+  writeTrackedFile,
+} from "../../src/cli/manifest.ts";
 
-describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall", () => {
+describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall", () => {
   let tmpRoot: string;
   let nyxowlHome: string;
   let projectDir: string;
@@ -33,37 +28,6 @@ describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall",
 
   afterEach(() => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
-  });
-
-  it("Claude Code golden permission precedence: denies .env and .env.*, allows .env.example, asks on red-lines (§1.2.1)", () => {
-    const settings = buildClaudeSessionSettings({
-      worktreeRoot: "/tmp/worktrees",
-    }) as {
-      permissions: { deny: string[]; ask: string[]; allow: string[] };
-    };
-
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(.env)")).toBe("deny");
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(apps/api/.env)")).toBe("deny");
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(.env.local)")).toBe("deny");
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(apps/web/.env.production)")).toBe(
-      "deny",
-    );
-    expect(evaluateClaudePermissionPrecedence(settings, "Edit(.env.local)")).toBe("deny");
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(certs/server.pem)")).toBe("deny");
-
-    // .env.example, .env.sample, .env.template must be ALLOWED
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(.env.example)")).toBe("allow");
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(apps/api/.env.example)")).toBe(
-      "allow",
-    );
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(.env.sample)")).toBe("allow");
-    expect(evaluateClaudePermissionPrecedence(settings, "Read(.env.template)")).toBe("allow");
-
-    // Red lines must trigger `ask`
-    expect(evaluateClaudePermissionPrecedence(settings, "Bash(gh pr merge 12)")).toBe("ask");
-    expect(evaluateClaudePermissionPrecedence(settings, "Edit(.github/workflows/ci.yml)")).toBe(
-      "ask",
-    );
   });
 
   it("OpenCode v2 last-match-wins permission ordering: .env* denied, .env.example allowed after denies (§1.2.1)", () => {
@@ -169,6 +133,7 @@ describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall",
     for (const agent of Object.values(cfg.agents)) {
       expect(typeof agent.system).toBe("string");
       expect(agent.system.length).toBeGreaterThan(0);
+      expect(agent.system).not.toContain("## Agent Skill");
       expect(agent.prompt).toBeUndefined();
       expect(Array.isArray(agent.permissions)).toBe(true);
     }
@@ -217,6 +182,9 @@ describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall",
 
     expect(pkg.launchArgs).toEqual(["--standalone", projectDir]);
     expect(pkg.launchEnv["OPENCODE_CONFIG"]).toBe(pkg.configPath);
+
+    // No skill-copy directory is generated: slots are read by the compiler, not copied.
+    expect(fs.existsSync(path.join(pkg.packageDir, "skills"))).toBe(false);
   });
 
   it("never caches edit decisions: consecutive edit actions invoke edit-guard twice", async () => {
@@ -235,9 +203,8 @@ describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall",
       ].join("\n"),
       { mode: 0o755 },
     );
-    // compileAllAgentsAndCommands resolves agents/skills from pkgRoot, so expose the real ones.
+    // compileAllAgentsAndCommands resolves agents and skill slots from pkgRoot.
     fs.symlinkSync(path.join(process.cwd(), "agents"), path.join(fakeRoot, "agents"));
-    fs.symlinkSync(path.join(process.cwd(), "skills-vendor"), path.join(fakeRoot, "skills-vendor"));
 
     const pkg = generateOpenCodeHostPackage({
       nyxowlHome,
@@ -300,59 +267,33 @@ describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall",
     }
   });
 
-  it("generates supported host packages idempotently with zero project footprint and passes agy plugin validate --strict", async () => {
+  it("generates the OpenCode package idempotently with zero project footprint", () => {
     const beforeProjectFiles = fs.readdirSync(projectDir);
-    const userCursorDir = path.join(tmpRoot, "user-cursor-generation");
 
-    const claudePkg = generateClaudeHostPackage({ nyxowlHome, projectPath: projectDir });
-    const opencodePkg = generateOpenCodeHostPackage({ nyxowlHome, projectPath: projectDir });
-    const codexPkg = generateCodexHostPackage({ nyxowlHome, projectPath: projectDir });
-    const agyPkg = generateAntigravityHostPackage({ nyxowlHome, projectPath: projectDir });
-    const cursorPkg = generateCursorHostPackage({
-      nyxowlHome,
-      projectPath: projectDir,
-      userCursorDir,
-    });
+    const first = generateOpenCodeHostPackage({ nyxowlHome, projectPath: projectDir });
+    const second = generateOpenCodeHostPackage({ nyxowlHome, projectPath: projectDir });
 
-    expect(fs.existsSync(claudePkg.settingsPath)).toBe(true);
-    expect(fs.existsSync(opencodePkg.configPath)).toBe(true);
-    expect(fs.existsSync(codexPkg.configTomlPath)).toBe(true);
-    expect(fs.existsSync(agyPkg.settingsPath)).toBe(true);
-    expect(fs.existsSync(cursorPkg.mcpConfigPath)).toBe(true);
+    expect(fs.existsSync(first.configPath)).toBe(true);
+    expect(fs.existsSync(first.pluginPath)).toBe(true);
+    expect(second.configPath).toBe(first.configPath);
+
+    const hostDirs = fs
+      .readdirSync(path.join(nyxowlHome, "hosts"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(hostDirs).toEqual(["opencode", "opencode-plugin"]);
 
     // Verify zero project footprint
     const afterProjectFiles = fs.readdirSync(projectDir);
     expect(afterProjectFiles).toEqual(beforeProjectFiles);
-
-    // Live validation against `agy plugin validate --strict --json` if `agy` is installed
-    const agyBin = "/home/nightowl/.local/bin/agy";
-    if (fs.existsSync(agyBin)) {
-      const valRes = await execCommand(
-        agyBin,
-        ["plugin", "validate", agyPkg.pluginDir, "--strict", "--json"],
-        { timeoutMs: 5000 },
-      );
-      expect(valRes.exitCode).toBe(0);
-      const parsed = JSON.parse(valRes.stdout) as {
-        name: string;
-        components: { agents: number; hooks: number; mcpServers: number; skills: number };
-        findings: unknown[];
-      };
-      expect(parsed.name).toBe("nyxowl");
-      expect(parsed.components.agents).toBe(11);
-      expect(parsed.components.hooks).toBe(1);
-      expect(parsed.components.mcpServers).toBe(1);
-      expect(parsed.findings).toEqual([]);
-    }
   });
 
   it("preserves user JSONC comments and restores byte-identical user files on uninstall", () => {
-    const userCursorDir = path.join(tmpRoot, "user-cursor");
-    const userCodexDir = path.join(tmpRoot, "user-codex");
-    fs.mkdirSync(userCursorDir, { recursive: true });
-    fs.mkdirSync(userCodexDir, { recursive: true });
+    const userConfigDir = path.join(tmpRoot, "user-config");
+    fs.mkdirSync(userConfigDir, { recursive: true });
 
-    const initialCursorMcp = [
+    const initialMcp = [
       "{",
       "  // User custom comment that must be preserved",
       '  "mcpServers": {',
@@ -364,33 +305,49 @@ describe("Step 9 — Host Adapters, Permission Precedence & Manifest Uninstall",
       "}",
       "",
     ].join("\n");
-    const cursorMcpPath = path.join(userCursorDir, "mcp.json");
-    fs.writeFileSync(cursorMcpPath, initialCursorMcp, "utf8");
+    const mcpPath = path.join(userConfigDir, "mcp.json");
+    fs.writeFileSync(mcpPath, initialMcp, "utf8");
 
-    // Run Cursor and Codex user-level installs twice (idempotency check)
-    generateCursorHostPackage({ nyxowlHome, userCursorDir, projectPath: projectDir });
-    const afterFirstCursor = fs.readFileSync(cursorMcpPath, "utf8");
-    expect(afterFirstCursor).toContain("// User custom comment that must be preserved");
-    expect(afterFirstCursor).toContain('"nyxowl"');
-
-    generateCursorHostPackage({ nyxowlHome, userCursorDir, projectPath: projectDir });
-    const afterSecondCursor = fs.readFileSync(cursorMcpPath, "utf8");
-    expect(afterSecondCursor).toBe(afterFirstCursor);
-
-    generateCodexHostPackage({
+    upsertJsoncPropertyFile({
+      targetPath: mcpPath,
+      jsonPath: ["mcpServers", "nyxowl"],
+      value: {
+        command: process.execPath,
+        args: ["nyxowl", "mcp"],
+        env: { NYXOWL_SESSION: "1" },
+      },
       nyxowlHome,
-      userCodexHome: userCodexDir,
-      writeUserFallbackBlock: true,
-      projectPath: projectDir,
     });
+    const afterFirst = fs.readFileSync(mcpPath, "utf8");
+    expect(afterFirst).toContain("// User custom comment that must be preserved");
+    expect(afterFirst).toContain('"nyxowl"');
 
-    // Now run uninstallFromManifest({ purge: true }) and verify byte-identical restoration!
+    upsertJsoncPropertyFile({
+      targetPath: mcpPath,
+      jsonPath: ["mcpServers", "nyxowl"],
+      value: {
+        command: process.execPath,
+        args: ["nyxowl", "mcp"],
+        env: { NYXOWL_SESSION: "1" },
+      },
+      nyxowlHome,
+    });
+    const afterSecond = fs.readFileSync(mcpPath, "utf8");
+    expect(afterSecond).toBe(afterFirst);
+
+    const rulesPath = path.join(userConfigDir, "rules", "nyxowl.mdc");
+    writeTrackedFile({
+      targetPath: rulesPath,
+      content: "user rule\n",
+      nyxowlHome,
+    });
+    expect(fs.existsSync(rulesPath)).toBe(true);
+
     const uninstallRes = uninstallFromManifest({ nyxowlHome, purge: true });
     expect(uninstallRes.purgedHome).toBe(true);
     expect(fs.existsSync(nyxowlHome)).toBe(false);
 
-    expect(fs.readFileSync(cursorMcpPath, "utf8")).toBe(initialCursorMcp);
-    expect(fs.existsSync(path.join(userCursorDir, "rules", "nyxowl.mdc"))).toBe(false);
-    expect(fs.existsSync(path.join(userCodexDir, "AGENTS.md"))).toBe(false);
+    expect(fs.readFileSync(mcpPath, "utf8")).toBe(initialMcp);
+    expect(fs.existsSync(rulesPath)).toBe(false);
   });
 });

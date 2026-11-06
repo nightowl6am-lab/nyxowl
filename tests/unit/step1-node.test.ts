@@ -243,7 +243,7 @@ describe("Step 1 — Core & State Layer", () => {
         path.join(tmpHome, "config.json"),
         `{
           // Global config with comment
-          "preferredHost": "claude",
+          "preferredHost": "opencode",
           "budgets": { "maxToolOutputTokens": 1200, },
         }`,
       );
@@ -260,9 +260,9 @@ describe("Step 1 — Core & State Layer", () => {
       const merged = loadConfig({
         nyxHome: tmpHome,
         projectPath: tmpRepo,
-        cliOverrides: { preferredHost: "antigravity" },
+        cliOverrides: { preferredHost: "opencode" },
       });
-      assert.equal(merged.preferredHost, "antigravity");
+      assert.equal(merged.preferredHost, "opencode");
       assert.equal(merged.budgets.maxToolOutputTokens, 1200);
       assert.equal(merged.slop.scope, "full");
       assert.deepEqual(parseJsonc('{ "a": 1, /* c */ }'), { a: 1 });

@@ -3,12 +3,7 @@ import path from "node:path";
 import * as semver from "semver";
 import { execCommand } from "../core/exec.ts";
 
-export type HostId =
-  | "claude"
-  | "opencode"
-  | "codex"
-  | "antigravity"
-  | "cursor";
+export type HostId = "opencode";
 
 export type SecurityTier = "A" | "B" | "C";
 
@@ -42,50 +37,6 @@ export const HOST_SPECS: readonly HostSpec[] = [
     supportsNativeSubagents: true,
     verifiedVersion: "2.2.5",
     priority: 1,
-  },
-  {
-    id: "claude",
-    displayName: "Claude Code",
-    binaries: ["claude"],
-    tier: "A",
-    deliveryLevel: 1,
-    supportsExternalWorktree: true,
-    supportsNativeSubagents: true,
-    verifiedVersion: "1.0.0",
-    priority: 2,
-  },
-  {
-    id: "codex",
-    displayName: "OpenAI Codex CLI",
-    binaries: ["codex"],
-    tier: "B",
-    deliveryLevel: 1,
-    supportsExternalWorktree: true,
-    supportsNativeSubagents: false,
-    verifiedVersion: "0.1.0",
-    priority: 3,
-  },
-  {
-    id: "antigravity",
-    displayName: "Google Antigravity (agy)",
-    binaries: ["agy", "antigravity"],
-    tier: "A",
-    deliveryLevel: 1,
-    supportsExternalWorktree: true,
-    supportsNativeSubagents: true,
-    verifiedVersion: "1.5.0",
-    priority: 4,
-  },
-  {
-    id: "cursor",
-    displayName: "Cursor",
-    binaries: ["cursor"],
-    tier: "C",
-    deliveryLevel: 2,
-    supportsExternalWorktree: false,
-    supportsNativeSubagents: false,
-    verifiedVersion: "0.45.0",
-    priority: 5,
   },
 ] as const;
 
@@ -174,8 +125,8 @@ export async function detectInstalledHosts(options?: {
 }
 
 /**
- * Selects the best host to launch based on explicit `--host`, `config.preferredHost`, or priority order (§0.3):
- * OpenCode > Claude Code > Codex > Antigravity > Cursor.
+ * Selects the host to launch based on an explicit `--host` or `config.preferredHost`.
+ * Only OpenCode is supported, so it is the sole candidate.
  */
 export function selectHostToLaunch(
   detected: DetectedHost[],

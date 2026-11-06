@@ -7,13 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Removed
-- Removed **Gemini CLI** and **Windsurf** host adapters, templates, detection entries, configuration values, and documentation. Claude Code, OpenCode, Codex CLI, Antigravity (`agy`), and Cursor remain supported.
+- Removed **Claude Code**, **Codex CLI**, **Antigravity (`agy`)**, and **Cursor** host adapters, templates, detection entries, configuration values, tests, and documentation. **OpenCode v2.2.5 is now the only supported host.**
+- Removed **Gemini CLI** and **Windsurf** host adapters, templates, detection entries, configuration values, and documentation.
+- Removed the vendored skill tree (`skills-vendor/`), `agents/skills/registry.json`, DNA-conditional skill resolution, and bundled-skill SHA-256 integrity checks.
 - Nyxowl is now **Linux-only** (including WSL2). macOS is no longer supported; `package.json`, CI, and preflight checks reject non-Linux platforms.
 
 ### Changed
-- **OpenCode is now the first-class/default host (priority 1)**, followed by Claude Code, Codex, Antigravity, and Cursor.
-- Migrated the OpenCode adapter and plugin to the installed **OpenCode v2.2.5** contract: native `opencode.json` (`default_agent`, ordered `permissions`, `agents` with inline `system`, `commands`, `mcp.servers.nyxowl`, and a `plugins` directory), plus an ESM plugin using `ctx.permission.hook("evaluate")` and `ctx.session.hook("context")`. Launch is now `opencode --standalone <path>`.
-- First-run setup now always generates the OpenCode package and only generates Claude, Codex, Antigravity, and Cursor packages when those hosts are detected.
+- **OpenCode is the only host** and uses the installed **OpenCode v2.2.5** contract: native `opencode.json` (`default_agent`, ordered `permissions`, `agents` with inline `system`, `commands`, `mcp.servers.nyxowl`, and a `plugins` directory), plus an ESM plugin using `ctx.permission.hook("evaluate")` and `ctx.session.hook("context")`. Launch is `opencode --standalone <path>`.
+- **Skill system replaced** with exactly 11 per-agent empty slots at `agents/skills/<agent-id>/SKILL.md`. Empty slots contribute nothing to compiled prompts; an owner-authored slot is appended under `## Agent Skill`. Agent contracts now declare `skills: local`.
+- First-run setup always generates the OpenCode package and reports the 11-slot filled/empty summary.
 
 ### Added
 - **Test-Writer subagent:** Added `nyx-testwriter` and seven brokered tools (`nyx_testwriter_job`, `nyx_testwriter_write`, `nyx_testwriter_lint`, `nyx_testwriter_gate`, `nyx_testwriter_finish`, `nyx_testwriter_prepare`, `nyx_testwriter_status`) with per-role tool scoping, Python-only v1 jobs, and a fail-closed `/opt/test-writer` broker that never receives the canary, variants, mutants, or raw target output.

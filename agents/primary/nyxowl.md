@@ -30,7 +30,7 @@ nyx_tools:
   - artifact_read
   - testwriter_prepare
   - testwriter_status
-skills: registry
+skills: local
 output_contract: orchestrator-report-v1
 ---
 

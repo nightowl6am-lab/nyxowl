@@ -3,12 +3,7 @@ import path from "node:path";
 import { NyxError } from "./errors.ts";
 import { getNyxHomeLayout } from "./paths.ts";
 
-export type HostId =
-  | "claude"
-  | "opencode"
-  | "codex"
-  | "antigravity"
-  | "cursor";
+export type HostId = "opencode";
 
 export type GatePolicy = "required" | "auto" | "off";
 
@@ -128,13 +123,7 @@ export const DEFAULT_CONFIG: NyxConfig = {
   },
 };
 
-const VALID_HOSTS = new Set<string>([
-  "claude",
-  "opencode",
-  "codex",
-  "antigravity",
-  "cursor",
-]);
+const VALID_HOSTS = new Set<string>(["opencode"]);
 
 const VALID_GATES = new Set<string>(["required", "auto", "off"]);
 
