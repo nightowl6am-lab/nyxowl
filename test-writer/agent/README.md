@@ -13,12 +13,14 @@ define a second prompt or a second MCP server.
   `nyx_testwriter_gate`, and `nyx_testwriter_finish`; the primary gets
   `nyx_testwriter_prepare` and `nyx_testwriter_status`.
 - `tools_server/tw_tools.py` from the original plan is not used. The existing
-  Nyxowl MCP server brokers the fixed `/opt/test-writer/bin` wrappers.
-- The Python runtime is installed under `/opt/test-writer`; the private grader
-  store is `/var/lib/test-writer`. Nothing is usable until the owner installs
-  the runtime.
+  Nyxowl MCP server brokers the fixed `<install>/bin` wrappers.
+- The Python runtime is installed rootlessly under `$HOME/.nyxowl/test-writer`;
+  the store is `<install>/store` (`0700`). The owner installs the runtime and
+  builds the venv; gates 1-6 are usable once that is done. All wrappers run as
+  the owner.
 - Host isolation (no host read/edit/write/shell/webfetch for the subagent) is
-  verified in M6. Registration alone is not proof of isolation.
+  verified in M6. Registration alone is not proof of isolation. The same-user
+  runtime is not a privilege boundary; the subagent tool boundary is.
 
 ## Parent contract (summary)
 
@@ -36,6 +38,11 @@ define a second prompt or a second MCP server.
 
 ## Status
 
-M0 source is complete in this directory. The note that M0 did not register the
-agent is historical; registration has since landed. Owner-facing install steps
-are in `README_OWNER.md`, and the full contract is in `INTEGRATION.md`.
+M0 through M4 are complete in this directory: the runtime tree, fixtures, lint,
+sandbox test harness, owner-readable store, gates 1-6 (flake, hidden variants,
+and AST mutation), and the owner wrappers. The runtime is usable for gates 1-6.
+M5 through M7 are pending, and M6 host-isolation verification remains
+outstanding. There is still one Nyxowl MCP server, one prompt, and the same five
+subagent tools; M4 added no second server, dependency, receipt kind, or new
+subagent surface. Owner-facing install steps are in `README_OWNER.md`, and the
+full contract is in `INTEGRATION.md`.

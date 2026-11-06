@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAndCompileAgentFile, ROLE_ALLOWED_NYX_TOOLS } from "../../src/cli/compiler.ts";
 import { ALL_NYX_TOOLS, createNyxMcpServer } from "../../src/mcp/server.ts";
 import {
-  buildGraderArgv,
+  buildWrapperArgv,
   normalizeJobInputs,
   sanitizeFeedback,
   sha256Text,
@@ -40,12 +40,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 function brokerCalls(): unknown[][] {
   return spawnControl.calls.filter((args) => {
     const executable = String(args[0] ?? "");
-    return (
-      executable === "/usr/bin/sudo" ||
-      executable.includes("tw-status") ||
-      executable.includes("tw-gate") ||
-      executable.includes("tw-new-job")
-    );
+    const name = path.basename(executable);
+    return name === "tw-status" || name === "tw-gate" || name === "tw-new-job";
   });
 }
 
@@ -136,14 +132,11 @@ describe("Test-Writer broker and tools", () => {
     expect(staged.endsWith(path.join("tests", "test_J1.py"))).toBe(true);
   });
 
-  it("builds the fixed grader argv with no caller-controlled executable", () => {
-    vi.stubEnv("TW_INSTALL_ROOT", "/opt/test-writer");
-    expect(buildGraderArgv("gate", ["J1"])).toEqual([
-      "/usr/bin/sudo",
-      "-n",
-      "-u",
-      "tw-grader",
-      "/opt/test-writer/bin/tw-gate",
+  it("builds a direct wrapper argv with no caller-controlled executable", () => {
+    const install = path.join(tmpRoot, "install");
+    vi.stubEnv("TW_INSTALL_ROOT", install);
+    expect(buildWrapperArgv("gate", ["J1"])).toEqual([
+      path.join(install, "bin", "tw-gate"),
       "J1",
     ]);
   });
@@ -313,7 +306,7 @@ describe("Test-Writer broker and tools", () => {
     });
     vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
     spawnControl.handler = (args) => {
-      if (args[0] !== "/usr/bin/sudo") return null;
+      if (!path.basename(String(args[0] ?? "")).startsWith("tw-")) return null;
       return fakeChildProcess(
         JSON.stringify({
           status: "approved",
@@ -351,7 +344,7 @@ describe("Test-Writer broker and tools", () => {
     expect(brokerSpawnCount()).toBe(1);
   });
 
-  it("stages a write through tw-status as tw-grader and persists a 0600 test", async () => {
+  it("stages a write through the tw-status wrapper as the owner and persists a 0600 test", async () => {
     const wrapperRoot = path.join(tmpRoot, "write-install");
     installWrapper(wrapperRoot, "tw-status", 0o700);
     vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
@@ -375,8 +368,10 @@ describe("Test-Writer broker and tools", () => {
     expect(fs.statSync(staged).mode & 0o777).toBe(0o600);
 
     const argv = capturedArgv(0);
-    expect(argv.slice(0, 4)).toEqual(["/usr/bin/sudo", "-n", "-u", "tw-grader"]);
-    expect(argv.some((arg) => arg.includes("tw-status"))).toBe(true);
+    expect(argv[0]).toBe(path.join(wrapperRoot, "bin", "tw-status"));
+    expect(argv).toContain("J5");
+    expect(argv).not.toContain("/usr/bin/sudo");
+    expect(argv.join(" ")).not.toContain("tw-grader");
   });
 
   it("tightens an existing staged-test directory to 0700 before writing", async () => {
@@ -400,7 +395,7 @@ describe("Test-Writer broker and tools", () => {
     expect(fs.statSync(testsDir).mode & 0o777).toBe(0o700);
   });
 
-  it("reads status and report as tw-grader and returns the grader verdict", async () => {
+  it("reads status and report directly through the owner wrapper and returns the verdict", async () => {
     const wrapperRoot = path.join(tmpRoot, "status-install");
     installWrapper(wrapperRoot, "tw-status", 0o700);
     vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
@@ -432,8 +427,15 @@ describe("Test-Writer broker and tools", () => {
     expect(payload.verdict).toBe("PROVEN");
     expect(payload.attemptsUsed).toBe(2);
     expect(payload.report).toContain("PROVEN");
-    expect(capturedArgv(0)).toContain("tw-grader");
-    expect(capturedArgv(1)).toContain("tw-grader");
+    const statusArgv = capturedArgv(0);
+    const reportArgv = capturedArgv(1);
+    expect(statusArgv[0]).toBe(path.join(wrapperRoot, "bin", "tw-status"));
+    expect(reportArgv[0]).toBe(path.join(wrapperRoot, "bin", "tw-status"));
+    expect(reportArgv).toContain("--report");
+    for (const argv of [statusArgv, reportArgv]) {
+      expect(argv).not.toContain("/usr/bin/sudo");
+      expect(argv.join(" ")).not.toContain("tw-grader");
+    }
   });
 
   it("spawns brokered wrappers in a detached process group", async () => {

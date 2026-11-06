@@ -1,7 +1,7 @@
 """End-to-end M0 checks for the bubblewrap sandbox.
 
 These run rootless as the invoking owner and use only temporary directories, so
-nothing is written to /opt or /var/lib.  If bubblewrap is unavailable the class
+nothing is written outside the test's isolated roots.  If bubblewrap is unavailable the class
 skips with an explicit message; it never quietly treats a missing sandbox as a
 pass.
 """

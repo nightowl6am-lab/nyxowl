@@ -22,10 +22,10 @@ This document details the security boundaries, adversary capabilities, mitigatio
    - Entries written to the Blackboard by `nyx-product` are stored with `trust = 'untrusted'`. Writer subagents (`nyx-db`, `nyx-api`, `nyx-ui`, `nyx-designer`, `nyx-devops`) cannot read `untrusted` entries until `nyxowl` reviews and promotes them (`promote: true`).
 4. **Test-Writer Proof Boundary:**
    - `nyx-testwriter` has no host read/edit/write/shell/webfetch tools. Its only tools are five `nyx_testwriter_*` MCP tools.
-   - Those tools broker fixed `/opt/test-writer/bin/tw-gate` and `tw-status` wrappers as the separate `tw-grader` OS user via `sudo -n`; `tw-new-job` runs as the owner. The grader store `/var/lib/test-writer` is `0700` and is never read by the owner or the subagent.
+   - Those tools broker fixed `<install>/bin/tw-gate` and `tw-status` wrappers. The runtime is installed rootlessly under `~/.nyxowl/test-writer` and every wrapper runs directly as the owner; there is no separate grader OS user and no privilege transition. The store is `<install>/store` (`0700`) and is owner-readable; the subagent still has no host filesystem tools.
    - The subagent sees only the approved spec, detector, interface, helper API, and budget. It never sees target implementation bodies, variants, mutants, raw grader output, or the canary.
    - Proof tests are grader evidence, not repository regression tests: they depend on the grader-only `detector` fixture and must not be added to the target's normal test discovery.
-   - The broker fails closed when the runtime or sudoers rule is absent, and sanitizes grader feedback to a fixed key set. No new receipt kind is introduced; the existing verify/seam/slop/exploit PR gate is unchanged.
+   - The barrier is information asymmetry and the fixed broker/tool boundary, not OS privilege separation: the owner is trusted and the LLM is the adversary. The broker fails closed when the runtime is absent, and sanitizes grader feedback to a fixed key set. No new receipt kind is introduced; the existing verify/seam/slop/exploit PR gate is unchanged.
 
 ---
 
