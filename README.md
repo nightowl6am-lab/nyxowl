@@ -63,7 +63,7 @@ See [`docs/host-matrix.md`](./docs/host-matrix.md) for the full capability detai
 - **Engine 5 (`blackboard/`):** `nyx_blackboard_publish`, `nyx_blackboard_read`, `nyx_lock_acquire`, `nyx_lock_release`, `nyx_task_dispatch`.
 - **Engine 6 (`probe-exploit/`):** `nyx_debug_isolate`, `nyx_proc`, `nyx_slop_check`, `nyx_verify_slice`, `nyx_exploit_probe`.
 - **Engine 7 (`context/`):** `nyx_context_hydrate`, `nyx_task_handoff`, `nyx_artifact_read`.
-- **Engine 8 (`testwriter/`):** `nyx_testwriter_job`, `nyx_testwriter_write`, `nyx_testwriter_lint`, `nyx_testwriter_gate`, `nyx_testwriter_finish` for `nyx-testwriter`, plus owner-only `nyx_testwriter_prepare` and `nyx_testwriter_status`. Brokers to `/opt/test-writer` over fixed wrappers, fails closed when the runtime is absent, and stages tests outside the repository at `~/tw-jobs/<id>/tests/test_<id>.py`.
+- **Engine 8 (`testwriter/`):** `nyx_testwriter_job`, `nyx_testwriter_write`, `nyx_testwriter_lint`, `nyx_testwriter_gate`, `nyx_testwriter_finish` for `nyx-testwriter`, plus owner-only `nyx_testwriter_prepare` and `nyx_testwriter_status`. Brokers to `~/.nyxowl/test-writer` over fixed wrappers, fails closed when the runtime is absent, and stages tests outside the repository at `~/tw-jobs/<id>/tests/test_<id>.py`.
 
 ---
 

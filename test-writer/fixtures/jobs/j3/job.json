@@ -1,0 +1,39 @@
+{
+  "id": "j3",
+  "from_state": "a",
+  "to_state": "d",
+  "vulnerable_ref": "d07256445625c9590ffe352674097049108abb21",
+  "patched_ref": "6518d116ceadab64e2a6af8d89833a379895613e",
+  "variants": {
+    "still_vulnerable_ref": "aa1bc76e3c73e94690b0d7936841df2507bf4c97",
+    "fixed_differently_ref": "83ee4c564b8dd49c8e4886f8fe5f1a8b89d2a707"
+  },
+  "module": "pkg.codec",
+  "function": "decode",
+  "fix_origin": "reference",
+  "python_path": [
+    "."
+  ],
+  "allowed_modules": [
+    "pkg.codec"
+  ],
+  "interface": "module: pkg.codec\nfunction: decode\nsignature: decode(name: str, root: str) -> str\nreturns: UTF-8 text from a file below root\n",
+  "helper_api": "test-writer/HELPER_API.md",
+  "detector": {
+    "fixture": "detector",
+    "call": "detector.check(condition, *, detail=\"\")",
+    "truthy_means": "the target exhibited the unsafe behavior",
+    "contract": "test-writer/HELPER_API.md",
+    "unsafe_return_contains": "TOP SECRET"
+  },
+  "budget": {
+    "wall_seconds": 60,
+    "cpu_seconds": 10,
+    "memory_mb": 512,
+    "max_pids": 32,
+    "max_attempts": 3
+  },
+  "expected_verdict": "REFUTED",
+  "expected_reason": "PATCHED_STILL_LEAKS",
+  "spec_markdown": "## Claim\n\nState a is vulnerable to literal parent traversal, and state d is an incomplete fix that blocks literal `..` but decodes percent escapes afterwards.\n\n## Intended behavior\n\nA clean relative name such as `data/greeting.txt` returns the UTF-8 text stored under `root`.\n\n## Rejection behavior\n\nBoth `../secret.txt` and `%2e%2e/secret.txt` must be rejected. The same proof test must fail on state a and state d and pass on state b, so the job is expected to be REFUTED with reason PATCHED_STILL_LEAKS.\n\n## Entry point\n\n`pkg.codec.decode(name: str, root: str) -> str`\n\n## Benign example\n\nBENIGN: `decode(\"data/greeting.txt\", root)` returns `hello from the fixture\\n` when `root/data/greeting.txt` contains that text.\n\n## Detector\n\nRequest the grader-provided `detector` fixture. Try both payloads, collect any payload that returns the secret content, and call `detector.check(bool(leaked), detail=\"...\")`. Assert that no payload leaked. Do not read or hardcode a canary path.\n"
+}

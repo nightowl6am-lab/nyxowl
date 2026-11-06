@@ -133,10 +133,9 @@ function readStringArray(value: Record<string, unknown>, keys: string[]): string
   return [];
 }
 
-async function readJobStatus(jobId: string, asGrader: boolean): Promise<Record<string, unknown>> {
+async function readJobStatus(jobId: string): Promise<Record<string, unknown>> {
   const raw = await runWrapperJson("status", [jobId], {
     timeoutMs: STATUS_TIMEOUT_MS,
-    asGrader,
   });
   return asObject(raw, "tw-status");
 }
@@ -279,7 +278,6 @@ export const nyxTestwriterJobTool = defineTool({
     const raw = asObject(
       await runWrapperJson("status", [jobId, "--inputs"], {
         timeoutMs: STATUS_TIMEOUT_MS,
-        asGrader: true,
       }),
       "tw-status --inputs",
     );
@@ -303,9 +301,9 @@ export const nyxTestwriterWriteTool = defineTool({
     const jobId = validateJobId(input.jobId);
     const bytes = requireContentWithinLimit(input.content);
 
-    // WHY: the grader store under /var/lib/test-writer is tw-grader-only (0700);
-    // owner-side reads fail closed, so status must run via sudo -n.
-    const status = await readJobStatus(jobId, true);
+    // WHY: status runs as the owner through the installed wrapper; the store is
+    // owner-only (0700) under the install root, not shared with another account.
+    const status = await readJobStatus(jobId);
     requireWritableStatus(status, jobId);
 
     const filePath = stagedTestPath(jobId);
@@ -355,7 +353,6 @@ export const nyxTestwriterLintTool = defineTool({
     const raw = await runWrapperJson("gate", [jobId, "--lint-only"], {
       input: content,
       timeoutMs: GATE_TIMEOUT_MS,
-      asGrader: true,
     });
     const sanitized = sanitizeFeedback(raw);
     const violations = Array.isArray(sanitized["violations"]) ? sanitized["violations"] : [];
@@ -381,7 +378,6 @@ export const nyxTestwriterGateTool = defineTool({
     const raw = await runWrapperJson("gate", [jobId], {
       input: content,
       timeoutMs: GATE_TIMEOUT_MS,
-      asGrader: true,
     });
     return sanitizeFeedback(raw);
   },
@@ -412,7 +408,6 @@ export const nyxTestwriterFinishTool = defineTool({
     const raw = await runWrapperJson("gate", [jobId, "--finish"], {
       input: JSON.stringify({ notes: input.notes, flags: input.flags }),
       timeoutMs: GATE_TIMEOUT_MS,
-      asGrader: true,
     });
     return sanitizeFeedback(raw);
   },
@@ -432,14 +427,13 @@ export const nyxTestwriterStatusTool = defineTool({
   outputSchema: statusOutputSchema,
   handler: async (input) => {
     const jobId = validateJobId(input.jobId);
-    // WHY: the grader store under /var/lib/test-writer is tw-grader-only (0700);
-    // owner-side reads fail closed, so status and report must run via sudo -n.
-    const raw = await readJobStatus(jobId, true);
+    // WHY: status and report run as the owner through the installed wrapper;
+    // the store is owner-only (0700) under the install root.
+    const raw = await readJobStatus(jobId);
     const report =
       input.report === true
         ? await runWrapperText("status", [jobId, "--report"], {
             timeoutMs: STATUS_TIMEOUT_MS,
-            asGrader: true,
           })
         : undefined;
 
@@ -496,7 +490,6 @@ export const nyxTestwriterPrepareTool = defineTool({
     const raw = await runWrapperJson("newJob", ["--json"], {
       input: JSON.stringify(body),
       timeoutMs: NEW_JOB_TIMEOUT_MS,
-      asGrader: false,
     });
     const response = asObject(raw, "tw-new-job");
     const returnedId = readString(response, ["id", "jobId", "job_id"]);

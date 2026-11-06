@@ -1,0 +1,17 @@
+#!/bin/sh
+# Owner-side variant adder.  Updates an existing draft; never broker-exposed.
+set -u
+
+MODULE='gate.add_variant'
+MODULE_FILE='gate/add_variant.py'
+INSTALL_ROOT="${TW_INSTALL_ROOT:-$HOME/.nyxowl/test-writer}"
+PYTHON="${TW_VENV_PYTHON:-$INSTALL_ROOT/venv/bin/python}"
+
+if [ ! -x "$PYTHON" ] || [ ! -f "$INSTALL_ROOT/$MODULE_FILE" ] || [ ! -d "$INSTALL_ROOT/grader" ]; then
+  printf '%s\n' '{"message":"The Test-Writer runtime is not installed.","ok":false,"reason":"RUNTIME_UNAVAILABLE"}'
+  exit 78
+fi
+
+PYTHONPATH="$INSTALL_ROOT"
+export PYTHONPATH
+exec "$PYTHON" -m "$MODULE" "$@"

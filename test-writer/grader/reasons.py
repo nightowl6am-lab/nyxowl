@@ -71,6 +71,7 @@ REASON_CODES = (
     "PATCHED_STILL_LEAKS",
     "FAIL_ON_PATCHED",
     "FLAKY",
+    "VARIANT_MISSING",
     "VARIANT_TOO_WEAK",
     "VARIANT_OVERFIT",
     "VARIANT_MISLABELED",
@@ -123,6 +124,10 @@ _STATIC_HINTS = {
     "PATCHED_STILL_LEAKS": "The test still failed after the fix was applied.",
     "FAIL_ON_PATCHED": "The test failed after the fix was applied.",
     "FLAKY": "The test produced inconsistent results across runs.",
+    # The public hint vocabulary stays marker-free; the owner-facing report
+    # still has the precise reason code.  The word "variant" is reserved for
+    # the owner-side report and never appears in a subagent hint.
+    "VARIANT_MISSING": "The job is missing a required hidden reference run.",
     "VARIANT_TOO_WEAK": "The test passed too easily on an easier setup.",
     "VARIANT_OVERFIT": "The test only passed for one narrow setup.",
     "VARIANT_MISLABELED": "The test was associated with the wrong setup label.",

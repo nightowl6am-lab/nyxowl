@@ -11,7 +11,6 @@ const logger = createLogger("testwriter");
 export const JOB_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 export const MAX_TEST_BYTES = 51200;
 export const MAX_NOTES_BYTES = 4096;
-export const GRADER_USER = "tw-grader";
 
 export const STDOUT_CAP_BYTES = 1024 * 1024;
 export const STDERR_CAP_BYTES = 64 * 1024;
@@ -36,7 +35,7 @@ export function validateJobId(value: string): string {
 }
 
 export function installRoot(): string {
-  return process.env["TW_INSTALL_ROOT"] ?? "/opt/test-writer";
+  return process.env["TW_INSTALL_ROOT"] ?? path.join(os.homedir(), ".nyxowl", "test-writer");
 }
 
 export function wrapperPath(name: WrapperName): string {
@@ -63,11 +62,7 @@ export function sha256Text(value: string): string {
   return crypto.createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-export function buildGraderArgv(wrapper: WrapperName, args: string[]): string[] {
-  return ["/usr/bin/sudo", "-n", "-u", GRADER_USER, wrapperPath(wrapper), ...args];
-}
-
-export function buildOwnerArgv(wrapper: WrapperName, args: string[]): string[] {
+export function buildWrapperArgv(wrapper: WrapperName, args: string[]): string[] {
   return [wrapperPath(wrapper), ...args];
 }
 
@@ -82,7 +77,7 @@ export interface ProcessResult {
 function unavailableError(): NyxError {
   return new NyxError(
     "ERR_TESTWRITER_UNAVAILABLE",
-    "Test-Writer runtime is not installed. Owner: run test-writer/bootstrap/install-root.sh or set TW_INSTALL_ROOT before using nyx-testwriter tools.",
+    "Test-Writer runtime is not installed. Owner: run test-writer/bootstrap/install-user.sh or set TW_INSTALL_ROOT before using nyx-testwriter tools.",
   );
 }
 
@@ -170,7 +165,7 @@ export async function runProcess(
     };
 
     const timer = setTimeout(() => {
-      // tw-gate may spawn bwrap/prlimit; killing only sudo would orphan them.
+      // tw-gate may spawn bwrap/prlimit; killing only the wrapper would orphan them.
       const pid = child.pid;
       if (pid !== undefined) {
         try {
@@ -292,10 +287,10 @@ function tryParseObject(value: string): Record<string, unknown> | null {
 export async function runWrapperJson(
   wrapper: WrapperName,
   args: string[],
-  opts: { input?: string; timeoutMs: number; asGrader: boolean },
+  opts: { input?: string; timeoutMs: number },
 ): Promise<unknown> {
   assertWrapperAvailable(wrapper);
-  const argv = opts.asGrader ? buildGraderArgv(wrapper, args) : buildOwnerArgv(wrapper, args);
+  const argv = buildWrapperArgv(wrapper, args);
   const result = await runProcess(argv, {
     ...(opts.input !== undefined ? { input: opts.input } : {}),
     timeoutMs: opts.timeoutMs,
@@ -327,10 +322,10 @@ export async function runWrapperJson(
 export async function runWrapperText(
   wrapper: WrapperName,
   args: string[],
-  opts: { input?: string; timeoutMs: number; asGrader: boolean },
+  opts: { input?: string; timeoutMs: number },
 ): Promise<string> {
   assertWrapperAvailable(wrapper);
-  const argv = opts.asGrader ? buildGraderArgv(wrapper, args) : buildOwnerArgv(wrapper, args);
+  const argv = buildWrapperArgv(wrapper, args);
   const result = await runProcess(argv, {
     ...(opts.input !== undefined ? { input: opts.input } : {}),
     timeoutMs: opts.timeoutMs,

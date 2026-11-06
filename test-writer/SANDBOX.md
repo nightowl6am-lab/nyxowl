@@ -1,8 +1,10 @@
-# Sandbox facts and limits (M0)
+# Sandbox facts and limits (M0-M4)
 
-This document describes what the M0 sandbox actually does on the owner's
-machine, what it does not isolate, and why one implementation choice differs
-from a conventional `prlimit` wrapper.
+This document describes what the sandbox actually does on the owner's machine,
+what it does not isolate, and why one implementation choice differs from a
+conventional `prlimit` wrapper. M0 covers the probe runner; M3 adds the
+pytest proof-test mode described below; M4 reuses that mode for flake,
+variant, and mutation runs.
 
 ## Verified on this machine
 
@@ -15,9 +17,10 @@ from a conventional `prlimit` wrapper.
 | Unprivileged user namespaces | `/proc/sys/kernel/unprivileged_userns_clone = 1` |
 | Host processes for the invoking account at test time | about 25 |
 
-The rootless self-tests run as the invoking owner. Production jobs are intended
-to run as `tw-grader`, with `/opt/test-writer` and `/var/lib/test-writer` as the
-default roots.
+The self-tests and production jobs run as the invoking owner. The default
+install root is `$HOME/.nyxowl/test-writer`, the store is
+`$HOME/.nyxowl/test-writer/store` (`0700`), and the venv is
+`$HOME/.nyxowl/test-writer/venv`. There is no separate grader account.
 
 ## Isolation and limits
 
@@ -25,7 +28,7 @@ default roots.
 | --- | --- | --- |
 | Network | `--unshare-all` creates a network namespace with only loopback | `network_probe.py` prints `NETWORK_FAIL 101` |
 | Host environment | `--clearenv` plus five fixed `--setenv` values | `env_probe.py` sees `FAKE_SECRET` as null |
-| Host filesystem | only selected read-only binds; no `/home`, no `/var/lib` | `env_probe.py` reports `home_exists: false`, `store_exists: false` |
+| Host filesystem | only selected read-only binds; no host home or store | `env_probe.py` reports `home_exists: false`, `store_exists: false` |
 | Probe source | `<work>/src` is a read-only bind | `env_probe.py` write result is an `OSError` |
 | Test area | `<work>/tests` is a read-only bind | not writable from the probe |
 | Scratch | `--tmpfs /tmp` and an empty `--tmpfs /canary` | `file_probe.py` can only fill the tmpfs |
@@ -52,6 +55,66 @@ Default limits:
 `nproc_effective` is `max(max_pids, current_process_count_for_uid + 16)` when
 `ps` succeeds, and `max_pids` when it does not. Without the headroom, an account
 that already owns many processes cannot start the sandbox at all.
+
+## Test mode (M3)
+
+The proof-test runner uses the same bubblewrap boundary with a fixed layout:
+
+| Path | Access | Contents |
+| --- | --- | --- |
+| `/work/src` | read-only | the frozen snapshot extracted from the commit tar |
+| `/work/tests` | read-only | the single submitted `test.py` |
+| `/work/harness` | read-only | `pytest.ini`, `plugin.py`, and `limits.py` |
+| `/work/out` | writable bind | the only writable directory; holds `report.json` |
+| `/canary/value` | read-only file under a read-only `/canary` | canary text used for read detection |
+| `/tmp`, `/tmp/hypothesis` | tmpfs | scratch only |
+
+The venv interpreter (`<install>/venv/bin/python`, or `TW_VENV_PYTHON`) is the
+only executable path: it runs `/work/harness/limits.py`, which sets the resource
+limits and then execs pytest with the harness plugin loaded before the test
+module.
+
+`report.json` uses schema `tw-test-report/v1` and contains only reduced facts:
+`outcome` (`passed`, `failed`, or `error`), `error`, `tests_collected`,
+`tests_run`, `failures` as `{type, phase}` pairs, `detector_seen`,
+`detector_attributed`, `detector_calls`, `canary_read`, `violations`,
+`target_called`, `module_imported`, and `pytest_exit`. It never contains target
+source, a traceback body, test detail, or the canary value.
+
+## M4 quality runs
+
+Every M4 run uses the same bubblewrap command, mounts, interpreter, limits, and
+report MAC as gates 2 and 3. The grader only swaps the snapshot directory and
+the fixed `PYTHONHASHSEED`:
+
+- gate 2/3: vulnerable/patched with seed `0`;
+- gate 4: vulnerable/patched with seeds `1` and `2`;
+- gate 5: the hidden still-vulnerable and fixed-differently snapshots with seed
+  `0`;
+- gate 6: a copy of the patched snapshot with one AST mutant written in, seed
+  `0`, repeated for at most 8 mutants.
+
+The canary is fresh for every run. Variant and mutant snapshots are extracted
+into private temporary directories owned by the grader; the subagent never sees
+them. Mutation generation parses source with `ast` in the grader process and
+never imports, executes, or evaluates the target outside the sandbox. Mutant
+source is never written to a report; reports contain only killed/ran counts,
+the score, and survivor IDs.
+
+The harness installs a Python audit hook at plugin import time, before the test
+module is imported. It records and blocks:
+
+- `socket.*`;
+- `subprocess.*`, `os.system`, `os.posix_spawn`, and `os.spawn*`;
+- `exec` from dynamic test/target code;
+- `os.fork` and `os.forkpty`;
+- `ctypes`/`_ctypes` imports and `ctypes.*`;
+- writes outside `/tmp` and `/work/out` (with `/dev/null` allowed).
+
+Reads or listings under `/canary` are recorded as `canary_read` but are not
+blocked, so a read attempt is attributed and fails the safety check rather than
+silently changing the run. The hook is a Python-level defense: it cannot see
+native code that bypasses the interpreter, and it is not a seccomp boundary.
 
 ## The `_limits.py` deviation
 
@@ -81,9 +144,11 @@ helper.
   machine. Kernel bugs are in scope for the host.
 - **Timing side channels.** A sandboxed probe can observe how long operations
   take and can infer some host activity.
-- **Native code and audit hooks.** M0 does not install a Python audit hook. Native
-  code can bypass Python-level checks entirely. There is also no seccomp filter
-  in M0; the protection boundary is bubblewrap plus resource limits.
+- **Native code and audit hooks.** M3 adds a Python audit hook for sockets,
+  subprocesses, exec, fork, ctypes, and writes outside `/tmp` and `/work/out`.
+  That hook is a Python-level defense only: native code can bypass it entirely,
+  and there is still no seccomp filter. The protection boundary remains
+  bubblewrap plus resource limits.
 - **Dependence on unprivileged user namespaces.** If the host disables them, the
   sandbox cannot start. It fails closed instead of running the probe directly.
 - **Host resource contention.** `RLIMIT_AS` and `RLIMIT_CPU` are per-process
@@ -110,7 +175,7 @@ over `limit_hit` whenever the two disagree.
 ## Probe source roots
 
 The runner copies probes only from the installed package, the configured store
-root (`TW_STORE_ROOT`, default `/var/lib/test-writer`), or an explicitly
-configured `TW_PROBE_ROOT`. An absolute probe path outside those roots is
-rejected with `setup_error: missing_probe` before bubblewrap runs. Relative
-probe paths stay anchored at the package root.
+root (`TW_STORE_ROOT`, default `<install>/store`), or an explicitly configured
+`TW_PROBE_ROOT`. An absolute probe path outside those roots is rejected with
+`setup_error: missing_probe` before bubblewrap runs. Relative probe paths stay
+anchored at the package root.

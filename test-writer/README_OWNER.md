@@ -1,13 +1,14 @@
 # Test-Writer owner guide
 
 This document is for the repository owner. It uses plain language and lists the
-only steps that require root. Nothing in this directory runs those steps for you.
+rootless installation steps. Nothing in this directory requires root, sudo, a
+service account, `/opt/test-writer`, or `/var/lib/test-writer`.
 
 ## What the subagent will do
 
 The Test-Writer subagent writes a proof test for a behaviour the primary has prepared and the owner has approved.
 It runs inside a bubblewrap sandbox with no network, no host environment, no
-home directory, no access to the production store, and hard limits on CPU,
+home directory, no access to the private store, and hard limits on CPU,
 memory, processes, file size, and output.
 
 The grader turns the result into one of three verdicts:
@@ -21,33 +22,57 @@ The grader turns the result into one of three verdicts:
 Flags such as `CHEAT_ATTEMPT` are reported separately; they do not change the
 verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
 
-## Using it from Nyxowl
+## First approved job
 
-1. `nyxowl` checks the project DNA for a Python entry point. If the target is
-   not Python, it records `nyx-testwriter: NA (non-Python target)` and skips the
-   job.
-2. `nyxowl` prepares the job with `nyx_testwriter_prepare` using the worktree,
-   the vulnerable and patched 40-hex commit hashes, the `module.function` entry
-   point, and a six-section spec.
-3. You review the spec and variants, then run `tw-approve <id>` in a terminal.
-   The primary cannot approve the job or read its variants.
-4. `nyxowl` dispatches `nyx-testwriter` with exactly `TW_JOB <id>`, then reads
-   the terminal verdict and flags from `nyx_testwriter_status`. The subagent's
-   own summary is not evidence.
-5. On `PROVEN`, the proof test and `REPORT.md` are attached as evidence for the
-   promoted `security` Blackboard entry and the PR. The proof is not a normal
-   regression test and is not added to the target's test discovery; it depends
-   on the grader-only `detector` fixture.
+1. `nyxowl` checks the project DNA for a Python entry point; non-Python targets
+   are recorded as `nyx-testwriter: NA (non-Python target)` and skipped. For a
+   Python target it prepares the job with `nyx_testwriter_prepare`, creating a
+   draft under `~/tw-jobs/<id>/` without touching the private store.
+2. You review the draft in `~/tw-jobs/<id>/`: `meta.json`, `manifest.json`, and
+   the commit snapshot tars. A complete draft has six files: the vulnerable and
+   patched snapshots plus `src-still-vulnerable.tar` and
+   `src-fixed-differently.tar`. The two hidden variant snapshots are required
+   before the grader can return `PROVEN`; they are never shown to the subagent.
+3. If the draft has only four files, add each hidden variant with
+   `tw-add-variant <id> --kind still_vulnerable --ref <40-hex>` and
+   `tw-add-variant <id> --kind fixed_differently --ref <40-hex>`. The owner
+   supplies the refs; the subagent never sees them.
+4. In a terminal, run `tw-approve <id>` as your normal user. No password is
+   needed. Approval bundles the four required files, plus both variant tars
+   when present, and hands them directly to the local `tw-store-job`, which
+   verifies the hashes and installs the job atomically.
+5. The primary dispatches the subagent with exactly `TW_JOB <id>`.
+6. Read the terminal status with `nyx_testwriter_status`; the subagent's own
+   summary is not evidence.
+7. A `PROVEN` proof test is evidence for the `security` entry and the PR. It is
+   not a target regression test and must not be copied into the target's normal
+   test discovery; it depends on the grader-only `detector` fixture.
 
 ## Current status
 
-- M0 source is complete in this directory.
-- The root install, sudoers review, runtime venv, and tw-grader acceptance run
-  are still pending. They are listed in `PLAN_STATUS.md` as PENDING.
-- M1 through M7 runtime work has not started.
-- The `nyx-testwriter` agent and its seven `nyx_testwriter_*` tools are now
-  registered in Nyxowl. The runtime is not usable until the owner steps below
-  and M1-M3 are complete; host isolation is verified in M6.
+- M0 through M4 are complete. M5 through M7 are pending.
+- The runtime runs gates 1-6: lint, the vulnerable snapshot, the patched
+  snapshot, flake re-runs, the hidden variants, and AST mutation scoring.
+- `PROVEN` requires all six gates. Fixed seeds are used for the vulnerable,
+  patched, flake, variant, and mutation runs; canaries remain per-run random.
+- The runtime is installed in the owner's home and runs as the owner. There is
+  no separate grader OS user. The store is owner-readable at mode `0700`.
+- Host-isolation verification is still the M6 item and is not claimed here.
+- M1 through M4 changed no dependencies, no receipt kind, and no TypeScript
+  surface.
+
+## Runtime paths
+
+| Purpose | Default | Override |
+| --- | --- | --- |
+| Install root | `$HOME/.nyxowl/test-writer` | `TW_INSTALL_ROOT` |
+| Store | `<install root>/store` (`0700`) | `TW_STORE_ROOT` |
+| Workspace/drafts | `$HOME/tw-jobs` | `TW_WORKSPACE_ROOT` |
+| Sandbox scratch | `<store>/tmp` | `TW_TMP_ROOT` |
+| Sandbox interpreter | `<install root>/venv/bin/python` | `TW_VENV_PYTHON` |
+
+All paths are resolved at runtime, so environment overrides may be exported after
+the Python modules are imported.
 
 ## Owner steps, in order
 
@@ -62,79 +87,62 @@ cd /home/ocagent/work/nyxowl/nyxowl/test-writer
 Until then, use the worktree:
 
 ```bash
-cd /home/ocagent/work/nyxowl/worktrees/nyxowl-test-writer-m0/test-writer
+cd /home/ocagent/work/nyxowl/worktrees/nyxowl-test-writer-rootless/test-writer
 ```
 
-### 2. Create the service account and install the runtime tree
+### 2. Install the runtime tree as your user
 
 ```bash
-sudo bash bootstrap/install-root.sh
+bash bootstrap/install-user.sh
 ```
 
-This creates the `tw-grader` group and user, `/opt/test-writer`, and
-`/var/lib/test-writer`. It does not write sudoers, does not build a venv, and
-does not start a service. The script prints `ROOT_INSTALL: PASS` when it
-succeeds.
+This copies `bin/`, `gate/`, `grader/` (including the harness), `agent/`, and the
+docs into `$HOME/.nyxowl/test-writer`. It creates the store at
+`$HOME/.nyxowl/test-writer/store` with mode `0700`. It does not create users or
+groups, does not build the venv, and does not write outside the install root and
+store. The script prints `USER_INSTALL: PASS` when it succeeds.
 
-### 3. Review and install the sudoers draft
-
-First read the draft and replace `<owner>` with your account name:
+### 3. Build the runtime venv
 
 ```bash
-less bootstrap/sudoers.test-writer.draft
+bash bootstrap/build-user-venv.sh
 ```
 
-Then install it with the editor that validates sudoers syntax:
+This creates `<install root>/venv` and installs `requirements.lock` with
+`--require-hashes` when that file is present, otherwise `requirements.in`. It
+prints `USER_VENV: PASS`. No privilege transition is used.
 
-```bash
-sudo visudo -f /etc/sudoers.d/test-writer
-```
-
-Do not copy the file into place with `cp`; `visudo` is what checks the syntax.
-
-### 4. Build the runtime venv
-
-```bash
-sudo bash bootstrap/build-runtime-venv.sh
-```
-
-This creates `/opt/test-writer/requirements.lock` with hashes, creates
-`/opt/test-writer/venv`, and installs the pinned packages. It prints
-`RUNTIME_VENV: PASS` and the top-level versions. It does not touch the store or
-sudoers.
-
-### 5. Run the M0 self-tests as the owner
+### 4. Run the M0 and M1-M4 self-tests as the owner
 
 From the source directory:
 
 ```bash
-python3 selftests/run_all.py
+TW_VENV_PYTHON="$HOME/.nyxowl/test-writer/venv/bin/python" \
+  python3 selftests/run_all.py
 ```
 
-The final line must be:
+The final lines must be:
 
 ```
 M0_SELFTESTS: PASS
+M1M3_SELFTESTS: PASS
 ```
 
-These tests run rootless as your normal account and write only to a temporary
-directory. If `/usr/bin/bwrap` is missing they skip with an explicit message;
-that is not a pass.
+These tests write only to isolated temporary roots. If `/usr/bin/bwrap` or the
+resolved venv interpreter is missing, the sandbox cases skip with an explicit
+message; that is not a pass.
 
-### 6. Run the M0 acceptance probes as tw-grader
+### 5. Run the M0 acceptance probes as your user
 
-Stage the probes where `tw-grader` can read them:
-
-```bash
-sudo install -d -o tw-grader -g tw-grader -m 0755 /var/lib/test-writer/m0-probes
-sudo cp selftests/probes/*.py /var/lib/test-writer/m0-probes/
-```
-
-Run the environment probe:
+The probes can run as the current user; no staging under a system directory is
+needed. Export the probe root so the launcher accepts the absolute path:
 
 ```bash
-sudo -u tw-grader python3 /opt/test-writer/grader/sandbox_run.py <<'JSON'
-{"mode":"probe","probe":"/var/lib/test-writer/m0-probes/env_probe.py","limits":{"wall_seconds":30}}
+export TW_INSTALL_ROOT="$HOME/.nyxowl/test-writer"
+export TW_PROBE_ROOT="$PWD/selftests/probes"
+
+python3 "$TW_INSTALL_ROOT/grader/sandbox_run.py" <<JSON
+{"mode":"probe","probe":"$TW_PROBE_ROOT/env_probe.py","limits":{"wall_seconds":30}}
 JSON
 ```
 
@@ -167,17 +175,80 @@ Expected results:
 
 Every result must also have `"ok": true` and a `"bwrap_version"` string.
 
+## M4 acceptance
+
+Run both commands from the source directory; they are rootless and use temporary
+directories:
+
+```bash
+python3 fixtures/build_fixtures.py --verify
+TW_VENV_PYTHON="$HOME/.nyxowl/test-writer/venv/bin/python" \
+  python3 selftests/run_all.py
+```
+
+Expected final lines:
+
+```
+FIXTURES_VERIFY: PASS
+M0_SELFTESTS: PASS
+M1M3_SELFTESTS: PASS
+```
+
+`run_all.py` must also report `OK` with all 203 tests passing. The deterministic
+fixture verdicts are:
+
+- J1 — `PROVEN`, with flake, variants, and mutation all passing.
+- J2 — `UNPROVEN` with `NO_DETECTOR_HIT_ON_VULN`.
+- J3 — `REFUTED` (never `PROVEN`).
+- J4 — `PROVEN`, with flake, variants, and mutation all passing.
+
+The M4 cases also require `FLAKY`, `VARIANT_MISSING`, `VARIANT_TOO_WEAK`, and
+`VARIANT_OVERFIT` routing, and the fixture mutation scores must be at least
+`0.8`. The same run covers the red-team cases and the lint/finish/busy/closed/
+budget refusals. A missing bubblewrap or runtime venv skips the sandbox cases
+and is not an acceptance pass.
+
+### Owner review before accepting PROVEN
+
+The two approved refs are owner-supplied inputs, not a hostile-target boundary.
+Before accepting a `PROVEN` verdict, review both refs (vulnerable and patched)
+and confirm that no reachable module:
+
+- touches `sys.modules["plugin"]` or any plugin attribute;
+- writes outside the snapshot during import or collection;
+- calls `os._exit` or `os.abort`.
+
+Record the reviewed ref hashes with the job. This target-collusion residual is
+an M3/M4 limitation: the harness and the target share one interpreter, so a
+malicious snapshot could forge harness state. A separate-process judge that
+would remove this residual is out of scope for M3/M4 and belongs to M6, which
+is not claimed here.
+
+## Wrapper commands
+
+The installed wrappers run as your user. Use the install root explicitly if
+`$HOME/.nyxowl/test-writer/bin` is not on `PATH`:
+
+```bash
+"$HOME/.nyxowl/test-writer/bin/tw-new-job" --json
+"$HOME/.nyxowl/test-writer/bin/tw-add-variant" <id> --kind still_vulnerable|fixed_differently --ref <40-hex>
+"$HOME/.nyxowl/test-writer/bin/tw-approve" <id>
+"$HOME/.nyxowl/test-writer/bin/tw-status" <id> [--inputs|--report]
+"$HOME/.nyxowl/test-writer/bin/tw-gate" <id> [--lint-only|--finish|--gate N]
+```
+
+`--gate 1` runs lint only. `--gate 2` through `--gate 6` run the full six-gate
+pipeline; the number is the highest gate the caller is asking the runtime to
+make available. `--gate 7` and above return `GATE_UNAVAILABLE`.
+
 ## Rollback
 
 Only run this if you want to remove the installation. It deletes the store and
-the runtime tree, so any job data in `/var/lib/test-writer` is lost.
+the runtime tree, so any job data below `$HOME/.nyxowl/test-writer/store` is
+lost.
 
 ```bash
-sudo rm -f /etc/sudoers.d/test-writer
-sudo rm -rf /opt/test-writer
-sudo rm -rf /var/lib/test-writer
-sudo userdel tw-grader
-sudo groupdel tw-grader
+rm -rf "$HOME/.nyxowl/test-writer" "$HOME/tw-jobs"
 ```
 
 Removing the source directory or the branch is a normal repository operation and
@@ -187,11 +258,9 @@ is handled separately.
 
 The repository and the agent never:
 
-- run `sudo` or ask for a password;
+- request root or use a privilege transition;
 - create or delete users and groups;
-- write or install a sudoers file;
+- write `/etc/sudoers.d` or any system configuration;
+- install into `/opt` or `/var/lib`;
 - install packages or reach the network;
-- merge the branch;
-- delete `/opt/test-writer` or `/var/lib/test-writer`.
-
-Those actions are owner-only and are listed above.
+- merge the branch.
