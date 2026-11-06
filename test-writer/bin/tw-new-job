@@ -1,0 +1,17 @@
+#!/bin/sh
+# Owner-side job creator.  Reads the prepare body from stdin as JSON.
+set -u
+
+MODULE='gate.new_job'
+MODULE_FILE='gate/new_job.py'
+INSTALL_ROOT="${TW_INSTALL_ROOT:-/opt/test-writer}"
+PYTHON="$INSTALL_ROOT/venv/bin/python"
+
+if [ ! -x "$PYTHON" ] || [ ! -f "$INSTALL_ROOT/$MODULE_FILE" ] || [ ! -d "$INSTALL_ROOT/grader" ]; then
+  printf '%s\n' '{"message":"The Test-Writer runtime is not installed.","ok":false,"reason":"RUNTIME_UNAVAILABLE"}'
+  exit 78
+fi
+
+PYTHONPATH="$INSTALL_ROOT"
+export PYTHONPATH
+exec "$PYTHON" -m "$MODULE" "$@"

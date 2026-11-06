@@ -1,0 +1,35 @@
+{
+  "id": "j2",
+  "from_state": "c",
+  "to_state": "b",
+  "vulnerable_ref": "8dd1c7adc41487312d8deb6fe1a139bef9aabd94",
+  "patched_ref": "821afb1690782bde11724bb9f6a51ff71f563300",
+  "module": "pkg.codec",
+  "function": "decode",
+  "fix_origin": "reference",
+  "python_path": [
+    "."
+  ],
+  "allowed_modules": [
+    "pkg.codec"
+  ],
+  "interface": "module: pkg.codec\nfunction: decode\nsignature: decode(name: str, root: str) -> str\nreturns: UTF-8 text from a file below root\n",
+  "helper_api": "test-writer/HELPER_API.md",
+  "detector": {
+    "fixture": "detector",
+    "call": "detector.check(condition, *, detail=\"\")",
+    "truthy_means": "the target exhibited the unsafe behavior",
+    "contract": "test-writer/HELPER_API.md",
+    "unsafe_return_contains": "TOP SECRET"
+  },
+  "budget": {
+    "wall_seconds": 60,
+    "cpu_seconds": 10,
+    "memory_mb": 512,
+    "max_pids": 32,
+    "max_attempts": 3
+  },
+  "expected_verdict": "UNPROVEN",
+  "expected_reason": "NO_DETECTOR_HIT_ON_VULN",
+  "spec_markdown": "## Claim\n\n`pkg.codec.decode` must never return text from outside `root` when given `../secret.txt`. State c is already safe, so this job exercises the case where the vulnerable snapshot does not fail.\n\n## Intended behavior\n\nA clean relative name such as `data/greeting.txt` returns the UTF-8 text stored under `root`.\n\n## Rejection behavior\n\nA safe implementation raises `ValueError` for `../secret.txt`. Because state c is already safe, a leak-only test records no detector hit on c; the expected verdict is UNPROVEN with reason NO_DETECTOR_HIT_ON_VULN.\n\n## Entry point\n\n`pkg.codec.decode(name: str, root: str) -> str`\n\n## Benign example\n\nBENIGN: `decode(\"data/greeting.txt\", root)` returns `hello from the fixture\\n` when `root/data/greeting.txt` contains that text.\n\n## Detector\n\nRequest the grader-provided `detector` fixture. Call `detector.check(...)` only after observing unsafe output; a safe early return must not record a hit. Do not read or hardcode a canary path.\n"
+}

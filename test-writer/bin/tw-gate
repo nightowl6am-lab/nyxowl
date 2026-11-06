@@ -1,0 +1,17 @@
+#!/bin/sh
+# Grader-side gate runner.  Reads test source (or finish JSON) from stdin.
+set -u
+
+MODULE='gate.run'
+MODULE_FILE='gate/run.py'
+INSTALL_ROOT="${TW_INSTALL_ROOT:-/opt/test-writer}"
+PYTHON="$INSTALL_ROOT/venv/bin/python"
+
+if [ ! -x "$PYTHON" ] || [ ! -f "$INSTALL_ROOT/$MODULE_FILE" ] || [ ! -d "$INSTALL_ROOT/grader" ]; then
+  printf '%s\n' '{"message":"The Test-Writer runtime is not installed.","ok":false,"reason":"RUNTIME_UNAVAILABLE"}'
+  exit 78
+fi
+
+PYTHONPATH="$INSTALL_ROOT"
+export PYTHONPATH
+exec "$PYTHON" -m "$MODULE" "$@"

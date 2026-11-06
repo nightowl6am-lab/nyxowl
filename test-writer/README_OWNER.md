@@ -21,33 +21,34 @@ The grader turns the result into one of three verdicts:
 Flags such as `CHEAT_ATTEMPT` are reported separately; they do not change the
 verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
 
-## Using it from Nyxowl
+## First approved job
 
-1. `nyxowl` checks the project DNA for a Python entry point. If the target is
-   not Python, it records `nyx-testwriter: NA (non-Python target)` and skips the
-   job.
-2. `nyxowl` prepares the job with `nyx_testwriter_prepare` using the worktree,
-   the vulnerable and patched 40-hex commit hashes, the `module.function` entry
-   point, and a six-section spec.
-3. You review the spec and variants, then run `tw-approve <id>` in a terminal.
-   The primary cannot approve the job or read its variants.
-4. `nyxowl` dispatches `nyx-testwriter` with exactly `TW_JOB <id>`, then reads
-   the terminal verdict and flags from `nyx_testwriter_status`. The subagent's
-   own summary is not evidence.
-5. On `PROVEN`, the proof test and `REPORT.md` are attached as evidence for the
-   promoted `security` Blackboard entry and the PR. The proof is not a normal
-   regression test and is not added to the target's test discovery; it depends
-   on the grader-only `detector` fixture.
+1. `nyxowl` checks the project DNA for a Python entry point; non-Python targets
+   are recorded as `nyx-testwriter: NA (non-Python target)` and skipped. For a
+   Python target it prepares the job with `nyx_testwriter_prepare`, creating a
+   draft under `~/tw-jobs/<id>/` without touching the grader store.
+2. You review the draft in `~/tw-jobs/<id>/`: `meta.json`, `manifest.json`, and
+   the two commit snapshot tars.
+3. In a terminal, run `tw-approve <id>` and enter your sudo password. Approval
+   bundles exactly those four files and hands them to the grader-side
+   `tw-store-job`, which verifies the hashes and installs the job atomically.
+4. The primary dispatches the subagent with exactly `TW_JOB <id>`.
+5. Read the terminal status with `nyx_testwriter_status`; the subagent's own
+   summary is not evidence.
+6. A `PROVEN` proof test is evidence for the `security` entry and the PR. It is
+   not a target regression test and must not be copied into the target's normal
+   test discovery; it depends on the grader-only `detector` fixture.
 
 ## Current status
 
-- M0 source is complete in this directory.
-- The root install, sudoers review, runtime venv, and tw-grader acceptance run
-  are still pending. They are listed in `PLAN_STATUS.md` as PENDING.
-- M1 through M7 runtime work has not started.
-- The `nyx-testwriter` agent and its seven `nyx_testwriter_*` tools are now
-  registered in Nyxowl. The runtime is not usable until the owner steps below
-  and M1-M3 are complete; host isolation is verified in M6.
+- M0 through M3 are complete; the owner installation and acceptance steps ran on
+  2026-11-06.
+- M4 through M7 are pending.
+- The runtime is usable for gates 1-3 today: lint, the vulnerable snapshot, and
+  the patched snapshot.
+- Host-isolation verification is still the M6 item and is not claimed here.
+- M1 through M3 changed no dependencies, no receipt kind, and no TypeScript
+  surface.
 
 ## Owner steps, in order
 
@@ -62,7 +63,7 @@ cd /home/ocagent/work/nyxowl/nyxowl/test-writer
 Until then, use the worktree:
 
 ```bash
-cd /home/ocagent/work/nyxowl/worktrees/nyxowl-test-writer-m0/test-writer
+cd /home/ocagent/work/nyxowl/worktrees/nyxowl-test-writer-m1-m3/test-writer
 ```
 
 ### 2. Create the service account and install the runtime tree
@@ -72,9 +73,10 @@ sudo bash bootstrap/install-root.sh
 ```
 
 This creates the `tw-grader` group and user, `/opt/test-writer`, and
-`/var/lib/test-writer`. It does not write sudoers, does not build a venv, and
-does not start a service. The script prints `ROOT_INSTALL: PASS` when it
-succeeds.
+`/var/lib/test-writer`. It installs `bin/`, `gate/`, `grader/` (including the
+harness), `/agent/`, and docs such as `HELPER_API.md` as root-owned files. It
+does not touch the venv, write into the store, install sudoers, or start a
+service. The script prints `ROOT_INSTALL: PASS` when it succeeds.
 
 ### 3. Review and install the sudoers draft
 
@@ -92,6 +94,11 @@ sudo visudo -f /etc/sudoers.d/test-writer
 
 Do not copy the file into place with `cp`; `visudo` is what checks the syntax.
 
+The final split is deliberate: `tw-gate` and `tw-status` are `NOPASSWD` because
+the broker calls them non-interactively; `tw-store-job` requires your password
+with no cached timestamp; `tw-new-job` and `tw-approve` run as you and are not
+sudoers entries.
+
 ### 4. Build the runtime venv
 
 ```bash
@@ -103,7 +110,7 @@ This creates `/opt/test-writer/requirements.lock` with hashes, creates
 `RUNTIME_VENV: PASS` and the top-level versions. It does not touch the store or
 sudoers.
 
-### 5. Run the M0 self-tests as the owner
+### 5. Run the M0 and M1-M3 self-tests as the owner
 
 From the source directory:
 
@@ -111,15 +118,16 @@ From the source directory:
 python3 selftests/run_all.py
 ```
 
-The final line must be:
+The final lines must be:
 
 ```
 M0_SELFTESTS: PASS
+M1M3_SELFTESTS: PASS
 ```
 
 These tests run rootless as your normal account and write only to a temporary
-directory. If `/usr/bin/bwrap` is missing they skip with an explicit message;
-that is not a pass.
+directory. If `/usr/bin/bwrap` or `/opt/test-writer/venv/bin/python` is missing,
+the sandbox cases skip with an explicit message; that is not a pass.
 
 ### 6. Run the M0 acceptance probes as tw-grader
 
@@ -166,6 +174,52 @@ Expected results:
   `"limit_hit": "output"`.
 
 Every result must also have `"ok": true` and a `"bwrap_version"` string.
+
+## M3 acceptance
+
+Run both commands from the source directory; they are rootless and use temporary
+directories:
+
+```bash
+python3 fixtures/build_fixtures.py --verify
+python3 selftests/run_all.py
+```
+
+Expected final lines:
+
+```
+FIXTURES_VERIFY: PASS
+M0_SELFTESTS: PASS
+M1M3_SELFTESTS: PASS
+```
+
+`run_all.py` must also report `OK` with all 152 tests passing. The deterministic
+fixture verdicts are:
+
+- J1 — `PROVEN`.
+- J2 — `UNPROVEN` with `NO_DETECTOR_HIT_ON_VULN`.
+- J3 — `REFUTED`.
+- J4 — `PROVEN`.
+
+The same run covers the red-team cases and the lint/finish/busy/closed/budget
+refusals. A missing bubblewrap or runtime venv skips the sandbox cases and is
+not an acceptance pass.
+
+### Owner review before accepting PROVEN
+
+The two approved refs are owner-supplied inputs, not a hostile-target boundary.
+Before accepting a `PROVEN` verdict, review both refs (vulnerable and patched)
+and confirm that no reachable module:
+
+- touches `sys.modules["plugin"]` or any plugin attribute;
+- writes outside the snapshot during import or collection;
+- calls `os._exit` or `os.abort`.
+
+Record the reviewed ref hashes with the job. This target-collusion residual is
+an M3 limitation: the harness and the target share one interpreter, so a
+malicious snapshot could forge harness state. A separate-process judge that
+would remove this residual is out of scope for M3 and belongs to M6, which is
+not claimed here.
 
 ## Rollback
 

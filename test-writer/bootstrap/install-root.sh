@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Owner-run root installer for the M0 runtime tree.
+# Owner-run root installer for the Test-Writer runtime tree.
 # It creates the service account and the two production roots, then copies the
 # managed source. It does NOT write sudoers, build a venv, or start a service.
 
@@ -34,23 +34,42 @@ install -d -o root -g root -m 0755 "$INSTALL_ROOT"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0700 "$STORE_ROOT"
 
 # Replace only the managed trees so stale files cannot survive an upgrade.
-rm -rf "$INSTALL_ROOT/grader" "$INSTALL_ROOT/agent"
-install -d -o root -g root -m 0755 "$INSTALL_ROOT/grader" "$INSTALL_ROOT/agent"
+# The venv and the store are intentionally never removed here.
+rm -rf \
+  "$INSTALL_ROOT/bin" \
+  "$INSTALL_ROOT/gate" \
+  "$INSTALL_ROOT/grader" \
+  "$INSTALL_ROOT/agent"
+install -d -o root -g root -m 0755 \
+  "$INSTALL_ROOT/bin" \
+  "$INSTALL_ROOT/gate" \
+  "$INSTALL_ROOT/grader" \
+  "$INSTALL_ROOT/agent"
+cp -a "$SOURCE_DIR/bin/." "$INSTALL_ROOT/bin/"
+cp -a "$SOURCE_DIR/gate/." "$INSTALL_ROOT/gate/"
 cp -a "$SOURCE_DIR/grader/." "$INSTALL_ROOT/grader/"
 cp -a "$SOURCE_DIR/agent/." "$INSTALL_ROOT/agent/"
 
-for file in requirements.in README_OWNER.md SANDBOX.md DECISIONS.md INTEGRATION.md PLAN_STATUS.md; do
+for file in HELPER_API.md requirements.in README_OWNER.md SANDBOX.md DECISIONS.md INTEGRATION.md PLAN_STATUS.md; do
   install -o root -g root -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
 find "$INSTALL_ROOT" -type d -name __pycache__ -prune -exec rm -rf {} +
 
-# Everything installed here is root-owned and read-only to the service account.
+# Everything managed here is root-owned and read-only to the service account.
+# Wrappers stay executable; every other managed file is read-only.  The venv
+# (built afterwards by build-runtime-venv.sh) is deliberately not re-chmodded.
 chown -R root:root "$INSTALL_ROOT"
-find "$INSTALL_ROOT" -type d -exec chmod 0755 {} +
-find "$INSTALL_ROOT" -type f -exec chmod 0644 {} +
+find "$INSTALL_ROOT/bin" "$INSTALL_ROOT/gate" "$INSTALL_ROOT/grader" "$INSTALL_ROOT/agent" \
+  -type d -exec chmod 0755 {} +
+find "$INSTALL_ROOT/bin" "$INSTALL_ROOT/gate" "$INSTALL_ROOT/grader" "$INSTALL_ROOT/agent" \
+  -type f -exec chmod 0644 {} +
+find "$INSTALL_ROOT/bin" -type f -exec chmod 0755 {} +
+for file in HELPER_API.md requirements.in README_OWNER.md SANDBOX.md DECISIONS.md INTEGRATION.md PLAN_STATUS.md; do
+  chmod 0644 "$INSTALL_ROOT/$file"
+done
 
 echo "ROOT_INSTALL: PASS"
-echo "Installed $INSTALL_ROOT (root:root 0755) and $STORE_ROOT ($SERVICE_USER:$SERVICE_GROUP 0700)."
+echo "Installed $INSTALL_ROOT (root:root 0755, bin 0755) and $STORE_ROOT ($SERVICE_USER:$SERVICE_GROUP 0700)."
 echo "NOT installed: sudoers."
 echo "Next: review bootstrap/sudoers.test-writer.draft, then run: sudo visudo -f /etc/sudoers.d/test-writer"

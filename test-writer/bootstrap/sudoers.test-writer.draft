@@ -1,11 +1,12 @@
 # DRAFT ONLY -- review before installing. Do not copy this file into /etc.
 # Install with: sudo visudo -f /etc/sudoers.d/test-writer
 # Replace <owner> with the account that prepares and approves jobs.
-# The wrappers are installed in M3; replace the /opt/test-writer/bin/... names if they change.
-# The broker calls tw-gate and tw-status as tw-grader with sudo -n; tw-store-job is only called by the owner's tw-approve.
+# The broker calls tw-gate and tw-status as tw-grader with sudo -n.
+# tw-approve is owner-side and invokes tw-store-job through sudo with a password.
+# tw-new-job and tw-approve run as the owner and must NOT be listed here.
 
-# Gate, lint, status, recheck: no password (the subagent and parent may call them).
-<owner> ALL=(tw-grader) NOPASSWD: /opt/test-writer/bin/tw-gate, /opt/test-writer/bin/tw-status, /opt/test-writer/bin/tw-recheck
+# Gate and status: no password (the broker and parent call them non-interactively).
+<owner> ALL=(tw-grader) NOPASSWD: /opt/test-writer/bin/tw-gate, /opt/test-writer/bin/tw-status
 # Storing (approving) a job: password required, never cached.
 <owner> ALL=(tw-grader) /opt/test-writer/bin/tw-store-job
 Defaults!/opt/test-writer/bin/tw-store-job timestamp_timeout=0

@@ -15,8 +15,8 @@ define a second prompt or a second MCP server.
 - `tools_server/tw_tools.py` from the original plan is not used. The existing
   Nyxowl MCP server brokers the fixed `/opt/test-writer/bin` wrappers.
 - The Python runtime is installed under `/opt/test-writer`; the private grader
-  store is `/var/lib/test-writer`. Nothing is usable until the owner installs
-  the runtime.
+  store is `/var/lib/test-writer`. The owner installs the runtime and builds the
+  venv; gates 1-3 are usable once that is done.
 - Host isolation (no host read/edit/write/shell/webfetch for the subagent) is
   verified in M6. Registration alone is not proof of isolation.
 
@@ -36,6 +36,10 @@ define a second prompt or a second MCP server.
 
 ## Status
 
-M0 source is complete in this directory. The note that M0 did not register the
-agent is historical; registration has since landed. Owner-facing install steps
-are in `README_OWNER.md`, and the full contract is in `INTEGRATION.md`.
+M0 through M3 are complete in this directory: the runtime tree, fixtures, lint,
+sandbox test harness, private store, gates 1-3, and the owner/grader wrappers.
+The runtime is usable for gates 1-3. M4 through M7 are pending, and M6
+host-isolation verification remains outstanding. There is still one Nyxowl MCP
+server, one prompt, and the same five subagent tools; M3 added no second server
+and no new subagent surface. Owner-facing install steps are in `README_OWNER.md`,
+and the full contract is in `INTEGRATION.md`.

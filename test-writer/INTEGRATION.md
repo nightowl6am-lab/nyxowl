@@ -41,8 +41,14 @@ server and no second stdio server.
 | Wrapper | Invocation | Runs as |
 | --- | --- | --- |
 | `tw-status` | `/usr/bin/sudo -n -u tw-grader /opt/test-writer/bin/tw-status <id> [--inputs|--report]` | `tw-grader` |
-| `tw-gate` | `/usr/bin/sudo -n -u tw-grader /opt/test-writer/bin/tw-gate <id> [--lint-only|--finish]` | `tw-grader` |
+| `tw-gate` | `/usr/bin/sudo -n -u tw-grader /opt/test-writer/bin/tw-gate <id> [--lint-only|--finish|--gate N]` | `tw-grader` |
+| `tw-store-job` | `/usr/bin/sudo -u tw-grader /opt/test-writer/bin/tw-store-job <id>` (invoked by `tw-approve` with the owner's password) | `tw-grader` |
 | `tw-new-job` | `/opt/test-writer/bin/tw-new-job --json` | owner |
+| `tw-approve` | `/opt/test-writer/bin/tw-approve <id>` | owner |
+
+The final sudoers split is: `tw-gate` and `tw-status` are `NOPASSWD`;
+`tw-store-job` requires the owner's password with no cached timestamp;
+`tw-new-job` and `tw-approve` are owner-side and are not listed in sudoers.
 
 The grader store is `/var/lib/test-writer` (`0700`, owned by `tw-grader`). A
 missing or non-executable wrapper fails closed with
@@ -71,6 +77,15 @@ hashes. `patched_ref` is the fix commit, never the working tree. The spec must
 contain the six headings `## Claim`, `## Intended behavior`,
 `## Rejection behavior`, `## Entry point`, `## Benign example`, and
 `## Detector`, plus a `BENIGN:` line.
+
+`tw-new-job --json` reads that JSON body from stdin; it takes no positional
+argument for the body. `python_path` may be `[]` when the module sits at the
+repository root; the snapshot root is then the import root.
+
+The owner approves by running `tw-approve <id>` in a terminal. It bundles exactly
+`meta.json`, `manifest.json`, `src-vulnerable.tar`, and `src-patched.tar` and
+passes them to `tw-store-job` through password sudo; the store verifies the
+manifest and installs the job atomically.
 
 ## 5. Repository-agnostic rules
 
@@ -133,14 +148,25 @@ stdout, or stderr markers. The grader snapshots frozen commit refs; it never
 evaluates the live working tree. Uncommitted changes are invisible to the
 grader.
 
+A target snapshot is owner-supplied, not a hostile-target boundary. Before
+accepting `PROVEN`, the owner reviews both approved refs for plugin-state access
+(`sys.modules["plugin"]` and plugin attributes), writes outside the snapshot at
+import/collection, and `os._exit`/`os.abort`, and records the reviewed ref
+hashes with the job. Test-only source, plugin, and report forgery is blocked by
+lint, the audit hook, the report MAC, and the exit-status check; the residual
+target-collusion risk is the shared interpreter and is not claimed as solved in
+M3. A separate-process judge is out of scope for M3 and deferred to M6, which
+remains unclaimed.
+
 ## 10. Installation
 
-The owner runs the M0 root/bootstrap steps in `README_OWNER.md`. The intended
-sudoers rule grants `NOPASSWD` for `gate`, `status`, and `recheck`, and requires
-a password for `store-job` (used to create a job). The M0 draft still shows
-legacy wrapper names and must be reconciled before M3 acceptance; do not install
-it as-is.
+The owner runs the M0 root/bootstrap steps in `README_OWNER.md`, then the M1-M3
+acceptance commands. The sudoers draft has been reconciled to the final split:
+`NOPASSWD` for `tw-gate` and `tw-status`, password-gated `tw-store-job`, and
+owner-side `tw-new-job`/`tw-approve`. `install-root.sh` installs `bin/`, `gate/`,
+`grader/` (including the harness), `/agent/`, and `HELPER_API.md`; it does not
+build the venv, write job data, or install sudoers.
 
-The `nyx-testwriter` agent and its seven `nyx_testwriter_*` tools are registered
-in Nyxowl now. The runtime is not usable until M1-M3 install the wrappers,
-grader, and store. Host-isolation verification remains an M6 item.
+M3 is complete and the M0 draft has been reconciled. The `nyx-testwriter` agent
+and its seven `nyx_testwriter_*` tools are registered in Nyxowl, and gates 1-3
+are usable. Only M6 host-isolation verification remains before host readiness.

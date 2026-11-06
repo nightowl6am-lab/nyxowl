@@ -14,4 +14,5 @@ result = unittest.TextTestRunner(verbosity=2).run(suite)
 
 passed = result.wasSuccessful() and result.testsRun > 0
 print("M0_SELFTESTS: " + ("PASS" if passed else "FAIL"))
+print("M1M3_SELFTESTS: " + ("PASS" if passed else "FAIL"))
 sys.exit(0 if passed else 1)

@@ -1,0 +1,35 @@
+{
+  "id": "j1",
+  "from_state": "a",
+  "to_state": "b",
+  "vulnerable_ref": "d07256445625c9590ffe352674097049108abb21",
+  "patched_ref": "821afb1690782bde11724bb9f6a51ff71f563300",
+  "module": "pkg.codec",
+  "function": "decode",
+  "fix_origin": "reference",
+  "python_path": [
+    "."
+  ],
+  "allowed_modules": [
+    "pkg.codec"
+  ],
+  "interface": "module: pkg.codec\nfunction: decode\nsignature: decode(name: str, root: str) -> str\nreturns: UTF-8 text from a file below root\n",
+  "helper_api": "test-writer/HELPER_API.md",
+  "detector": {
+    "fixture": "detector",
+    "call": "detector.check(condition, *, detail=\"\")",
+    "truthy_means": "the target exhibited the unsafe behavior",
+    "contract": "test-writer/HELPER_API.md",
+    "unsafe_return_contains": "TOP SECRET"
+  },
+  "budget": {
+    "wall_seconds": 60,
+    "cpu_seconds": 10,
+    "memory_mb": 512,
+    "max_pids": 32,
+    "max_attempts": 3
+  },
+  "expected_verdict": "PROVEN",
+  "expected_reason": null,
+  "spec_markdown": "## Claim\n\n`pkg.codec.decode` joins `name` onto `root` without a containment check, so `../secret.txt` reads a file outside the fixture root.\n\n## Intended behavior\n\nA clean relative name such as `data/greeting.txt` returns the UTF-8 text stored under `root`.\n\n## Rejection behavior\n\n`decode(\"../secret.txt\", root)` must raise `ValueError` and must not return content from outside `root`. The patched state applies a realpath containment check.\n\n## Entry point\n\n`pkg.codec.decode(name: str, root: str) -> str`\n\n## Benign example\n\nBENIGN: `decode(\"data/greeting.txt\", root)` returns `hello from the fixture\\n` when `root/data/greeting.txt` contains that text.\n\n## Detector\n\nRequest the grader-provided `detector` fixture. Call `detector.check(condition, detail=\"...\")` where `condition` is true exactly when the call returns the secret content. Do not read or hardcode a canary path.\n"
+}
