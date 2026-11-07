@@ -28,7 +28,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from . import common
+from . import chain, common, proof as proof_module
 from grader import job_check, lint, mutate, package, reasons, sandbox_run, store
 
 MAX_ATTEMPT_WALL_SECONDS = 1_800
@@ -428,7 +428,11 @@ def _decide_flake(observations: Any) -> dict[str, Any]:
     return {"ok": True, "reason": None}
 
 
-def _run_flake(meta: dict[str, Any], source: str) -> dict[str, Any]:
+def _run_flake(
+    meta: dict[str, Any],
+    source: str,
+    directory: Path,
+) -> dict[str, Any]:
     observations: dict[str, Any] = {
         "vulnerable": [],
         "patched": [],
@@ -444,7 +448,7 @@ def _run_flake(meta: dict[str, Any], source: str) -> dict[str, Any]:
             result = _run_snapshot(
                 meta,
                 source,
-                Path(store.job_dir(str(meta["id"]))) / tar_name,
+                directory / tar_name,
                 canary,
                 seed=seed,
             )
@@ -467,12 +471,11 @@ def _file_digest(path: Path) -> str:
 
 
 def _variant_outcome(
-    job_id: str,
     meta: dict[str, Any],
     source: str,
+    directory: Path,
 ) -> dict[str, Any]:
     variants = meta.get("variants")
-    directory = store.job_dir(job_id)
     missing = (
         not isinstance(variants, dict)
         or any(
@@ -584,11 +587,10 @@ def _variant_outcome(
 
 
 def _mutation_outcome(
-    job_id: str,
     meta: dict[str, Any],
     source: str,
+    directory: Path,
 ) -> dict[str, Any]:
-    directory = store.job_dir(job_id)
     temporary = Path(tempfile.mkdtemp(prefix="tw-gate-mutate-", dir=common.ensure_tmp_root()))
     try:
         vulnerable = temporary / "vulnerable"
@@ -798,15 +800,7 @@ def _report_markdown(
         "",
         "## Limits",
     ]
-    for key in (
-        "wall_seconds",
-        "cpu_seconds",
-        "memory_mb",
-        "max_pids",
-        "max_attempts",
-    ):
-        if key in budget:
-            lines.append(f"{key}: {budget[key]}")
+    lines.extend(proof_module.limits_lines(budget))
     lines.extend(
         [
             "",
@@ -831,6 +825,8 @@ def _write_terminal(
     gates: dict[str, Any],
     counts: dict[str, Any],
     results: list[dict[str, Any]],
+    *,
+    source: str | None = None,
 ) -> None:
     directory = store.job_dir(job_id)
     final_state = dict(state)
@@ -850,6 +846,7 @@ def _write_terminal(
         if candidate:
             effective = candidate
             break
+    created_at = common.utc_now()
     report = {
         "jobId": job_id,
         "verdict": verdict,
@@ -864,12 +861,56 @@ def _write_terminal(
             "effective": effective,
         },
         "versions": _versions(results[-1] if results else None),
-        "created_at": common.utc_now(),
+        "created_at": created_at,
     }
     common.write_json_atomic(directory / "report.json", report, 0o600)
     common.write_text_atomic(
         directory / "report.md",
         _report_markdown(job_id, final_state, meta, verdict, reason, flags, gates, counts),
+        0o600,
+    )
+
+    # Freeze the exact staged test only when this terminal write came from a
+    # real gate run.  GAVE_UP and budget exhaustion leave no test.py, which
+    # recheck reports as NO_FROZEN_TEST.
+    if source is not None:
+        common.write_text_atomic(directory / proof_module.TEST_FILE, source, 0o600)
+
+    body = proof_module.build_body(
+        job_id=job_id,
+        verdict=verdict,
+        reason=reason,
+        flags=flags,
+        attempt=int(final_state.get("attempts", 0)),
+        gates=gates,
+        counts=counts,
+        runtime_hashes=proof_module.collect_runtime_hashes(),
+        frozen_hashes=proof_module.collect_frozen_hashes(directory),
+        versions=_versions(results[-1] if results else None),
+        previous_proof_hash=proof_module.previous_proof_hash(directory),
+        created_at=created_at,
+    )
+    digest = proof_module.proof_hash(body)
+    entry = chain.append_entry(
+        directory,
+        "proof",
+        {"digest": digest, "verdict": verdict, "reason": reason},
+    )
+    document = proof_module.finalize(
+        body,
+        chain_head=entry["entryHash"],
+        chain_length=entry["seq"] + 1,
+    )
+    common.write_json_atomic(directory / proof_module.PROOF_FILE, document, 0o600)
+    common.write_text_atomic(
+        directory / proof_module.REPORT_FILE,
+        proof_module.build_report_markdown(
+            job_id=job_id,
+            state=final_state,
+            meta=meta,
+            document=document,
+            budget=_budget(meta),
+        ),
         0o600,
     )
 
@@ -908,7 +949,18 @@ def _terminal_feedback(
     )
 
 
-def _full_gate(job_id: str, state: dict[str, Any], meta: dict[str, Any], source: str) -> dict[str, Any]:
+def evaluate(
+    job_id: str,
+    meta: dict[str, Any],
+    source: str,
+    directory: Path,
+) -> dict[str, Any]:
+    """Run gates 1-6 without touching the job store or owner artifacts.
+
+    The return value is a pure decision record.  ``terminal`` is ``False`` only
+    for the retryable lint failure; every other result is a terminal verdict.
+    Recheck reuses this function to reproduce a stored proof.
+    """
     violations = _violations(meta, source)
     gates: dict[str, Any] = {
         "lint": "fail" if violations else "pass",
@@ -920,61 +972,81 @@ def _full_gate(job_id: str, state: dict[str, Any], meta: dict[str, Any], source:
     }
     counts: dict[str, Any] = {"violations": len(violations)}
     if violations:
-        # A lint failure is the only retryable, non-terminal outcome.
-        state["status"] = "approved"
-        state["verdict"] = None
-        state["reason"] = None
-        state["flags"] = []
-        store.write_state(job_id, state)
-        return _lint_feedback(state, violations)
+        return {
+            "terminal": False,
+            "verdict": None,
+            "reason": None,
+            "flags": [],
+            "gates": gates,
+            "counts": counts,
+            "violations": violations,
+            "results": [],
+        }
+
+    def terminal(
+        verdict: str,
+        reason: str | None,
+        flags: list[str],
+        results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "terminal": True,
+            "verdict": verdict,
+            "reason": reason,
+            "flags": flags,
+            "gates": gates,
+            "counts": counts,
+            "violations": violations,
+            "results": results,
+        }
 
     vulnerable_canary = secrets.token_urlsafe(32)
-    vulnerable = _run_snapshot(meta, source, Path(store.job_dir(job_id)) / common.VULNERABLE_TAR, vulnerable_canary)
+    vulnerable = _run_snapshot(
+        meta, source, directory / common.VULNERABLE_TAR, vulnerable_canary
+    )
     vulnerable_decision = _classify_run("VULN", vulnerable)
     gates["vulnerable"] = vulnerable_decision["kind"]
     counts["vulnerable"] = vulnerable_decision["counts"]
     results = [vulnerable]
 
     if vulnerable_decision["kind"] in {"safety", "setup"}:
-        reason = vulnerable_decision["reason"]
-        verdict = vulnerable_decision["verdict"]
-        flags = vulnerable_decision["flags"]
-        _write_terminal(job_id, state, meta, verdict, reason, flags, gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, verdict, reason, flags, counts)
+        return terminal(
+            vulnerable_decision["verdict"],
+            vulnerable_decision["reason"],
+            vulnerable_decision["flags"],
+            results,
+        )
 
     report = vulnerable.get("report")
     if vulnerable_decision["kind"] == "passed":
         # The vulnerable snapshot passed, so the test observed nothing unsafe.
         # Detector state changes only the recorded evidence, never the verdict.
         reason = "NO_DETECTOR_HIT_ON_VULN"
-        _write_terminal(job_id, state, meta, "UNPROVEN", reason, [], gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, "UNPROVEN", reason, [], counts)
+        return terminal("UNPROVEN", reason, [], results)
 
     # Any real assertion or ``pytest.fail()`` on the vulnerable snapshot is
     # enough to spend the patched run.  Detector attribution is not required.
     if not _real_failure(report):
         failure = _failure_type(report)
         reason = _setup_reason("VULN", f"wrong_exception:{failure}")
-        _write_terminal(job_id, state, meta, "UNPROVEN", reason, [], gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, "UNPROVEN", reason, [], counts)
+        return terminal("UNPROVEN", reason, [], results)
 
     patched_canary = secrets.token_urlsafe(32)
-    patched = _run_snapshot(meta, source, Path(store.job_dir(job_id)) / common.PATCHED_TAR, patched_canary, seed=0)
+    patched = _run_snapshot(
+        meta, source, directory / common.PATCHED_TAR, patched_canary, seed=0
+    )
     patched_decision = _classify_run("PATCHED", patched)
     gates["patched"] = patched_decision["kind"]
     counts["patched"] = patched_decision["counts"]
     results.append(patched)
 
     if patched_decision["kind"] in {"safety", "setup"}:
-        verdict = patched_decision["verdict"]
-        reason = patched_decision["reason"]
-        flags = patched_decision["flags"]
-        _write_terminal(job_id, state, meta, verdict, reason, flags, gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, verdict, reason, flags, counts)
+        return terminal(
+            patched_decision["verdict"],
+            patched_decision["reason"],
+            patched_decision["flags"],
+            results,
+        )
 
     if patched_decision["kind"] != "passed":
         patched_report = patched.get("report")
@@ -982,49 +1054,82 @@ def _full_gate(job_id: str, state: dict[str, Any], meta: dict[str, Any], source:
             reason = "PATCHED_STILL_LEAKS"
         else:
             reason = "FAIL_ON_PATCHED"
-        _write_terminal(job_id, state, meta, "REFUTED", reason, [], gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, "REFUTED", reason, [], counts)
+        return terminal("REFUTED", reason, [], results)
 
     # Gate 4: two extra fixed hash seeds must reproduce the seed-0 result.
-    flake_result = _run_flake(meta, source)
+    flake_result = _run_flake(meta, source, directory)
     gates["flake"] = "pass" if flake_result["decision"]["ok"] else "fail"
     counts["flake"] = flake_result["counts"]
     results.extend(flake_result["results"])
     if not flake_result["decision"]["ok"]:
         reason = flake_result["decision"]["reason"] or "FLAKY"
         flags = _flags_for_reason(reason)
-        _write_terminal(job_id, state, meta, "UNPROVEN", reason, flags, gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, "UNPROVEN", reason, flags, counts)
+        return terminal("UNPROVEN", reason, flags, results)
 
     # Gate 5: the hidden still-vulnerable and fixed-differently variants.
-    variant_result = _variant_outcome(job_id, meta, source)
+    variant_result = _variant_outcome(meta, source, directory)
     gates["variants"] = variant_result["gates"]
     counts["variants"] = variant_result["counts"]
     results.extend(variant_result["results"])
     if not variant_result["ok"]:
-        reason = variant_result["reason"]
-        flags = variant_result["flags"]
-        _write_terminal(job_id, state, meta, "UNPROVEN", reason, flags, gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, "UNPROVEN", reason, flags, counts)
+        return terminal(
+            "UNPROVEN", variant_result["reason"], variant_result["flags"], results
+        )
 
     # Gate 6: AST-only mutants of the patched source, scored over runs.
-    mutation_result = _mutation_outcome(job_id, meta, source)
+    mutation_result = _mutation_outcome(meta, source, directory)
     gates["mutation"] = mutation_result["gates"]
     counts["mutation"] = mutation_result["counts"]
     results.extend(mutation_result["results"])
     if not mutation_result["ok"]:
-        reason = mutation_result["reason"]
-        flags = mutation_result["flags"]
-        _write_terminal(job_id, state, meta, "UNPROVEN", reason, flags, gates, counts, results)
-        closed = store.load_state(job_id) or state
-        return _terminal_feedback(closed, "UNPROVEN", reason, flags, counts)
+        return terminal(
+            "UNPROVEN", mutation_result["reason"], mutation_result["flags"], results
+        )
 
-    _write_terminal(job_id, state, meta, "PROVEN", None, [], gates, counts, results)
+    return terminal("PROVEN", None, [], results)
+
+
+def _apply_decision(
+    job_id: str,
+    state: dict[str, Any],
+    meta: dict[str, Any],
+    decision: dict[str, Any],
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Persist the decision produced by :func:`evaluate`."""
+    if not decision.get("terminal"):
+        # A lint failure is the only retryable, non-terminal outcome.
+        state["status"] = "approved"
+        state["verdict"] = None
+        state["reason"] = None
+        state["flags"] = []
+        store.write_state(job_id, state)
+        return _lint_feedback(state, decision.get("violations") or [])
+
+    verdict = decision["verdict"]
+    reason = decision["reason"]
+    flags = decision["flags"]
+    counts = decision["counts"]
+    _write_terminal(
+        job_id,
+        state,
+        meta,
+        verdict,
+        reason,
+        flags,
+        decision["gates"],
+        counts,
+        decision["results"],
+        source=source,
+    )
     closed = store.load_state(job_id) or state
-    return _terminal_feedback(closed, "PROVEN", None, [], counts)
+    return _terminal_feedback(closed, verdict, reason, flags, counts)
+
+
+def _full_gate(job_id: str, state: dict[str, Any], meta: dict[str, Any], source: str) -> dict[str, Any]:
+    directory = Path(store.job_dir(job_id))
+    decision = evaluate(job_id, meta, source, directory)
+    return _apply_decision(job_id, state, meta, decision, source)
 
 
 def _finish(job_id: str, state: dict[str, Any], meta: dict[str, Any], payload: Any) -> dict[str, Any]:

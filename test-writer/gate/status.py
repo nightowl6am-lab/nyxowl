@@ -103,12 +103,16 @@ def _inputs(job_id: str) -> dict[str, Any]:
 
 
 def _report(job_id: str) -> str:
-    path = common.store_root() / "jobs" / job_id / "report.md"
-    try:
-        if path.is_file():
-            return path.read_text(encoding="utf-8")
-    except OSError:
-        pass
+    directory = common.store_root() / "jobs" / job_id
+    # The owner-facing REPORT.md is the canonical M5 artifact; report.md stays
+    # for compatibility with older jobs and broker consumers.
+    for name in ("REPORT.md", "report.md"):
+        path = directory / name
+        try:
+            if path.is_file():
+                return path.read_text(encoding="utf-8")
+        except OSError:
+            pass
     return "no report yet\n"
 
 
