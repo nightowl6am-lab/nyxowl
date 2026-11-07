@@ -1,16 +1,16 @@
 # Plan status
 
-Last updated: 2026-11-06.
+Last updated: 2026-11-07.
 
 | Milestone | Status |
 | --- | --- |
 | M0 — sandbox foundation, owner artifacts, source definition | complete; root-owned install gate is historical only, rootless user gate replaces it |
-| M0.5 — Nyxowl agent + broker integration | source complete; runtime M1-M4 complete; M6 isolation verification pending |
+| M0.5 — Nyxowl agent + broker integration | source complete; runtime M1-M5 complete; M6 isolation verification pending |
 | M1 | complete |
 | M2 | complete |
 | M3 | complete |
 | M4 | complete |
-| M5 | not started |
+| M5 | complete |
 | M6 | not started; agent registered in M0.5, host-isolation verification still pending |
 | M7 | not started |
 
@@ -28,7 +28,7 @@ The current gate is a rootless user install:
 - [ ] `bash bootstrap/build-user-venv.sh` prints `USER_VENV: PASS` and installs
   the hashed lock into `<install>/venv`.
 - [ ] `python3 selftests/run_all.py` prints `M0_SELFTESTS: PASS` and
-  `M1M3_SELFTESTS: PASS` with 203 tests.
+  `M1M3_SELFTESTS: PASS` with 217 tests.
 - [ ] `python3 fixtures/build_fixtures.py --verify` prints
   `FIXTURES_VERIFY: PASS`.
 - [ ] The M0 probes run as the current user with `TW_INSTALL_ROOT` and
@@ -45,10 +45,10 @@ These are rootless checks and do not replace the owner acceptance above.
 | Check | Result |
 | --- | --- |
 | `python3 -m compileall -q test-writer` | PASS |
-| `TW_VENV_PYTHON=<runtime venv> python3 test-writer/selftests/run_all.py` | PASS — 203 tests, `M0_SELFTESTS: PASS`, `M1M3_SELFTESTS: PASS` |
+| `TW_VENV_PYTHON=<runtime venv> python3 test-writer/selftests/run_all.py` | PASS — 217 tests, `M0_SELFTESTS: PASS`, `M1M3_SELFTESTS: PASS` |
 | `python3 test-writer/fixtures/build_fixtures.py --verify` | PASS (`FIXTURES_VERIFY: PASS`) |
 
-## M1-M4 acceptance summary
+## M1-M5 acceptance summary
 
 - Fixture J1: `PROVEN`, with flake/variants/mutation passing and mutation score
   at least `0.8`.
@@ -63,6 +63,18 @@ These are rootless checks and do not replace the owner acceptance above.
   `PermissionError` is `UNPROVEN`/`VARIANT_OVERFIT`. `--gate 7` is refused with
   `GATE_UNAVAILABLE`. A direct `mutate.score(1, 2) = 0.5` unit test covers the
   `MUTATION_SCORE_LOW` threshold path.
+- M5 proof and recheck: every terminal gate run writes `test.py`, a canonical
+  `proof.json` with self-verifying runtime/frozen hashes, a hash-linked
+  append-only `chain.log`, and an owner-facing `REPORT.md`. `tw-recheck <id>`
+  replays the gate pipeline read-only, compares verdict/reason/flags/gates, the
+  vulnerable/patched/violation count blocks, mutation
+  score/counts/survivors, variant statuses, and flake runs, and exits
+  `0` only on a recomputed match. Tampering with `proof.json`, `meta.json`,
+  `manifest.json`, a source tar, `test.py`, a runtime file, or `chain.log`
+  fails closed with `HASH_MISMATCH`/`CHAIN_BROKEN`; open, missing, or
+  no-frozen-test jobs return `JOB_NOT_CLOSED`, `PROOF_MISSING`, or
+  `NO_FROZEN_TEST`. `REPORT.md` and recheck JSON contain no target or test
+  source fragments.
 - Behaviour-based verdict: gates 2/4/5 accept a real `AssertionError` or pytest
   `Failed` on the vulnerable/still-vulnerable snapshot and require the
   patched/fixed-differently snapshot to pass; detector attribution is evidence
@@ -90,12 +102,13 @@ These are rootless checks and do not replace the owner acceptance above.
   `DYNAMIC_ESCAPE`, while `pytest.raises`/`exc.value`, target calls, and
   `tmp_path` I/O stay clean. The four fixture verdicts are unchanged (J1/J4
   PROVEN, J2 UNPROVEN/`NO_DETECTOR_HIT_ON_VULN`, J3 REFUTED).
-- M1-M4 security hardening: report MAC plus exit-status agreement, forbidden
+- M1-M5 security hardening: report MAC plus exit-status agreement, forbidden
   fixtures, `sensitive_read` blocking of `/work/src` during the test phase, and
   detector-marker binding to the target's observed return. Detector attribution
   is retained only as evidence; the verdict is behavioural. Variant refs/tars
-  and mutant source are never exposed to the subagent. The selftest count is
-  203.
+  and mutant source are never exposed to the subagent. M5 adds canonical proof
+  hashes, a tamper-evident chain, and a read-only recheck. The selftest count is
+  217.
 - Residual risk: a `PROVEN` verdict is a quality/behavioural claim, not a
   hostile-test or hostile-target security claim. The proof test runs as
   untrusted code inside bwrap; the target snapshot is owner-supplied; both share

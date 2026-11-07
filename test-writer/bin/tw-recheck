@@ -1,0 +1,17 @@
+#!/bin/sh
+# Owner-side proof recheck.  Reads no stdin; replays one closed job's proof.
+set -u
+
+MODULE='gate.recheck'
+MODULE_FILE='gate/recheck.py'
+INSTALL_ROOT="${TW_INSTALL_ROOT:-$HOME/.nyxowl/test-writer}"
+PYTHON="${TW_VENV_PYTHON:-$INSTALL_ROOT/venv/bin/python}"
+
+if [ ! -x "$PYTHON" ] || [ ! -f "$INSTALL_ROOT/$MODULE_FILE" ] || [ ! -d "$INSTALL_ROOT/grader" ]; then
+  printf '%s\n' '{"message":"The Test-Writer runtime is not installed.","ok":false,"reason":"RUNTIME_UNAVAILABLE"}'
+  exit 78
+fi
+
+PYTHONPATH="$INSTALL_ROOT"
+export PYTHONPATH
+exec "$PYTHON" -m "$MODULE" "$@"

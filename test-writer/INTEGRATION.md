@@ -42,6 +42,7 @@ server and no second stdio server.
 | --- | --- | --- |
 | `tw-status` | `<install>/bin/tw-status <id> [--inputs|--report]` | owner |
 | `tw-gate` | `<install>/bin/tw-gate <id> [--lint-only|--finish|--gate N]` | owner |
+| `tw-recheck` | `<install>/bin/tw-recheck <id>` | owner |
 | `tw-store-job` | `<install>/bin/tw-store-job <id>` (invoked directly by `tw-approve`) | owner |
 | `tw-new-job` | `<install>/bin/tw-new-job --json` | owner |
 | `tw-approve` | `<install>/bin/tw-approve <id>` | owner |
@@ -191,14 +192,63 @@ which remains unclaimed.
 
 ## 10. Installation
 
-The owner runs the rootless steps in `README_OWNER.md`, then the M1-M4
+The owner runs the rootless steps in `README_OWNER.md`, then the M1-M5
 acceptance commands. `install-user.sh` installs `bin/`, `gate/`, `grader/`
 (including the harness), `agent/`, and the docs into
 `$HOME/.nyxowl/test-writer` and creates `<install>/store` with mode `0700`.
 `build-user-venv.sh` creates `<install>/venv` and installs the hashed lock. No
 step uses root, sudo, users/groups, `/opt`, or `/var/lib`.
 
-M3 and M4 are complete. The `nyx-testwriter` agent
-and its seven `nyx_testwriter_*` tools are registered in Nyxowl, and gates 1-6
-are usable. Only M5-M7, including M6 host-isolation verification, remain before
-host readiness.
+M3, M4, and M5 are complete. The `nyx-testwriter` agent
+and its seven `nyx_testwriter_*` tools are registered in Nyxowl, gates 1-6
+are usable, and `tw-recheck` verifies closed proofs. Only M6-M7, including M6
+host-isolation verification, remain before host readiness.
+
+## 11. Proof, chain, and recheck contract
+
+A terminal gate run freezes four owner-side artifacts in the job directory:
+
+- `test.py` — the exact staged proof test (`0600`);
+- `proof.json` — canonical `tw-proof/1` evidence with `verdict`, `reason`,
+  `flags`, `attempt`, `gates`, counts, mutation summary, fixed seeds, versions,
+  `runtimeHashes`, `frozenInputHashes`, `previousProofHash`, `createdAt`,
+  `proofHash`, and a `chain` anchor;
+- `chain.log` — append-only JSON-lines evidence;
+- `REPORT.md` — the owner report.
+
+`proofHash` is `sha256(canonical(body))`, where `body` is every field except
+`proofHash` and `chain`. A chain entry is
+`{"seq","prev","kind","payload","entryHash"}` and its `entryHash` commits to the
+prior entry. The proof's `chain.length`/`chain.head` anchor the entry it covers;
+recheck entries extend the tail without moving the anchor. Truncating, editing,
+deleting, or reordering entries below the anchor fails `CHAIN_BROKEN`.
+`chain.log` is also refused when it is a symlink, larger than 8 MiB, or longer
+than 10,000 entries; appends use `O_NOFOLLOW` and fail closed on a zero-byte
+write. These are DoS and link-traversal bounds on an otherwise owner-controlled
+audit log and do not constrain a normal proof-plus-recheck history.
+
+`tw-recheck <id>` serializes on the job lock and is read-only except for one
+chain append. It verifies, in order: the proof self-hash; the effective runtime
+hashes under `common.package_root()`; the frozen input hashes; the chain and
+anchor; and the stored state. It then re-runs the same gate pipeline on
+`test.py` and compares verdict, reason, flags, gates, the vulnerable, patched,
+and violations count blocks, mutation score/counts/survivors, variant statuses,
+and flake runs. It never claims a match it did not recompute. An absent
+`counts.patched` block normalizes to an empty block so early terminal proofs
+still compare equal.
+
+| Result | Exit | Payload |
+| --- | --- | --- |
+| Match | 0 | `{"ok":true,"result":"match","verdict","reason","attempt","proofHash"}` |
+| Evidence mismatch | 1 | `{"ok":false,"result":"mismatch","reason":"RECHECK_MISMATCH","field","expected","actual"}` |
+| Proof self-hash or file hash | 1 | `{"ok":false,"reason":"HASH_MISMATCH","file","kind"}` (`kind` is `runtime` or `input`) |
+| Chain tamper | 1 | `{"ok":false,"reason":"CHAIN_BROKEN","file":"chain.log"}` |
+| Missing proof/test | 1 | `PROOF_MISSING` / `NO_FROZEN_TEST` |
+| State disagreement | 1 | `{"ok":false,"reason":"STATE_MISMATCH","file":"state.json"}` |
+| Open or invalid job | 1 | `JOB_NOT_CLOSED` / `JOB_INVALID` |
+| Usage | 2 | `{"ok":false,"reason":"BAD_REQUEST","message"}` |
+| Runtime absent | 78 | `{"ok":false,"reason":"RUNTIME_UNAVAILABLE"}` |
+
+Proof, report, recheck JSON, and chain payloads never include target source,
+variant or mutant source, raw sandbox output, or a canary. Owner-only commit
+refs may appear in `REPORT.md`.

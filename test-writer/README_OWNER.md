@@ -50,15 +50,18 @@ verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
 
 ## Current status
 
-- M0 through M4 are complete. M5 through M7 are pending.
+- M0 through M5 are complete. M6 and M7 are pending.
 - The runtime runs gates 1-6: lint, the vulnerable snapshot, the patched
   snapshot, flake re-runs, the hidden variants, and AST mutation scoring.
+- Every terminal run now writes `test.py`, a canonical `proof.json`, an
+  append-only `chain.log`, and an owner-facing `REPORT.md`. `tw-recheck <id>`
+  replays the proof read-only and exits `0` only on a recomputed match.
 - `PROVEN` requires all six gates. Fixed seeds are used for the vulnerable,
   patched, flake, variant, and mutation runs; canaries remain per-run random.
 - The runtime is installed in the owner's home and runs as the owner. There is
   no separate grader OS user. The store is owner-readable at mode `0700`.
 - Host-isolation verification is still the M6 item and is not claimed here.
-- M1 through M4 changed no dependencies, no receipt kind, and no TypeScript
+- M1 through M5 changed no dependencies, no receipt kind, and no TypeScript
   surface.
 
 ## Runtime paths
@@ -107,7 +110,7 @@ bash bootstrap/build-user-venv.sh
 
 They are not the normal install path; prefer `nyxowl testwriter install`.
 
-### 2. Run the M0 and M1-M4 self-tests as the owner
+### 2. Run the M0 and M1-M5 self-tests as the owner
 
 From the source directory:
 
@@ -170,7 +173,7 @@ Expected results:
 
 Every result must also have `"ok": true` and a `"bwrap_version"` string.
 
-## M4 acceptance
+## M5 acceptance
 
 Run both commands from the source directory; they are rootless and use temporary
 directories:
@@ -189,7 +192,7 @@ M0_SELFTESTS: PASS
 M1M3_SELFTESTS: PASS
 ```
 
-`run_all.py` must also report `OK` with all 203 tests passing. The deterministic
+`run_all.py` must also report `OK` with all 217 tests passing. The deterministic
 fixture verdicts are:
 
 - J1 — `PROVEN`, with flake, variants, and mutation all passing.
@@ -202,6 +205,30 @@ The M4 cases also require `FLAKY`, `VARIANT_MISSING`, `VARIANT_TOO_WEAK`, and
 `0.8`. The same run covers the red-team cases and the lint/finish/busy/closed/
 budget refusals. A missing bubblewrap or runtime venv skips the sandbox cases
 and is not an acceptance pass.
+
+The M5 cases require every terminal job to carry `test.py`, `proof.json`, and
+`chain.log`, and `REPORT.md` to expose the same limits block as `report.md`
+without target or test source. They also require `tw-recheck <id>` to reproduce
+the recorded J1 (`PROVEN`) and J2 (`UNPROVEN`/`NO_DETECTOR_HIT_ON_VULN`) evidence
+and to fail closed on proof, runtime, frozen-input, and chain tampering.
+
+### Recheck contract
+
+`tw-recheck <id>` re-verifies a closed job without trusting the stored verdict.
+It checks the `proof.json` self-hash, the effective runtime hashes, the frozen
+input hashes (`meta.json`, `manifest.json`, both source tars, optional variant
+tars, and `test.py`), the append-only `chain.log`, and the stored state. It then
+re-runs the full gate pipeline on the staged test and compares verdict, reason,
+flags, gates, the vulnerable/patched/violations count blocks, mutation
+score/counts/survivors, variant statuses, and flake runs.
+It writes nothing except one appended `chain.log` entry, and only after a
+successful match or a post-run mismatch.
+
+Exit codes: `0` means the recomputed evidence matches; `1` means a mismatch or a
+fail-closed refusal (`HASH_MISMATCH`, `CHAIN_BROKEN`, `PROOF_MISSING`,
+`STATE_MISMATCH`, `NO_FROZEN_TEST`, `JOB_NOT_CLOSED`, `JOB_INVALID`, `BUSY`);
+`2` is a usage error. A missing runtime or venv exits `78` with
+`RUNTIME_UNAVAILABLE`.
 
 ### Owner review before accepting PROVEN
 
@@ -230,6 +257,7 @@ The installed wrappers run as your user. Use the install root explicitly if
 "$HOME/.nyxowl/test-writer/bin/tw-approve" <id>
 "$HOME/.nyxowl/test-writer/bin/tw-status" <id> [--inputs|--report]
 "$HOME/.nyxowl/test-writer/bin/tw-gate" <id> [--lint-only|--finish|--gate N]
+"$HOME/.nyxowl/test-writer/bin/tw-recheck" <id>
 ```
 
 `--gate 1` runs lint only. `--gate 2` through `--gate 6` run the full six-gate

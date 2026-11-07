@@ -298,7 +298,7 @@ class DraftAndApprovalTests(_GateEnv):
         self.assertNotIn("spec", plain)
 
     def test_wrappers_are_executable_and_fail_closed(self):
-        names = ("tw-new-job", "tw-add-variant", "tw-approve", "tw-store-job", "tw-gate", "tw-status")
+        names = ("tw-new-job", "tw-add-variant", "tw-approve", "tw-store-job", "tw-gate", "tw-status", "tw-recheck")
         for name in names:
             path = BIN / name
             mode = path.stat().st_mode
