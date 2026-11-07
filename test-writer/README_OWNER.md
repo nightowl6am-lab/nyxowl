@@ -76,43 +76,38 @@ the Python modules are imported.
 
 ## Owner steps, in order
 
-### 1. Enter the source directory
+### 1. Install the runtime (normal path)
 
-After this branch is merged:
+The normal path is the Nyxowl CLI. The first `nyxowl` run installs the rootless
+runtime under `$HOME/.nyxowl/test-writer` (or `$NYXOWL_HOME/test-writer`). To
+install, repair, or inspect it explicitly:
 
 ```bash
-cd /home/ocagent/work/nyxowl/nyxowl/test-writer
+nyxowl testwriter install
+nyxowl testwriter status
 ```
 
-Until then, use the worktree:
+The CLI runs `bootstrap/install-user.sh` and then
+`bootstrap/build-user-venv.sh` as your user. The first copies `bin/`, `gate/`,
+`grader/` (including the harness), `agent/`, and the docs into the install root
+and creates the store at `<install root>/store` with mode `0700`. The second
+creates `<install root>/venv` and installs `requirements.lock` with
+`--require-hashes` when present, otherwise `requirements.in`. No root, sudo,
+service account, or privilege transition is used, and no extra commands are
+needed after `npm install -g nyxowl`.
+
+For source checkouts, the bootstrap scripts remain available for internal use
+and recovery:
 
 ```bash
-cd /home/ocagent/work/nyxowl/worktrees/nyxowl-test-writer-rootless/test-writer
-```
-
-### 2. Install the runtime tree as your user
-
-```bash
+cd /path/to/nyxowl/test-writer
 bash bootstrap/install-user.sh
-```
-
-This copies `bin/`, `gate/`, `grader/` (including the harness), `agent/`, and the
-docs into `$HOME/.nyxowl/test-writer`. It creates the store at
-`$HOME/.nyxowl/test-writer/store` with mode `0700`. It does not create users or
-groups, does not build the venv, and does not write outside the install root and
-store. The script prints `USER_INSTALL: PASS` when it succeeds.
-
-### 3. Build the runtime venv
-
-```bash
 bash bootstrap/build-user-venv.sh
 ```
 
-This creates `<install root>/venv` and installs `requirements.lock` with
-`--require-hashes` when that file is present, otherwise `requirements.in`. It
-prints `USER_VENV: PASS`. No privilege transition is used.
+They are not the normal install path; prefer `nyxowl testwriter install`.
 
-### 4. Run the M0 and M1-M4 self-tests as the owner
+### 2. Run the M0 and M1-M4 self-tests as the owner
 
 From the source directory:
 
@@ -132,7 +127,7 @@ These tests write only to isolated temporary roots. If `/usr/bin/bwrap` or the
 resolved venv interpreter is missing, the sandbox cases skip with an explicit
 message; that is not a pass.
 
-### 5. Run the M0 acceptance probes as your user
+### 3. Run the M0 acceptance probes as your user
 
 The probes can run as the current user; no staging under a system directory is
 needed. Export the probe root so the launcher accepts the absolute path:

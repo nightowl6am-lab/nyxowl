@@ -46,9 +46,12 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
     fs.mkdirSync(fakeBinDir, { recursive: true });
     // Keep system git/node on PATH while putting fakeBinDir first
     envPathWithFakeHosts = `${fakeBinDir}${path.delimiter}${process.env["PATH"] ?? ""}`;
+    // Never let a CLI setup test invoke the real Test-Writer installer/pip.
+    process.env["NYXOWL_TESTWRITER_INSTALL"] = "0";
   });
 
   afterEach(() => {
+    delete process.env["NYXOWL_TESTWRITER_INSTALL"];
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 

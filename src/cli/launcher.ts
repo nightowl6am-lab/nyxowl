@@ -87,6 +87,7 @@ export async function launchNyxowlSession(options?: {
   nyxowlHome?: string;
   envPath?: string;
   dryRun?: boolean;
+  installTestWriter?: boolean;
 }): Promise<LaunchSessionResult> {
   const requestedHost = options?.hostOverride as string | undefined;
   if (requestedHost !== undefined && requestedHost !== "opencode") {
@@ -99,6 +100,9 @@ export async function launchNyxowlSession(options?: {
   const setupRes = await ensureFirstRunSetup({
     ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
     ...(options?.envPath ? { envPath: options.envPath } : {}),
+    ...(options?.installTestWriter !== undefined
+      ? { installTestWriter: options.installTestWriter }
+      : {}),
   });
 
   const targetDir = path.resolve(options?.targetPath ?? process.cwd());

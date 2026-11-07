@@ -302,8 +302,13 @@ class DraftAndApprovalTests(_GateEnv):
         for name in names:
             path = BIN / name
             mode = path.stat().st_mode
-            self.assertTrue(stat.S_ISREG(mode))
-            self.assertEqual(mode & 0o777, 0o755, name)
+            self.assertTrue(stat.S_ISREG(mode), name)
+            # Git checkout honors the user's umask, so the repo copy may be
+            # 0775 rather than 0755.  Require a regular file that is
+            # executable by owner, group, and other, and never world-writable.
+            # install-user.sh still normalizes installed wrappers to 0755.
+            self.assertEqual(mode & 0o111, 0o111, name)
+            self.assertEqual(mode & 0o002, 0, name)
         env = os.environ.copy()
         env["TW_INSTALL_ROOT"] = str(self._temp / "no-install")
         completed = subprocess.run(

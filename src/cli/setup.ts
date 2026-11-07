@@ -14,6 +14,7 @@ import {
 } from "./detect-hosts.ts";
 import { loadInstallManifest, saveInstallManifest } from "./manifest.ts";
 import { getSkillSlotReport } from "./skills.ts";
+import { ensureTestWriterRuntime, type TestWriterInstallStatus } from "./testwriter.ts";
 
 export { NYXOWL_VERSION };
 
@@ -25,6 +26,7 @@ export interface SetupResult {
   detectedHosts: DetectedHost[];
   defaultHost: DetectedHost | null;
   skillSlots: Array<{ agentId: string; path: string; loaded: boolean }>;
+  testWriter: { status: TestWriterInstallStatus; root: string; message: string };
   summaryLines: string[];
 }
 
@@ -81,6 +83,8 @@ export async function ensureFirstRunSetup(options?: {
   nyxowlHome?: string;
   envPath?: string;
   force?: boolean;
+  installTestWriter?: boolean;
+  testWriterSourceDir?: string;
 }): Promise<SetupResult> {
   const { nodeVersion, gitVersion } = await runPreflightChecks({
     ...(options?.envPath ? { envPath: options.envPath } : {}),
@@ -121,18 +125,37 @@ export async function ensureFirstRunSetup(options?: {
     saveInstallManifest(updatedManifest, options?.nyxowlHome);
   }
 
+  // Test-Writer is part of the normal first-run path. It is idempotent and a
+  // failure here must never block launching the rest of Nyxowl; the broker
+  // stays fail-closed until the runtime is ready.
+  const testWriter = await ensureTestWriterRuntime({
+    ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
+    ...(options?.testWriterSourceDir ? { sourceDir: options.testWriterSourceDir } : {}),
+    ...(options?.envPath ? { envPath: options.envPath } : {}),
+    ...(options?.installTestWriter !== undefined ? { install: options.installTestWriter } : {}),
+  });
+
   const installedNames = detectedHosts
     .filter((h) => h.installed)
     .map((h) => `${h.displayName} (Tier ${h.tier})`)
     .join(", ");
 
   const filledSlots = skillSlots.filter((slot) => slot.loaded).length;
+  const testWriterLine =
+    testWriter.status === "installed" || testWriter.status === "already-installed"
+      ? `Test-Writer: ready at ${testWriter.root}`
+      : testWriter.status === "disabled"
+        ? "Test-Writer: skipped (NYXOWL_TESTWRITER_INSTALL=0)"
+        : testWriter.status === "unavailable"
+          ? `Test-Writer: unavailable — ${testWriter.message}`
+          : `Test-Writer: install failed — ${testWriter.message}`;
   const summaryLines = [
     `Nyxowl v${NYXOWL_VERSION} initialized at ${resolveGlobalNyxowlPaths(options?.nyxowlHome).homeDir} (0700)`,
     `Runtimes verified: Node v${nodeVersion}, git v${gitVersion}`,
     `Skill slots: ${skillSlots.length} total (${filledSlots} filled, ${skillSlots.length - filledSlots} empty)`,
     `Detected host: ${installedNames || "none on PATH"}`,
     `OpenCode: ${defaultHost ? `${defaultHost.displayName} (Tier ${defaultHost.tier})` : "none"}`,
+    testWriterLine,
   ];
 
   return {
@@ -143,6 +166,11 @@ export async function ensureFirstRunSetup(options?: {
     detectedHosts,
     defaultHost,
     skillSlots,
+    testWriter: {
+      status: testWriter.status,
+      root: testWriter.root,
+      message: testWriter.message,
+    },
     summaryLines,
   };
 }

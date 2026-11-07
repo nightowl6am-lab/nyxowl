@@ -17,6 +17,11 @@ import { buildHydrateDigestForHook, runSessionStartCli } from "./hooks/session-s
 import { launchNyxowlSession } from "./launcher.ts";
 import { uninstallFromManifest, upsertManagedBlockFile } from "./manifest.ts";
 import { ensureFirstRunSetup, NYXOWL_VERSION } from "./setup.ts";
+import {
+  ensureTestWriterRuntime,
+  testWriterRoot,
+  testWriterStatus,
+} from "./testwriter.ts";
 
 export interface CliResult {
   exitCode: number;
@@ -32,10 +37,14 @@ export async function runCli(
     cwd?: string;
     dryRunLaunch?: boolean;
     stdinText?: string;
+    testWriterSourceDir?: string;
+    installTestWriter?: boolean;
   },
 ): Promise<CliResult> {
   const cwd = options?.cwd ?? process.cwd();
   const nyxowlHome = options?.nyxowlHome ?? process.env["NYXOWL_HOME"];
+  const installTestWriter =
+    options?.installTestWriter ?? (process.env["NYXOWL_TESTWRITER_INSTALL"] !== "0");
   const args = [...argv];
 
   if (args.includes("--version") || args.includes("-v")) {
@@ -53,6 +62,7 @@ export async function runCli(
       "  nyxowl handoff [path]                           Print latest task handoff & hydrate digest",
       "  nyxowl worktree list|prune|remove [<slug>]      Manage isolated Nyxowl worktrees",
       "  nyxowl receipts verify [<id>]                   Verify receipt HMACs and working-tree bindings",
+      "  nyxowl testwriter install|status                Install or inspect the rootless Test-Writer runtime",
       "  nyxowl github connect                           Configure optional Mode A GitHub App credentials",
       "  nyxowl init --project                            Write optional committable project config",
       "  nyxowl relink <old-path> <new-path>             Migrate state after moving a repository",
@@ -101,11 +111,61 @@ export async function runCli(
     };
   }
 
-  // 3. nyxowl doctor
+  // 3. nyxowl testwriter install|status
+  if (sub === "testwriter") {
+    const action = args[1];
+    const root = testWriterRoot(nyxowlHome);
+    if (action === "status") {
+      const status = testWriterStatus(root, options?.testWriterSourceDir);
+      const readyWrappers = status.wrappers.filter((wrapper) => wrapper.executable).length;
+      const lines = [
+        `Test-Writer: ${status.ready ? "ready" : "not ready"} at ${status.root}`,
+        `  Wrappers: ${readyWrappers}/${status.wrappers.length} executable`,
+        `  Venv: ${status.venv.ready ? "ready" : "missing"} (${status.venv.python})`,
+        `  Store: ${status.store}`,
+        `  Source: ${status.source || "(not found)"}`,
+      ];
+      return { exitCode: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };
+    }
+    if (action === "install") {
+      const result = await ensureTestWriterRuntime({
+        ...(nyxowlHome ? { nyxowlHome } : {}),
+        ...(options?.testWriterSourceDir ? { sourceDir: options.testWriterSourceDir } : {}),
+        ...(options?.envPath ? { envPath: options.envPath } : {}),
+        force: args.includes("--force"),
+        // An explicit `testwriter install` overrides the env opt-out unless the
+        // caller passed installTestWriter:false (automatic setup path).
+        install: options?.installTestWriter ?? true,
+      });
+      const ok = result.status === "installed" || result.status === "already-installed";
+      const lines = [
+        result.status === "installed"
+          ? `Test-Writer: installed at ${result.root}`
+          : result.status === "already-installed"
+            ? `Test-Writer: ready at ${result.root}`
+            : result.message,
+        ...result.lines,
+      ];
+      return {
+        exitCode: ok ? 0 : 1,
+        stdout: `${lines.join("\n")}\n`,
+        stderr: ok ? "" : `${result.message}\n`,
+      };
+    }
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `Usage: nyxowl testwriter install|status\n`,
+    };
+  }
+
+  // 4. nyxowl doctor
   if (sub === "doctor") {
     const setupRes = await ensureFirstRunSetup({
       ...(nyxowlHome ? { nyxowlHome } : {}),
       ...(options?.envPath ? { envPath: options.envPath } : {}),
+      ...(options?.testWriterSourceDir ? { testWriterSourceDir: options.testWriterSourceDir } : {}),
+      installTestWriter,
     });
     const lines = [
       ...setupRes.summaryLines,
@@ -421,6 +481,7 @@ export async function runCli(
     ...(nyxowlHome ? { nyxowlHome } : {}),
     ...(options?.envPath ? { envPath: options.envPath } : {}),
     ...(options?.dryRunLaunch !== undefined ? { dryRun: options.dryRunLaunch } : {}),
+    installTestWriter,
   });
 
   return {
