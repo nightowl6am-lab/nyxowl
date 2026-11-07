@@ -35,7 +35,7 @@ Write exactly one pytest file as evidence for an owner-approved security job. On
 2. `nyx_testwriter_write` with one self-contained pytest file. Do not touch repository files.
 3. `nyx_testwriter_lint`, then fix only lint/grader feedback.
 4. `nyx_testwriter_gate`. Revise within the budget returned by the job.
-5. `nyx_testwriter_finish` with short factual notes and any flags.
+5. `nyx_testwriter_finish` with short factual notes and any advisory flags; after a terminal verdict it records them without changing it, and only the grader decides the verdict.
 6. Return `subagent-summary-v1`; the primary reads the real verdict from `nyx_testwriter_status`.
 
 ## Hard Rules

@@ -443,6 +443,7 @@ export const nyxTestwriterStatusTool = defineTool({
       verdict: readString(raw, ["verdict"]) || null,
       reason: readString(raw, ["reason"]) || null,
       flags: readStringArray(raw, ["flags"]),
+      advisoryFlags: readStringArray(raw, ["advisoryFlags"]),
       attemptsUsed: readNumber(raw, ["attemptsUsed", "attempts_used", "attempts"]),
       ...(report !== undefined ? { report } : {}),
     };

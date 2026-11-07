@@ -153,10 +153,24 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
     expect(pluginCode).not.toContain("@opencode/plugin");
     expect(pluginCode).toContain('ctx.permission.hook("evaluate"');
     expect(pluginCode).toContain('ctx.session.hook("context"');
+    expect(pluginCode).toContain('ctx.session.hook("context", restrictTools)');
+    expect(pluginCode).toContain("TESTWRITER_DENY_TOOLS");
+    for (const name of [
+      "opencode_models",
+      "opencode_session_move",
+      "opencode_session_rename",
+      "opencode_worktree_create",
+      "opencode_worktree_list",
+    ]) {
+      expect(pluginCode, `plugin must denylist host tool ${name}`).toContain(name);
+    }
+    expect(pluginCode).toContain("TESTWRITER_TOOL_SUFFIXES");
+    expect(pluginCode).toContain("function restrictTools");
+    expect(pluginCode).not.toContain("TESTWRITER_TOOL_NAMES");
     expect(pluginCode).not.toContain("tool.execute.before");
     expect(pluginCode).not.toContain("experimental.session.compacting");
 
-    // Dynamic registration accuracy gate: plugin exports and registers both v2 hooks.
+    // Dynamic registration accuracy gate: plugin exports and registers all three hooks.
     const mod = (await import(pathToFileURL(pluginEntry).href)) as {
       default: { id: string; setup(ctx: unknown): Promise<void> };
     };
@@ -177,6 +191,7 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
     expect(mod.default.id).toBe("nyxowl");
     expect(calls).toEqual([
       ["permission", "evaluate"],
+      ["session", "context"],
       ["session", "context"],
     ]);
 
@@ -350,4 +365,5 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
     expect(fs.readFileSync(mcpPath, "utf8")).toBe(initialMcp);
     expect(fs.existsSync(rulesPath)).toBe(false);
   });
+
 });

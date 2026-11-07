@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAndCompileAgentFile, ROLE_ALLOWED_NYX_TOOLS } from "../../src/cli/compiler.ts";
+import { generateOpenCodeHostPackage } from "../../src/cli/adapters/opencode.ts";
 import { ALL_NYX_TOOLS, createNyxMcpServer } from "../../src/mcp/server.ts";
 import {
   buildWrapperArgv,
@@ -447,8 +448,13 @@ describe("Test-Writer broker and tools", () => {
 
     await client.callTool({ name: "nyx_testwriter_job", arguments: { jobId: "J7" } });
 
-    const options = brokerCalls()[0]?.[2] as { detached?: boolean } | undefined;
+    const options = brokerCalls()[0]?.[2] as
+      | { detached?: boolean; env?: Record<string, string> }
+      | undefined;
     expect(options?.detached).toBe(true);
+    const spawnEnv = options ? options["env"] : undefined;
+    expect(spawnEnv?.["TW_WORKSPACE_ROOT"]).toBe(path.join(tmpRoot, "tw-jobs"));
+    expect(spawnEnv?.["PATH"]).toBe("/usr/local/bin:/usr/bin:/bin");
   });
 
   it("rejects a present but non-executable wrapper before spawning", async () => {
@@ -465,5 +471,255 @@ describe("Test-Writer broker and tools", () => {
       (res.structuredContent as { code: string }).code,
     );
     expect(brokerSpawnCount()).toBe(0);
+  });
+
+  it("returns advisoryFlags in status and feedback", async () => {
+    const wrapperRoot = path.join(tmpRoot, "advisory-install");
+    installWrapper(wrapperRoot, "tw-status", 0o700);
+    vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
+    spawnControl.handler = () =>
+      fakeChildProcess(
+        JSON.stringify({
+          status: "closed",
+          verdict: "PROVEN",
+          reason: null,
+          flags: [],
+          advisoryFlags: ["INJECTION_SUSPECTED"],
+          attemptsUsed: 1,
+        }),
+        "",
+        0,
+      );
+
+    return client
+      .callTool({ name: "nyx_testwriter_status", arguments: { jobId: "J10" } })
+      .then((res) => {
+        expect(res.isError).toBeFalsy();
+        const payload = res.structuredContent as { advisoryFlags: string[] };
+        expect(payload.advisoryFlags).toEqual(["INJECTION_SUSPECTED"]);
+        const sanitized = sanitizeFeedback({ advisoryFlags: ["SPEC_INSUFFICIENT"] });
+        expect(sanitized["advisoryFlags"]).toEqual(["SPEC_INSUFFICIENT"]);
+      });
+  });
+
+  it("rejects an unsupported finish flag before spawning the wrapper", async () => {
+    return client
+      .callTool({
+        name: "nyx_testwriter_finish",
+        arguments: { jobId: "J11", notes: "notes", flags: ["NOT_ALLOWED"] },
+      })
+      .then((res) => {
+        expect(res.isError).toBe(true);
+        expect((res.structuredContent as { code: string }).code).toBe("ERR_INVALID_INPUT");
+        expect(brokerSpawnCount()).toBe(0);
+      });
+  });
+
+  it("registers exactly seven Test-Writer tools and exposes exactly five to the subagent", () => {
+    const testwriterTools = ALL_NYX_TOOLS.map((tool) => tool.name).filter((name) =>
+      name.startsWith("nyx_testwriter_"),
+    );
+    expect(testwriterTools).toHaveLength(7);
+    expect(new Set(testwriterTools).size).toBe(7);
+
+    const agent = parseAndCompileAgentFile({
+      filePath: path.join(process.cwd(), "agents", "subagents", "nyx-testwriter.md"),
+      maxPromptTokens: 1200,
+      pkgRoot: process.cwd(),
+    });
+    expect(agent.contract.nyx_tools).toHaveLength(5);
+    expect(agent.contract.nyx_tools.map((tool) => `nyx_${tool}`).sort()).toEqual(
+      [
+        "nyx_testwriter_finish",
+        "nyx_testwriter_gate",
+        "nyx_testwriter_job",
+        "nyx_testwriter_lint",
+        "nyx_testwriter_write",
+      ].sort(),
+    );
+  });
+
+  it("generates deny-by-default OpenCode permissions for the Test-Writer subagent", () => {
+    const isoHome = path.join(tmpRoot, "iso-home");
+    const pkg = generateOpenCodeHostPackage({
+      nyxowlHome: isoHome,
+      projectPath: repoPath,
+      pkgRoot: process.cwd(),
+    });
+    const config = JSON.parse(fs.readFileSync(pkg.configPath, "utf8")) as {
+      agents: Record<
+        string,
+        { permissions: Array<{ action: string; resource: string; effect: string }> }
+      >;
+    };
+    const agentConfig = config.agents["nyx-testwriter"];
+    expect(agentConfig).toBeDefined();
+    const permissions = agentConfig!.permissions;
+
+    // OpenCode v2 permissions are ordered and last-match-wins. Resolve the
+    // effective effect for an action by replaying the rules in order, where "*"
+    // matches any action and a trailing "*" is a prefix wildcard.
+    const actionMatches = (pattern: string, action: string): boolean => {
+      if (pattern === "*") return true;
+      if (pattern.endsWith("*")) return action.startsWith(pattern.slice(0, -1));
+      return pattern === action;
+    };
+    const resolve = (action: string): string => {
+      let effect = "ask";
+      for (const rule of permissions) {
+        if (rule.resource === "*" && actionMatches(rule.action, action)) {
+          effect = rule.effect;
+        }
+      }
+      return effect;
+    };
+
+    // A wildcard deny is forbidden: live QA showed OpenCode drops the allowed
+    // MCP tools from the model's tool surface when one is present.
+    const wildcardDeny = permissions.findIndex(
+      (rule) => rule.action === "*" && rule.resource === "*" && rule.effect === "deny",
+    );
+    expect(wildcardDeny, "no wildcard deny rule may be generated").toBe(-1);
+
+    const nyxowlDeny = permissions.findIndex(
+      (rule) => rule.action === "nyxowl_*" && rule.resource === "*" && rule.effect === "deny",
+    );
+    const firstAllow = permissions.findIndex(
+      (rule) => rule.effect === "allow" && rule.action.startsWith("nyxowl_"),
+    );
+    expect(nyxowlDeny).toBeGreaterThanOrEqual(0);
+    expect(firstAllow).toBeGreaterThan(nyxowlDeny);
+
+    // Explicit host-action denies, in order, before the nyxowl_* deny.
+    const hostDenyActions = [
+      "read",
+      "edit",
+      "glob",
+      "grep",
+      "shell",
+      "webfetch",
+      "websearch",
+      "subagent",
+      "skill",
+      "question",
+      "external_directory",
+      "experimental_image_generate",
+      "execute",
+    ] as const;
+    const hostDenyIndexes = hostDenyActions.map((action) =>
+      permissions.findIndex(
+        (rule) => rule.action === action && rule.resource === "*" && rule.effect === "deny",
+      ),
+    );
+    hostDenyIndexes.forEach((index, position) => {
+      expect(index, `${hostDenyActions[position]} deny rule must exist`).toBeGreaterThanOrEqual(0);
+      expect(index, `${hostDenyActions[position]} deny must precede nyxowl_* deny`).toBeLessThan(
+        nyxowlDeny,
+      );
+      if (position > 0) {
+        expect(index, `${hostDenyActions[position]} deny must follow order`).toBeGreaterThan(
+          hostDenyIndexes[position - 1]!,
+        );
+      }
+    });
+
+    // The OpenCode resource-listing actions must stay undennied in config so the
+    // five nyxowl_nyx_testwriter_* MCP tools remain exposed to the model. The
+    // plugin hook enforces the per-agent boundary instead.
+    for (const action of ["opencode_list_mcp_resources", "opencode_read_mcp_resource"]) {
+      expect(
+        permissions.some((rule) => rule.action === action && rule.effect === "deny"),
+        `${action} must not be denied in config`,
+      ).toBe(false);
+    }
+
+    const deniedActions = [
+      ...hostDenyActions,
+      "nyxowl_nyx_blackboard_read",
+      "nyxowl_nyx_worktree_start",
+    ];
+    for (const action of deniedActions) {
+      expect(resolve(action), `${action} must be denied by last-match-wins`).toBe("deny");
+    }
+
+    const allowedActions = [
+      "nyxowl_nyx_testwriter_finish",
+      "nyxowl_nyx_testwriter_gate",
+      "nyxowl_nyx_testwriter_job",
+      "nyxowl_nyx_testwriter_lint",
+      "nyxowl_nyx_testwriter_write",
+    ];
+    for (const action of allowedActions) {
+      expect(resolve(action), `${action} must stay allowed`).toBe("allow");
+    }
+
+    // The plugin hook is the second layer: config exposes the five MCP tools,
+    // and the hook denies every other action for this agent at runtime.
+    const pluginCode = fs.readFileSync(path.join(pkg.pluginPath, "index.js"), "utf8");
+    for (const action of allowedActions) {
+      expect(pluginCode, `plugin must allowlist ${action}`).toContain(action);
+    }
+    expect(pluginCode).toContain("nyx-testwriter");
+    expect(pluginCode).toContain("five tools");
+    const allowlistCheckIndex = pluginCode.indexOf("TESTWRITER_ACTIONS.has(action)");
+    const readEarlyReturnIndex = pluginCode.indexOf('action === "read" && !isSecretPath');
+    expect(allowlistCheckIndex).toBeGreaterThanOrEqual(0);
+    expect(readEarlyReturnIndex).toBeGreaterThanOrEqual(0);
+    expect(
+      allowlistCheckIndex,
+      "the Test-Writer allowlist must run before the read early return",
+    ).toBeLessThan(readEarlyReturnIndex);
+  });
+
+  it("uses a two-phase tool-snapshot filter for the Test-Writer boundary", () => {
+    const isoHome = path.join(tmpRoot, "snapshot-home");
+    const pkg = generateOpenCodeHostPackage({
+      nyxowlHome: isoHome,
+      projectPath: repoPath,
+      pkgRoot: process.cwd(),
+    });
+    const pluginCode = fs.readFileSync(path.join(pkg.pluginPath, "index.js"), "utf8");
+
+    expect(pluginCode).toContain("TESTWRITER_DENY_TOOLS");
+    for (const name of [
+      "opencode_models",
+      "opencode_session_move",
+      "opencode_session_rename",
+      "opencode_worktree_create",
+      "opencode_worktree_list",
+    ]) {
+      expect(pluginCode, `plugin must denylist host tool ${name}`).toContain(name);
+    }
+    expect(pluginCode).toContain("TESTWRITER_TOOL_SUFFIXES");
+    for (const suffix of [
+      "testwriter_job",
+      "testwriter_write",
+      "testwriter_lint",
+      "testwriter_gate",
+      "testwriter_finish",
+    ]) {
+      expect(pluginCode, `plugin must suffix-match ${suffix}`).toContain(suffix);
+    }
+    expect(pluginCode).not.toContain("TESTWRITER_TOOL_NAMES");
+    expect(pluginCode).toContain('event.agent === "nyx-testwriter"');
+    expect(pluginCode).toContain("event.tools");
+    expect(pluginCode).toContain("Array.isArray(event.tools)");
+    expect(pluginCode).toContain("restrictTools");
+    expect(pluginCode).toContain("isAllowedTool");
+    expect(pluginCode).toContain("isDeniedTool");
+    expect(pluginCode).toContain("const hasAllowed");
+    expect(pluginCode).toContain("if (hasAllowed)");
+    expect(pluginCode).toContain("splice");
+
+    // Object branch: allowlist phase deletes non-allowed keys, denylist phase
+    // deletes only the five bypassing native tools.
+    expect(pluginCode).toContain(
+      "if (!isAllowedTool(name) && !isAllowedTool(tools[name])) delete tools[name];",
+    );
+    expect(pluginCode).toContain("if (TESTWRITER_DENY_TOOLS.has(name)) delete tools[name];");
+    // Array branch mirrors the same phases.
+    expect(pluginCode).toContain("if (isDeniedTool(tools[i])) tools.splice(i, 1);");
+    expect(pluginCode).toContain('ctx.session.hook("context", hydrateSession)');
+    expect(pluginCode).toContain('ctx.session.hook("context", restrictTools)');
   });
 });

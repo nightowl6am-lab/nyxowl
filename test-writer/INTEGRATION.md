@@ -28,10 +28,56 @@ invoked with exactly `TW_JOB <id>`.
 | `nyx-testwriter` | `nyx_testwriter_job`, `nyx_testwriter_write`, `nyx_testwriter_lint`, `nyx_testwriter_gate`, `nyx_testwriter_finish` |
 | `nyxowl` | `nyx_testwriter_prepare`, `nyx_testwriter_status` |
 
-The subagent has no host `read`, `edit`, `write`, `shell`/`bash`, or `webfetch`
-tool. It sees only the job inputs returned by `nyx_testwriter_job`. The primary
-alone reads the terminal verdict and report from `nyx_testwriter_status`; the
-subagent summary is not evidence.
+The subagent has no host tools. Its isolation is enforced in three layers.
+
+**Config layer.** The generated OpenCode permission set uses explicit denies for
+`read`, `edit`, `glob`, `grep`, `shell`, `webfetch`, `websearch`, `subagent`,
+`skill`, `question`, `external_directory`, `experimental_image_generate`, and
+`execute`. A `nyxowl_*` namespace deny follows, and the five
+`nyxowl_nyx_testwriter_*` allows are last under last-match-wins. It deliberately
+does **not** use a wildcard `{action: "*"}` deny, and it does **not** deny
+`opencode_list_mcp_resources`, `opencode_read_mcp_resource`, or
+`opencode_models`: live QA showed each such config deny removes the five allowed
+MCP tools from the model's tool surface.
+
+**Permission-hook layer.** The generated permission hook enforces a per-agent
+allowlist for `nyx-testwriter`: only `nyxowl_nyx_testwriter_job`, `..._write`,
+`..._lint`, `..._gate`, and `..._finish` proceed; every other action, including
+the OpenCode resource-listing tools and any future host action, is denied
+locally before the host hook resolves it. If the hook throws while handling
+`nyx-testwriter`, it fails closed; other agents keep the existing fail-open
+behavior.
+
+**Context-filter layer.** The generated plugin registers a second
+`ctx.session.hook("context", restrictTools)` next to hydration. For
+`nyx-testwriter` it applies a two-phase filter to the per-request `event.tools`
+snapshot. An entry is allowed when its derived name (string entry, `id`, `name`,
+`tool`, or `function.name`) ends with `testwriter_job`, `testwriter_write`,
+`testwriter_lint`, `testwriter_gate`, or `testwriter_finish`.
+
+- **Pre-MCP phase.** The first context snapshot contains only native host tools
+  (nine keys in the live diagnostic) and none of the five MCP tools. In this
+  phase the filter deletes only the five bypassing tools
+  (`opencode_models`, `opencode_session_move`, `opencode_session_rename`,
+  `opencode_worktree_create`, `opencode_worktree_list`) and preserves every
+  other entry, so MCP registration is not suppressed.
+- **Post-MCP phase.** Once any allowed Test-Writer tool appears in the snapshot,
+  the filter keeps only allowed entries and deletes every other key or array
+  element.
+
+Both the object and array branches implement the same two phases: an allowlist
+branch when a recognizable Test-Writer entry exists, otherwise a denylist
+fallback limited to the five native tools. The filter is a no-op for other
+agents or when `event.tools` is absent, and it swallows its own errors so it
+cannot break the model call. `opencode_models` is not denied in config because
+live QA showed a config deny hides the five MCP tools. The live diagnostic
+matrix (temp plugin only) confirmed the nine-key first snapshot and the later
+39-key snapshot with all five MCP tools, and that deleting every non-allowed key
+on the first snapshot prevents MCP registration; deleting only the five
+bypassing tools preserves it. Final live re-verification is pending. The
+subagent sees only the job inputs returned by `nyx_testwriter_job`.
+The primary alone reads the terminal verdict and report from
+`nyx_testwriter_status`; the subagent summary is not evidence.
 
 ## 3. Broker boundary
 
@@ -199,10 +245,27 @@ acceptance commands. `install-user.sh` installs `bin/`, `gate/`, `grader/`
 `build-user-venv.sh` creates `<install>/venv` and installs the hashed lock. No
 step uses root, sudo, users/groups, `/opt`, or `/var/lib`.
 
-M3, M4, and M5 are complete. The `nyx-testwriter` agent
-and its seven `nyx_testwriter_*` tools are registered in Nyxowl, gates 1-6
-are usable, and `tw-recheck` verifies closed proofs. Only M6-M7, including M6
-host-isolation verification, remain before host readiness.
+M3 through M6 are complete in source. The `nyx-testwriter` agent and its seven
+`nyx_testwriter_*` tools are registered in Nyxowl, gates 1-6 are usable, and
+`tw-recheck` verifies closed proofs. M6 adds an advisory finish record, a
+model-free three-run fixture matrix, a parent stdio MCP end-to-end test, and
+deny-by-default OpenCode permissions for the subagent. The live OpenCode
+host-isolation transcript remains a verifier step; M7 is still pending.
+
+M6 keeps the owner-only runtime overrides (`TW_INSTALL_ROOT`, `TW_STORE_ROOT`,
+`TW_TMP_ROOT`, `TW_WORKSPACE_ROOT`, `TW_VENV_PYTHON`) on the wrappers a brokered
+call spawns, so an isolated install/store/workspace is honoured end to end. The
+broker still strips the rest of the host environment. The generated OpenCode
+config gives the fully isolated subagent explicit deny rules for `read`, `edit`,
+`glob`, `grep`, `shell`, `webfetch`, `websearch`, `subagent`, `skill`,
+`question`, `external_directory`, `experimental_image_generate`, and `execute`,
+then a broad `nyxowl_*` deny, and finally explicit allow rules for exactly the
+five subagent tools. It does **not** use a wildcard `{action: "*"}` deny, and it
+leaves `opencode_list_mcp_resources` / `opencode_read_mcp_resource` undennied:
+live QA showed all three remove the five allowed MCP tools from the model's
+tool surface. The plugin hook closes that gap with a local five-action
+allowlist for `nyx-testwriter` and fails closed for that agent if the hook
+throws. Live re-verification of the two-layer boundary is still owed.
 
 ## 11. Proof, chain, and recheck contract
 
@@ -248,6 +311,19 @@ still compare equal.
 | Open or invalid job | 1 | `JOB_NOT_CLOSED` / `JOB_INVALID` |
 | Usage | 2 | `{"ok":false,"reason":"BAD_REQUEST","message"}` |
 | Runtime absent | 78 | `{"ok":false,"reason":"RUNTIME_UNAVAILABLE"}` |
+
+### Advisory finish record
+
+A `--finish` call after a terminal verdict is advisory only. The grader writes
+`finish.json` (`0600`) with `{jobId, attempt, notes, flags, closed, finishedAt}`,
+merging the allowed `INJECTION_SUSPECTED`/`SPEC_INSUFFICIENT` flags from an
+existing record and the current call, deduplicated. The gate response and
+`tw-status` expose the merged list as `advisoryFlags`; `tw-status` validates the
+values, deduplicates them, caps the list at 8, and returns `[]` for a missing or
+malformed record. State, `proof.json`, `chain.log`, `test.py`, and `REPORT.md`
+are not modified, so the proof hash, chain anchor, and `tw-recheck` result do
+not drift. The verdict is never changed by an advisory flag, and only the
+grader decides it.
 
 Proof, report, recheck JSON, and chain payloads never include target source,
 variant or mutant source, raw sandbox output, or a canary. Owner-only commit

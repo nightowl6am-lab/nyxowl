@@ -50,7 +50,8 @@ verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
 
 ## Current status
 
-- M0 through M5 are complete. M6 and M7 are pending.
+- M0 through M6 are complete in source. M7 is pending; the live OpenCode
+  host-isolation transcript for M6 is owned by the verifier.
 - The runtime runs gates 1-6: lint, the vulnerable snapshot, the patched
   snapshot, flake re-runs, the hidden variants, and AST mutation scoring.
 - Every terminal run now writes `test.py`, a canonical `proof.json`, an
@@ -60,7 +61,10 @@ verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
   patched, flake, variant, and mutation runs; canaries remain per-run random.
 - The runtime is installed in the owner's home and runs as the owner. There is
   no separate grader OS user. The store is owner-readable at mode `0700`.
-- Host-isolation verification is still the M6 item and is not claimed here.
+- M6 adds the advisory finish record (`finish.json` plus `advisoryFlags` in
+  `tw-status`), the model-free three-run fixture matrix, the parent stdio MCP
+  end-to-end test, and deny-by-default OpenCode permissions for the subagent.
+  A live OpenCode host-isolation transcript is still pending verifier execution.
 - M1 through M5 changed no dependencies, no receipt kind, and no TypeScript
   surface.
 
@@ -192,7 +196,7 @@ M0_SELFTESTS: PASS
 M1M3_SELFTESTS: PASS
 ```
 
-`run_all.py` must also report `OK` with all 217 tests passing. The deterministic
+`run_all.py` must also report `OK` with all 219 tests passing. The deterministic
 fixture verdicts are:
 
 - J1 — `PROVEN`, with flake, variants, and mutation all passing.
@@ -211,6 +215,41 @@ The M5 cases require every terminal job to carry `test.py`, `proof.json`, and
 without target or test source. They also require `tw-recheck <id>` to reproduce
 the recorded J1 (`PROVEN`) and J2 (`UNPROVEN`/`NO_DETECTOR_HIT_ON_VULN`) evidence
 and to fail closed on proof, runtime, frozen-input, and chain tampering.
+
+### M6 acceptance
+
+Run these from the repository root. They use temporary install, store,
+workspace, and scratch roots only; they do not touch `$HOME/.nyxowl/test-writer`
+or `$HOME/tw-jobs`.
+
+```bash
+TW_VENV_PYTHON="$HOME/.nyxowl/test-writer/venv/bin/python" \
+  python3 test-writer/qa/m6_threerun.py --out /tmp/opencode/m6-runs
+node test-writer/qa/m6_parent_e2e.mjs
+```
+
+Expected final lines:
+
+```
+M6_THREERUN: PASS
+M6_PARENT_E2E: PASS
+```
+
+`m6_threerun.py` builds the fixtures once, installs this worktree once into a
+temporary install root, and performs three independent rounds. It requires J1
+`PROVEN` 3/3, J2 `UNPROVEN`/`NO_DETECTOR_HIT_ON_VULN` 3/3, J3 never `PROVEN`
+(`REFUTED` expected) 3/3, J4 `PROVEN` 3/3, and a successful `tw-recheck` for
+every PROVEN job. The J4 `INJECTION_SUSPECTED` advisory is scripted plumbing
+evidence, not a model judgment.
+
+`m6_parent_e2e.mjs` starts this worktree's `dist/cli/bin.js mcp` over stdio and
+drives prepare, both `tw-add-variant` calls, approve, job read, write, lint,
+gate, finish, and status. It asserts 38 tools, exactly seven Test-Writer tools,
+exactly five subagent tools, no variant refs/tars/store paths in the job
+response, a PROVEN report with `## Limits`, and the error paths.
+
+The OpenCode host-isolation transcript is a manual verifier step and is not run
+by either script.
 
 ### Recheck contract
 
@@ -243,8 +282,8 @@ and confirm that no reachable module:
 Record the reviewed ref hashes with the job. This target-collusion residual is
 an M3/M4 limitation: the harness and the target share one interpreter, so a
 malicious snapshot could forge harness state. A separate-process judge that
-would remove this residual is out of scope for M3/M4 and belongs to M6, which
-is not claimed here.
+would remove this residual remains future work; it is not part of M6 and is not
+claimed here.
 
 ## Wrapper commands
 

@@ -5,13 +5,13 @@ Last updated: 2026-11-07.
 | Milestone | Status |
 | --- | --- |
 | M0 — sandbox foundation, owner artifacts, source definition | complete; root-owned install gate is historical only, rootless user gate replaces it |
-| M0.5 — Nyxowl agent + broker integration | source complete; runtime M1-M5 complete; M6 isolation verification pending |
+| M0.5 — Nyxowl agent + broker integration | source complete; runtime M1-M6 complete; live M6 host-isolation transcript pending verifier |
 | M1 | complete |
 | M2 | complete |
 | M3 | complete |
 | M4 | complete |
 | M5 | complete |
-| M6 | not started; agent registered in M0.5, host-isolation verification still pending |
+| M6 | source complete; advisory finish, three-run matrix, and parent E2E pass; live OpenCode host-isolation transcript pending verifier |
 | M7 | not started |
 
 ## Rootless install gate
@@ -28,7 +28,7 @@ The current gate is a rootless user install:
 - [ ] `bash bootstrap/build-user-venv.sh` prints `USER_VENV: PASS` and installs
   the hashed lock into `<install>/venv`.
 - [ ] `python3 selftests/run_all.py` prints `M0_SELFTESTS: PASS` and
-  `M1M3_SELFTESTS: PASS` with 217 tests.
+  `M1M3_SELFTESTS: PASS` with 219 tests.
 - [ ] `python3 fixtures/build_fixtures.py --verify` prints
   `FIXTURES_VERIFY: PASS`.
 - [ ] The M0 probes run as the current user with `TW_INSTALL_ROOT` and
@@ -45,10 +45,10 @@ These are rootless checks and do not replace the owner acceptance above.
 | Check | Result |
 | --- | --- |
 | `python3 -m compileall -q test-writer` | PASS |
-| `TW_VENV_PYTHON=<runtime venv> python3 test-writer/selftests/run_all.py` | PASS — 217 tests, `M0_SELFTESTS: PASS`, `M1M3_SELFTESTS: PASS` |
+| `TW_VENV_PYTHON=<runtime venv> python3 test-writer/selftests/run_all.py` | PASS — 219 tests, `M0_SELFTESTS: PASS`, `M1M3_SELFTESTS: PASS` |
 | `python3 test-writer/fixtures/build_fixtures.py --verify` | PASS (`FIXTURES_VERIFY: PASS`) |
 
-## M1-M5 acceptance summary
+## M1-M6 acceptance summary
 
 - Fixture J1: `PROVEN`, with flake/variants/mutation passing and mutation score
   at least `0.8`.
@@ -75,6 +75,16 @@ These are rootless checks and do not replace the owner acceptance above.
   no-frozen-test jobs return `JOB_NOT_CLOSED`, `PROOF_MISSING`, or
   `NO_FROZEN_TEST`. `REPORT.md` and recheck JSON contain no target or test
   source fragments.
+- M6 advisory finish: `tw-gate <id> --finish` after a terminal verdict writes a
+  private `finish.json` with the merged `INJECTION_SUSPECTED`/`SPEC_INSUFFICIENT`
+  advisory flags and returns `advisoryFlags`; state, proof, chain, `test.py`, and
+  `REPORT.md` do not change. `tw-status` validates and caps the same list.
+  `m6_threerun.py` passes J1 PROVEN 3/3, J2 UNPROVEN/`NO_DETECTOR_HIT_ON_VULN`
+  3/3, J3 REFUTED 3/3, J4 PROVEN 3/3 with the scripted advisory in 3/3. The
+  parent `m6_parent_e2e.mjs` passes the real stdio MCP flow, and the OpenCode
+  config denies host tools and every `nyxowl_*` tool except the five subagent
+  Test-Writer tools. The live OpenCode host-isolation transcript is the only M6
+  item left for the verifier.
 - Behaviour-based verdict: gates 2/4/5 accept a real `AssertionError` or pytest
   `Failed` on the vulnerable/still-vulnerable snapshot and require the
   patched/fixed-differently snapshot to pass; detector attribution is evidence
@@ -108,7 +118,7 @@ These are rootless checks and do not replace the owner acceptance above.
   is retained only as evidence; the verdict is behavioural. Variant refs/tars
   and mutant source are never exposed to the subagent. M5 adds canonical proof
   hashes, a tamper-evident chain, and a read-only recheck. The selftest count is
-  217.
+  219.
 - Residual risk: a `PROVEN` verdict is a quality/behavioural claim, not a
   hostile-test or hostile-target security claim. The proof test runs as
   untrusted code inside bwrap; the target snapshot is owner-supplied; both share
@@ -116,5 +126,5 @@ These are rootless checks and do not replace the owner acceptance above.
   introspect the plugin. That is outside the verdict trust model. The owner
   reviews the test/spec and both approved refs for plugin-state access,
   out-of-snapshot writes at import/collection, and `os._exit`/`os.abort`, then
-  records the ref hashes with the job. A separate-process judge is future work
-  (M6/out of scope) and is not claimed here.
+  records the ref hashes with the job. A separate-process judge remains future work
+  (not part of M6) and is not claimed here.

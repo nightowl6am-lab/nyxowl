@@ -52,6 +52,9 @@ _SAFE_SETUP_KINDS = {
     "skipped",
     "forbidden_fixture",
 }
+# Advisory flags are recorded outside the verdict.  They never enter state or
+# proof flags, so replaying the proof cannot drift because of them.
+_ADVISORY_FLAGS = frozenset({"INJECTION_SUSPECTED", "SPEC_INSUFFICIENT"})
 
 
 def _safe_kind(value: Any) -> str:
@@ -1132,6 +1135,31 @@ def _full_gate(job_id: str, state: dict[str, Any], meta: dict[str, Any], source:
     return _apply_decision(job_id, state, meta, decision, source)
 
 
+def _advisory_flags(path: Path, payload_flags: list[str]) -> list[str]:
+    """Merge allowed advisory flags from an existing finish record and a call."""
+    merged: list[str] = []
+
+    def add(value: Any) -> None:
+        if isinstance(value, str) and value in _ADVISORY_FLAGS and value not in merged:
+            merged.append(value)
+
+    try:
+        if path.is_file():
+            existing = common.read_json_file(path)
+            if isinstance(existing, dict):
+                raw = existing.get("flags")
+                if isinstance(raw, list):
+                    for flag in raw:
+                        add(flag)
+    except (OSError, ValueError):
+        # A malformed advisory record is ignored; the verdict artifacts are
+        # authoritative and the next finish call rewrites a valid record.
+        pass
+    for flag in payload_flags:
+        add(flag)
+    return sorted(merged)
+
+
 def _finish(job_id: str, state: dict[str, Any], meta: dict[str, Any], payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise common.Refusal(common.JOB_INVALID, "The finish payload must be an object.")
@@ -1141,9 +1169,7 @@ def _finish(job_id: str, state: dict[str, Any], meta: dict[str, Any], payload: A
         raise common.Refusal(common.JOB_INVALID, "notes must be a string.")
     if len(notes.encode("utf-8", "surrogatepass")) > 4096:
         raise common.Refusal(common.JOB_INVALID, "notes are too large.")
-    if not isinstance(flags, list) or any(
-        flag not in {"INJECTION_SUSPECTED", "SPEC_INSUFFICIENT"} for flag in flags
-    ):
+    if not isinstance(flags, list) or any(flag not in _ADVISORY_FLAGS for flag in flags):
         raise common.Refusal(common.JOB_INVALID, "flags contain an unsupported value.")
 
     directory = store.job_dir(job_id)
@@ -1154,6 +1180,7 @@ def _finish(job_id: str, state: dict[str, Any], meta: dict[str, Any], payload: A
     )
 
     already_closed = state.get("status") == _TERMINAL
+    advisory_flags: list[str] | None = None
     if already_closed:
         verdict = state.get("verdict")
         reason = state.get("reason")
@@ -1162,6 +1189,22 @@ def _finish(job_id: str, state: dict[str, Any], meta: dict[str, Any], payload: A
             verdict = None
         if not isinstance(reason, str):
             reason = None
+        # Advisory metadata only.  State, proof, chain, test.py, and REPORT.md
+        # stay exactly as the terminal gate run wrote them.
+        finish_path = directory / "finish.json"
+        advisory_flags = _advisory_flags(finish_path, list(flags))
+        common.write_json_atomic(
+            finish_path,
+            {
+                "jobId": job_id,
+                "attempt": int(state.get("attempts", 0)),
+                "notes": notes,
+                "flags": advisory_flags,
+                "closed": True,
+                "finishedAt": common.utc_now(),
+            },
+            0o600,
+        )
     else:
         verdict = "UNPROVEN"
         reason = "GAVE_UP"
@@ -1173,7 +1216,7 @@ def _finish(job_id: str, state: dict[str, Any], meta: dict[str, Any], payload: A
         )
         state = store.load_state(job_id) or state
 
-    return common.feedback(
+    result = common.feedback(
         # A finish call is successful only when the recorded job is PROVEN.
         # GAVE_UP and other terminal outcomes keep ``ok`` false.
         ok=verdict == "PROVEN",
@@ -1185,6 +1228,9 @@ def _finish(job_id: str, state: dict[str, Any], meta: dict[str, Any], payload: A
         counts={"violations": 0},
         budget=common.budget_feedback(state),
     )
+    if advisory_flags is not None:
+        result["advisoryFlags"] = advisory_flags
+    return result
 
 
 def _parse_mode(args: list[str]) -> tuple[str, int | None]:
