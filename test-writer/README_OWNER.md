@@ -50,8 +50,9 @@ verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
 
 ## Current status
 
-- M0 through M6 are complete in source. M7 is pending; the live OpenCode
-  host-isolation transcript for M6 is owned by the verifier.
+- M0 through M6 are complete in source. The live OpenCode host-isolation
+  transcript for M6 passed on attempt 2 per `qa/EVIDENCE-M6.md`. M7-lite (the
+  eval matrix and real-use dogfood) is present; full M7 is not started.
 - The runtime runs gates 1-6: lint, the vulnerable snapshot, the patched
   snapshot, flake re-runs, the hidden variants, and AST mutation scoring.
 - Every terminal run now writes `test.py`, a canonical `proof.json`, an
@@ -64,8 +65,11 @@ verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
 - M6 adds the advisory finish record (`finish.json` plus `advisoryFlags` in
   `tw-status`), the model-free three-run fixture matrix, the parent stdio MCP
   end-to-end test, and deny-by-default OpenCode permissions for the subagent.
-  A live OpenCode host-isolation transcript is still pending verifier execution.
-- M1 through M5 changed no dependencies, no receipt kind, and no TypeScript
+  The live OpenCode host-isolation transcript passed on attempt 2 per
+  `qa/EVIDENCE-M6.md`.
+- M7-lite adds seven eval cases, a model-free eval runner, and a real-use
+  dogfood runner; its evidence is `qa/EVIDENCE-M7.md`. It does not claim full M7.
+- M1 through M6 changed no dependencies, no receipt kind, and no TypeScript
   surface.
 
 ## Runtime paths
@@ -196,7 +200,7 @@ M0_SELFTESTS: PASS
 M1M3_SELFTESTS: PASS
 ```
 
-`run_all.py` must also report `OK` with all 219 tests passing. The deterministic
+`run_all.py` must also report `OK` with all 228 tests passing. The deterministic
 fixture verdicts are:
 
 - J1 — `PROVEN`, with flake, variants, and mutation all passing.
@@ -249,7 +253,32 @@ exactly five subagent tools, no variant refs/tars/store paths in the job
 response, a PROVEN report with `## Limits`, and the error paths.
 
 The OpenCode host-isolation transcript is a manual verifier step and is not run
-by either script.
+by either script; it passed on attempt 2 per `qa/EVIDENCE-M6.md`.
+
+### M7-lite acceptance
+
+These commands are rootless and offline. They use temporary roots only.
+
+```bash
+TW_VENV_PYTHON="$HOME/.nyxowl/test-writer/venv/bin/python" \
+  python3 test-writer/qa/m7_lite_eval.py --out /tmp/opencode/m7-lite-eval --rounds 3
+node test-writer/qa/m7_dogfood.mjs
+```
+
+Expected final lines:
+
+```
+M7_LITE_EVAL: PASS
+PR_A_DOGFOOD: PASS
+```
+
+The eval matrix covers five expected `PROVEN` cases, one
+`UNPROVEN`/`NO_DETECTOR_HIT_ON_VULN` control, and one
+`REFUTED`/`PATCHED_STILL_LEAKS` control. It fails closed on any false `PROVEN`,
+any expected-`PROVEN` miss, or any failed `tw-recheck`. The dogfood runner drives
+the real stdio MCP server against a temporary Git repository, runs the real
+`npm run test` script, and verifies four receipts at the local PR gate. Missing
+`dist`, bubblewrap, or the runtime venv skips with exit `2`.
 
 ### Recheck contract
 

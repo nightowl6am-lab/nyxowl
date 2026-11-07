@@ -46,6 +46,16 @@ STATE_PARENTS: dict[str, str | None] = {
     # existing a-e commit ids never move.
     "sv": None,
     "fd": None,
+    # The M7-lite eval states are independent roots appended after the M4
+    # variants so no earlier state hash can move.
+    "m7v1": None,
+    "m7p1": None,
+    "m7v3": None,
+    "m7p3": None,
+    "m7v4": None,
+    "m7p4": None,
+    "m7v5": None,
+    "m7p5": None,
 }
 STATE_MESSAGES = {
     "a": "state a: vulnerable decode",
@@ -55,8 +65,32 @@ STATE_MESSAGES = {
     "e": "state e: containment fix plus hostile config",
     "sv": "state sv: still vulnerable, different implementation",
     "fd": "state fd: safe, fixed differently",
+    "m7v1": "state m7v1: naive join",
+    "m7p1": "state m7p1: realpath containment",
+    "m7v3": "state m7v3: string prefix check",
+    "m7p3": "state m7p3: commonpath containment",
+    "m7v4": "state m7v4: double percent decode",
+    "m7p4": "state m7p4: single decode plus containment",
+    "m7v5": "state m7v5: backslash normalise",
+    "m7p5": "state m7p5: normalise plus containment",
 }
-STATE_ORDER = ("a", "b", "c", "d", "e", "sv", "fd")
+STATE_ORDER = (
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "sv",
+    "fd",
+    "m7v1",
+    "m7p1",
+    "m7v3",
+    "m7p3",
+    "m7v4",
+    "m7p4",
+    "m7v5",
+    "m7p5",
+)
 VARIANT_REF_KEYS = ("still_vulnerable_ref", "fixed_differently_ref")
 REQUIRED_FILES = ("pkg/__init__.py", "pkg/codec.py", "data/greeting.txt")
 REF_RE = re.compile(r"^[0-9a-f]{40}$")

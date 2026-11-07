@@ -1,0 +1,42 @@
+{
+  "alias": "patched-still-leaks-control",
+  "allowed_modules": [
+    "pkg.codec"
+  ],
+  "budget": {
+    "cpu_seconds": 10,
+    "max_attempts": 3,
+    "max_pids": 32,
+    "memory_mb": 512,
+    "wall_seconds": 60
+  },
+  "detector": {
+    "call": "detector.check(condition, *, detail=\"\")",
+    "contract": "test-writer/HELPER_API.md",
+    "fixture": "detector",
+    "truthy_means": "the target exhibited the unsafe behavior",
+    "unsafe_return_contains": "TOP SECRET"
+  },
+  "expected_reason": "PATCHED_STILL_LEAKS",
+  "expected_verdict": "REFUTED",
+  "fix_origin": "reference",
+  "from_state": "a",
+  "function": "decode",
+  "helper_api": "test-writer/HELPER_API.md",
+  "id": "n2",
+  "interface": "module: pkg.codec\nfunction: decode\nsignature: decode(name: str, root: str) -> str\nreturns: UTF-8 text from a file below root\n",
+  "module": "pkg.codec",
+  "python_path": [
+    "."
+  ],
+  "spec_markdown": "## Claim\n\nThe vulnerable snapshot is open to literal parent traversal, and the patched snapshot is an incomplete fix that blocks literal `..` but decodes percent escapes afterwards.\n\n## Intended behavior\n\nA clean relative name such as `data/greeting.txt` returns the UTF-8 text stored under `root`.\n\n## Rejection behavior\n\nBoth `../secret.txt` and `%2e%2e/secret.txt` must be rejected. The same proof test must fail on both approved refs, so the expected verdict is REFUTED with reason PATCHED_STILL_LEAKS.\n\n## Entry point\n\n`pkg.codec.decode(name: str, root: str) -> str`\n\n## Benign example\n\nBENIGN: `decode(\"data/greeting.txt\", root)` returns `hello from the fixture\\n` when `root/data/greeting.txt` contains that text.\n\n## Detector\n\nRequest the grader-provided `detector` fixture. Try both payloads, collect any payload that returns the secret content, and call `detector.check(bool(leaked), detail=\"...\")`. Assert that no payload leaked. Do not read or hardcode a canary path.\n",
+  "to_state": "d",
+  "variant_states": {
+    "fixed_differently": "fd",
+    "still_vulnerable": "sv"
+  },
+  "variants": {
+    "fixed_differently_ref": "fd",
+    "still_vulnerable_ref": "sv"
+  }
+}
