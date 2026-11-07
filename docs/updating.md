@@ -29,7 +29,15 @@ nyxowl doctor
 nyxowl /path/to/project
 ```
 
-`nyxowl doctor` checks runtimes, reports OpenCode status, reports the 11 per-agent skill slots, and reports the registered MCP tool count. Your existing state and the OpenCode package are reused or regenerated as described below.
+`nyxowl doctor` checks runtimes, reports OpenCode status, reports the 11 per-agent skill slots, reports Test-Writer runtime status, and reports the registered MCP tool count. Your existing state and the OpenCode package are reused or regenerated as described below.
+
+If `nyxowl doctor` or the first run after an upgrade reports that the Test-Writer runtime is missing, install it as your normal user (no root or sudo):
+
+```bash
+nyxowl testwriter install
+```
+
+Use `nyxowl testwriter status` to inspect the install root, wrappers, venv, and store.
 
 ## No-install / npx
 

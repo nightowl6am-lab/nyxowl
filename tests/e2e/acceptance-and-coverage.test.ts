@@ -49,9 +49,12 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
   beforeEach(() => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-e2e-"));
     nyxHome = path.join(tmpRoot, "nyxowl-home");
+    // Never let setup tests invoke the real Test-Writer installer/pip.
+    process.env["NYXOWL_TESTWRITER_INSTALL"] = "0";
   });
 
   afterEach(() => {
+    delete process.env["NYXOWL_TESTWRITER_INSTALL"];
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 

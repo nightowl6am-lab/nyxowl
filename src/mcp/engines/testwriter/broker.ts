@@ -35,7 +35,13 @@ export function validateJobId(value: string): string {
 }
 
 export function installRoot(): string {
-  return process.env["TW_INSTALL_ROOT"] ?? path.join(os.homedir(), ".nyxowl", "test-writer");
+  return (
+    process.env["TW_INSTALL_ROOT"] ??
+    path.join(
+      process.env["NYXOWL_HOME"] ?? path.join(os.homedir(), ".nyxowl"),
+      "test-writer",
+    )
+  );
 }
 
 export function wrapperPath(name: WrapperName): string {
@@ -77,7 +83,7 @@ export interface ProcessResult {
 function unavailableError(): NyxError {
   return new NyxError(
     "ERR_TESTWRITER_UNAVAILABLE",
-    "Test-Writer runtime is not installed. Owner: run test-writer/bootstrap/install-user.sh or set TW_INSTALL_ROOT before using nyx-testwriter tools.",
+    "Test-Writer runtime is not installed. Owner: run `nyxowl testwriter install` (or set TW_INSTALL_ROOT) before using nyx-testwriter tools.",
   );
 }
 
