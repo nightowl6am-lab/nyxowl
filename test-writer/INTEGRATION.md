@@ -74,8 +74,9 @@ live QA showed a config deny hides the five MCP tools. The live diagnostic
 matrix (temp plugin only) confirmed the nine-key first snapshot and the later
 39-key snapshot with all five MCP tools, and that deleting every non-allowed key
 on the first snapshot prevents MCP registration; deleting only the five
-bypassing tools preserves it. Final live re-verification is pending. The
-subagent sees only the job inputs returned by `nyx_testwriter_job`.
+bypassing tools preserves it. Final live re-verification passed on attempt 2
+per `qa/EVIDENCE-M6.md`. The subagent sees only the job inputs returned by
+`nyx_testwriter_job`.
 The primary alone reads the terminal verdict and report from
 `nyx_testwriter_status`; the subagent summary is not evidence.
 
@@ -245,12 +246,14 @@ acceptance commands. `install-user.sh` installs `bin/`, `gate/`, `grader/`
 `build-user-venv.sh` creates `<install>/venv` and installs the hashed lock. No
 step uses root, sudo, users/groups, `/opt`, or `/var/lib`.
 
-M3 through M6 are complete in source. The `nyx-testwriter` agent and its seven
+M3 through M6 are complete. The `nyx-testwriter` agent and its seven
 `nyx_testwriter_*` tools are registered in Nyxowl, gates 1-6 are usable, and
 `tw-recheck` verifies closed proofs. M6 adds an advisory finish record, a
 model-free three-run fixture matrix, a parent stdio MCP end-to-end test, and
 deny-by-default OpenCode permissions for the subagent. The live OpenCode
-host-isolation transcript remains a verifier step; M7 is still pending.
+host-isolation transcript passed on attempt 2 per `qa/EVIDENCE-M6.md`, so M6 is
+complete. M7-lite adds the seven-case eval matrix and the real-use dogfood
+runner (`qa/m7_lite_eval.py`, `qa/m7_dogfood.mjs`); full M7 remains not started.
 
 M6 keeps the owner-only runtime overrides (`TW_INSTALL_ROOT`, `TW_STORE_ROOT`,
 `TW_TMP_ROOT`, `TW_WORKSPACE_ROOT`, `TW_VENV_PYTHON`) on the wrappers a brokered

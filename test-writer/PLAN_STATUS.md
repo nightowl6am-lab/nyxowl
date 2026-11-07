@@ -5,14 +5,14 @@ Last updated: 2026-11-07.
 | Milestone | Status |
 | --- | --- |
 | M0 — sandbox foundation, owner artifacts, source definition | complete; root-owned install gate is historical only, rootless user gate replaces it |
-| M0.5 — Nyxowl agent + broker integration | source complete; runtime M1-M6 complete; live M6 host-isolation transcript pending verifier |
+| M0.5 — Nyxowl agent + broker integration | source complete; runtime M1-M6 complete; live M6 host-isolation transcript passed on attempt 2 per `qa/EVIDENCE-M6.md` |
 | M1 | complete |
 | M2 | complete |
 | M3 | complete |
 | M4 | complete |
 | M5 | complete |
-| M6 | source complete; advisory finish, three-run matrix, and parent E2E pass; live OpenCode host-isolation transcript pending verifier |
-| M7 | not started |
+| M6 | complete; advisory finish, three-run matrix, parent E2E, and the live OpenCode host-isolation transcript passed on attempt 2 per `qa/EVIDENCE-M6.md` |
+| M7 | not started; M7-lite eval matrix and real-use dogfood landed in PR A (see below) |
 
 ## Rootless install gate
 
@@ -28,7 +28,7 @@ The current gate is a rootless user install:
 - [ ] `bash bootstrap/build-user-venv.sh` prints `USER_VENV: PASS` and installs
   the hashed lock into `<install>/venv`.
 - [ ] `python3 selftests/run_all.py` prints `M0_SELFTESTS: PASS` and
-  `M1M3_SELFTESTS: PASS` with 219 tests.
+  `M1M3_SELFTESTS: PASS` with 228 tests.
 - [ ] `python3 fixtures/build_fixtures.py --verify` prints
   `FIXTURES_VERIFY: PASS`.
 - [ ] The M0 probes run as the current user with `TW_INSTALL_ROOT` and
@@ -45,7 +45,7 @@ These are rootless checks and do not replace the owner acceptance above.
 | Check | Result |
 | --- | --- |
 | `python3 -m compileall -q test-writer` | PASS |
-| `TW_VENV_PYTHON=<runtime venv> python3 test-writer/selftests/run_all.py` | PASS — 219 tests, `M0_SELFTESTS: PASS`, `M1M3_SELFTESTS: PASS` |
+| `TW_VENV_PYTHON=<runtime venv> python3 test-writer/selftests/run_all.py` | PASS — 228 tests, `M0_SELFTESTS: PASS`, `M1M3_SELFTESTS: PASS` |
 | `python3 test-writer/fixtures/build_fixtures.py --verify` | PASS (`FIXTURES_VERIFY: PASS`) |
 
 ## M1-M6 acceptance summary
@@ -83,8 +83,12 @@ These are rootless checks and do not replace the owner acceptance above.
   3/3, J3 REFUTED 3/3, J4 PROVEN 3/3 with the scripted advisory in 3/3. The
   parent `m6_parent_e2e.mjs` passes the real stdio MCP flow, and the OpenCode
   config denies host tools and every `nyxowl_*` tool except the five subagent
-  Test-Writer tools. The live OpenCode host-isolation transcript is the only M6
-  item left for the verifier.
+  Test-Writer tools. The live OpenCode host-isolation transcript passed on
+  attempt 2 (`qa/EVIDENCE-M6.md`, final verdict: end-to-end PASS), so M6 is
+  complete.
+- M7-lite (PR A): seven deterministic cases under `qa/m7_cases/`, a model-free
+  `qa/m7_lite_eval.py` matrix, and `qa/m7_dogfood.mjs` against the real stdio
+  MCP server. Evidence is in `qa/EVIDENCE-M7.md`; full M7 remains not started.
 - Behaviour-based verdict: gates 2/4/5 accept a real `AssertionError` or pytest
   `Failed` on the vulnerable/still-vulnerable snapshot and require the
   patched/fixed-differently snapshot to pass; detector attribution is evidence
@@ -118,7 +122,7 @@ These are rootless checks and do not replace the owner acceptance above.
   is retained only as evidence; the verdict is behavioural. Variant refs/tars
   and mutant source are never exposed to the subagent. M5 adds canonical proof
   hashes, a tamper-evident chain, and a read-only recheck. The selftest count is
-  219.
+  228.
 - Residual risk: a `PROVEN` verdict is a quality/behavioural claim, not a
   hostile-test or hostile-target security claim. The proof test runs as
   untrusted code inside bwrap; the target snapshot is owner-supplied; both share
