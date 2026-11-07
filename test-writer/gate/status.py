@@ -14,6 +14,30 @@ from typing import Any
 from . import common
 from grader import job_check
 
+_ADVISORY_FLAGS = frozenset({"INJECTION_SUSPECTED", "SPEC_INSUFFICIENT"})
+_MAX_ADVISORY_FLAGS = 8
+
+
+def _advisory_flags(job_id: str) -> list[str]:
+    """Read the optional advisory finish record, failing closed to an empty list."""
+    path = common.store_root() / "jobs" / job_id / "finish.json"
+    try:
+        data = common.read_json_file(path)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    raw = data.get("flags")
+    if not isinstance(raw, list):
+        return []
+    result: list[str] = []
+    for flag in raw:
+        if isinstance(flag, str) and flag in _ADVISORY_FLAGS and flag not in result:
+            result.append(flag)
+            if len(result) >= _MAX_ADVISORY_FLAGS:
+                break
+    return result
+
 
 def _plain(job_id: str) -> dict[str, Any]:
     state = common.read_state_readonly(job_id)
@@ -35,6 +59,7 @@ def _plain(job_id: str) -> dict[str, Any]:
             "attemptsUsed": 0,
             "budget": {"used": 0, "max": 0},
             "variants": has_variants,
+            "advisoryFlags": _advisory_flags(job_id),
         }
     status = state.get("status")
     if not isinstance(status, str):
@@ -59,6 +84,7 @@ def _plain(job_id: str) -> dict[str, Any]:
         "attemptsUsed": attempts,
         "budget": {"used": attempts, "max": maximum},
         "variants": has_variants,
+        "advisoryFlags": _advisory_flags(job_id),
     }
 
 

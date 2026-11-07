@@ -19,8 +19,9 @@ define a second prompt or a second MCP server.
   builds the venv; gates 1-6 are usable once that is done. All wrappers run as
   the owner.
 - Host isolation (no host read/edit/write/shell/webfetch for the subagent) is
-  verified in M6. Registration alone is not proof of isolation. The same-user
-  runtime is not a privilege boundary; the subagent tool boundary is.
+  covered by the M6 generated-permission and parent-E2E tests; the live OpenCode
+  transcript is a verifier step. Registration alone is not proof of isolation.
+  The same-user runtime is not a privilege boundary; the subagent tool boundary is.
 
 ## Parent contract (summary)
 
@@ -38,11 +39,11 @@ define a second prompt or a second MCP server.
 
 ## Status
 
-M0 through M4 are complete in this directory: the runtime tree, fixtures, lint,
-sandbox test harness, owner-readable store, gates 1-6 (flake, hidden variants,
-and AST mutation), and the owner wrappers. The runtime is usable for gates 1-6.
-M5 through M7 are pending, and M6 host-isolation verification remains
-outstanding. There is still one Nyxowl MCP server, one prompt, and the same five
-subagent tools; M4 added no second server, dependency, receipt kind, or new
-subagent surface. Owner-facing install steps are in `README_OWNER.md`, and the
-full contract is in `INTEGRATION.md`.
+M0 through M6 are complete in source: the runtime tree, fixtures, lint, sandbox
+test harness, owner-readable store, gates 1-6 (flake, hidden variants, and AST
+mutation), the owner wrappers, proof/recheck, and the M6 advisory finish and
+host-permission checks. M7 is pending, and the live OpenCode host-isolation
+transcript remains a verifier step. There is still one Nyxowl MCP server, one
+prompt, and the same five subagent tools; M6 added no second server, dependency,
+receipt kind, or new subagent surface. Owner-facing install steps are in
+`README_OWNER.md`, and the full contract is in `INTEGRATION.md`.

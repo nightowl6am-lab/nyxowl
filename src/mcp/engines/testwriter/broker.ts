@@ -120,6 +120,27 @@ function assertExecutable(executable: string): void {
   }
 }
 
+const WRAPPER_ENV_KEYS = [
+  "TW_INSTALL_ROOT",
+  "TW_STORE_ROOT",
+  "TW_TMP_ROOT",
+  "TW_WORKSPACE_ROOT",
+  "TW_VENV_PYTHON",
+] as const;
+
+function wrapperEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    PATH: "/usr/local/bin:/usr/bin:/bin",
+    HOME: os.homedir(),
+    LANG: "C.UTF-8",
+  };
+  for (const key of WRAPPER_ENV_KEYS) {
+    const value = process["env"][key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 export async function runProcess(
   argv: string[],
   opts: { input?: string; timeoutMs: number },
@@ -139,11 +160,7 @@ export async function runProcess(
         stdio: ["pipe", "pipe", "pipe"],
         // tw-gate may spawn bwrap/prlimit; a new group lets timeout kill the whole tree.
         detached: true,
-        env: {
-          PATH: "/usr/local/bin:/usr/bin:/bin",
-          HOME: os.homedir(),
-          LANG: "C.UTF-8",
-        },
+        env: wrapperEnv(),
       });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
@@ -362,6 +379,7 @@ const FEEDBACK_KEYS = [
   "ok",
   "setup_error",
   "message",
+  "advisoryFlags",
 ] as const;
 
 const FORBIDDEN_MARKERS = ["canary", "/canary", "variant", "mutant", "stdout", "stderr"];

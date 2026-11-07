@@ -137,6 +137,31 @@ export function buildOpenCodePermissions(
   ];
 }
 
+// Host actions denied explicitly for a fully isolated subagent. A whole-action
+// "*" wildcard deny is deliberately NOT used: live QA showed OpenCode removes
+// the allowed nyxowl_* MCP tools from the model's tool surface when one is
+// present, even though last-match-wins keeps them allowed in the rule list.
+//
+// The OpenCode resource-listing actions (`opencode_list_mcp_resources`,
+// `opencode_read_mcp_resource`) are intentionally NOT denied here: live QA
+// showed denying them also hides the five nyxowl_nyx_testwriter_* MCP tools
+// from the model. They are blocked per-agent by the plugin hook instead.
+const FULLY_ISOLATED_DENY_ACTIONS = [
+  "read",
+  "edit",
+  "glob",
+  "grep",
+  "shell",
+  "webfetch",
+  "websearch",
+  "subagent",
+  "skill",
+  "question",
+  "external_directory",
+  "experimental_image_generate",
+  "execute",
+] as const;
+
 function buildAgentPermissionRules(agent: {
   contract: {
     host_tools: {
@@ -149,16 +174,32 @@ function buildAgentPermissionRules(agent: {
   };
 }): OpenCodePermissionRule[] {
   const rulesOut: OpenCodePermissionRule[] = [];
-  if (agent.contract.host_tools.read === "deny") {
-    rulesOut.push({ action: "read", resource: "*", effect: "deny" });
+  const hostTools = agent.contract.host_tools;
+  const fullyIsolated =
+    hostTools.read === "deny" &&
+    hostTools.edit === "deny" &&
+    hostTools.write === "deny" &&
+    hostTools.bash === "deny";
+  // Fully isolated agents (e.g. nyx-testwriter) get explicit denies for every
+  // known host action, including MCP-resource and host-inspection actions, so a
+  // wildcard deny is never needed. Partially privileged agents keep the narrower
+  // read/edit/shell/webfetch rule set.
+  if (fullyIsolated) {
+    for (const action of FULLY_ISOLATED_DENY_ACTIONS) {
+      rulesOut.push({ action, resource: "*", effect: "deny" });
+    }
+  } else {
+    if (agent.contract.host_tools.read === "deny") {
+      rulesOut.push({ action: "read", resource: "*", effect: "deny" });
+    }
+    if (agent.contract.host_tools.edit === "deny" || agent.contract.host_tools.write === "deny") {
+      rulesOut.push({ action: "edit", resource: "*", effect: "deny" });
+    }
+    if (agent.contract.host_tools.bash === "deny") {
+      rulesOut.push({ action: "shell", resource: "*", effect: "deny" });
+    }
+    rulesOut.push({ action: "webfetch", resource: "*", effect: "deny" });
   }
-  if (agent.contract.host_tools.edit === "deny" || agent.contract.host_tools.write === "deny") {
-    rulesOut.push({ action: "edit", resource: "*", effect: "deny" });
-  }
-  if (agent.contract.host_tools.bash === "deny") {
-    rulesOut.push({ action: "shell", resource: "*", effect: "deny" });
-  }
-  rulesOut.push({ action: "webfetch", resource: "*", effect: "deny" });
 
   // Last-match-wins: deny every MCP tool, then allow only this role's tools.
   rulesOut.push({ action: "nyxowl_*", resource: "*", effect: "deny" });
@@ -179,7 +220,39 @@ function buildOpenCodePluginCode(cliCmd: { command: string; args: string[] }): s
     "const HYDRATE_CAP = 64;",
     "const DECISIONS = new Map();",
     "const HYDRATED = new Set();",
+    "const TESTWRITER_ACTIONS = new Set([",
+    '  "nyxowl_nyx_testwriter_job",',
+    '  "nyxowl_nyx_testwriter_write",',
+    '  "nyxowl_nyx_testwriter_lint",',
+    '  "nyxowl_nyx_testwriter_gate",',
+    '  "nyxowl_nyx_testwriter_finish",',
+    "]);",
+    "// The live snapshot shape is unconfirmed, so match by suffix, not exact key.",
+    "const TESTWRITER_TOOL_SUFFIXES = [",
+    '  "testwriter_job",',
+    '  "testwriter_write",',
+    '  "testwriter_lint",',
+    '  "testwriter_gate",',
+    '  "testwriter_finish",',
+    "];",
+    "// Native host tools that must not reach nyx-testwriter. The pre-MCP context",
+    "// snapshot contains only these and other host tools, so the filter is phased:",
+    "// it denylists this set until an allowed MCP tool appears, then allowlists.",
+    "const TESTWRITER_DENY_TOOLS = new Set([",
+    '  "opencode_models",',
+    '  "opencode_session_move",',
+    '  "opencode_session_rename",',
+    '  "opencode_worktree_create",',
+    '  "opencode_worktree_list",',
+    "]);",
+    'const TESTWRITER_BOUNDARY = "nyx-testwriter may only use the five tools: job, write, lint, gate, finish.";',
     'const SECRET_NAMES = [".npmrc", ".pypirc", ".netrc", ".git-credentials", "kubeconfig"];',
+    "",
+    "function resolveAgentName(event) {",
+    '  if (event && typeof event.agent === "string" && event.agent) return event.agent;',
+    '  if (event && typeof event.agent_name === "string" && event.agent_name) return event.agent_name;',
+    '  return "nyxowl";',
+    "}",
     "",
     "function cacheDecision(key, decision) {",
     "  if (DECISIONS.size >= CACHE_CAP) {",
@@ -255,6 +328,14 @@ function buildOpenCodePluginCode(cliCmd: { command: string; args: string[] }): s
     "  try {",
     '    if (!event || typeof event.action !== "string") return;',
     "    const action = event.action;",
+    "    const agentName = resolveAgentName(event);",
+    '    if (agentName === "nyx-testwriter") {',
+    "      // Per-agent allowlist: only the five Test-Writer MCP actions pass.",
+    "      if (TESTWRITER_ACTIONS.has(action)) return;",
+    '      event.effect = "deny";',
+    "      event.message = TESTWRITER_BOUNDARY;",
+    "      return;",
+    "    }",
     "    const resources = Array.isArray(event.resources) ? event.resources : [];",
     '    const resource = typeof resources[0] === "string" ? resources[0] : "*";',
     '    if (action === "external_directory" && !isSecretPath(resource)) return;',
@@ -264,7 +345,6 @@ function buildOpenCodePluginCode(cliCmd: { command: string; args: string[] }): s
     '      action === "write" || action === "patch" || action === "read" ||',
     '      action === "external_directory";',
     "    if (!supported) return;",
-    '    const agentName = typeof event.agent === "string" && event.agent ? event.agent : "nyxowl";',
     '    const isEditAction = action === "edit" || action === "write" || action === "patch";',
     '    const cacheKey = action + "\\u0000" + agentName + "\\u0000" + resource;',
     "    if (!isEditAction) {",
@@ -293,7 +373,84 @@ function buildOpenCodePluginCode(cliCmd: { command: string; args: string[] }): s
     "      cacheDecision(cacheKey, decision);",
     "    }",
     "  } catch {",
-    "    // Fail-open: an OpenCode API or guard mismatch must not prevent startup.",
+    '    if (event && typeof event === "object" && resolveAgentName(event) === "nyx-testwriter") {',
+    '      event.effect = "deny";',
+    "      event.message = TESTWRITER_BOUNDARY;",
+    "      return;",
+    "    }",
+    "    // Fail-open for other agents: an API mismatch must not prevent startup.",
+    "  }",
+    "}",
+    "",
+    "function toolNameOf(entry) {",
+    '  if (typeof entry === "string") return entry;',
+    '  if (!entry || typeof entry !== "object") return "";',
+    '  const candidates = [entry.id, entry.name, entry.tool, entry.function && entry.function.name];',
+    "  for (const candidate of candidates) {",
+    '    if (typeof candidate === "string" && candidate) return candidate;',
+    "  }",
+    '  return "";',
+    "}",
+    "",
+    "function isAllowedTool(entry) {",
+    "  const name = toolNameOf(entry);",
+    "  if (name) {",
+    "    for (const suffix of TESTWRITER_TOOL_SUFFIXES) {",
+    "      if (name.endsWith(suffix)) return true;",
+    "    }",
+    "    return false;",
+    "  }",
+    "  try {",
+    '    return JSON.stringify(entry).includes("testwriter_");',
+    "  } catch {",
+    "    return false;",
+    "  }",
+    "}",
+    "",
+    "function isDeniedTool(entry) {",
+    "  const name = toolNameOf(entry);",
+    "  return Boolean(name) && TESTWRITER_DENY_TOOLS.has(name);",
+    "}",
+    "",
+    "function restrictTools(event) {",
+    "  try {",
+    '    const isTestWriter = event && event.agent === "nyx-testwriter";',
+    "    if (!isTestWriter) return;",
+    '    if (!event.tools || typeof event.tools !== "object") return;',
+    "    // Two-phase filter. Before the MCP tools register, the snapshot has only",
+    "    // host tools, so deleting every non-allowed key would suppress MCP",
+    "    // registration. Delete just the five bypassing host tools in that phase.",
+    "    // Once any allowed Test-Writer tool appears, keep only allowed entries.",
+    "    if (Array.isArray(event.tools)) {",
+    "      const tools = event.tools;",
+    "      const hasAllowed = tools.some(function (entry) { return isAllowedTool(entry); });",
+    "      if (hasAllowed) {",
+    "        for (let i = tools.length - 1; i >= 0; i -= 1) {",
+    "          if (!isAllowedTool(tools[i])) tools.splice(i, 1);",
+    "        }",
+    "        return;",
+    "      }",
+    "      for (let i = tools.length - 1; i >= 0; i -= 1) {",
+    "        if (isDeniedTool(tools[i])) tools.splice(i, 1);",
+    "      }",
+    "      return;",
+    "    }",
+    "    const tools = event.tools;",
+    "    const keys = Object.keys(tools);",
+    "    const hasAllowed = keys.some(function (name) {",
+    "      return isAllowedTool(name) || isAllowedTool(tools[name]);",
+    "    });",
+    "    if (hasAllowed) {",
+    "      for (const name of keys) {",
+    "        if (!isAllowedTool(name) && !isAllowedTool(tools[name])) delete tools[name];",
+    "      }",
+    "      return;",
+    "    }",
+    "    for (const name of keys) {",
+    "      if (TESTWRITER_DENY_TOOLS.has(name)) delete tools[name];",
+    "    }",
+    "  } catch {",
+    "    // Fail-open: tool filtering must not break the model call.",
     "  }",
     "}",
     "",
@@ -331,6 +488,13 @@ function buildOpenCodePluginCode(cliCmd: { command: string; args: string[] }): s
     "      }",
     "    } catch {",
     "      // Fail-open: hydration is optional.",
+    "    }",
+    "    try {",
+    "      if (ctx && ctx.session && typeof ctx.session.hook === \"function\") {",
+    '        await ctx.session.hook("context", restrictTools);',
+    "      }",
+    "    } catch {",
+    "      // Fail-open: tool filtering is optional and must not block setup.",
     "    }",
     "  },",
     "};",
