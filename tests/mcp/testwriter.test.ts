@@ -911,6 +911,7 @@ describe("Test-Writer broker failure and cap branches", () => {
   it("truncates stdout at the 1 MiB cap and reports oversized JSON output", async () => {
     const root = path.join(tmpRoot, "stdout-cap-install");
     const _executable = installWrapper(root, "tw-gate", 0o700);
+    vi.stubEnv("TW_INSTALL_ROOT", root);
     expect(_executable).toContain("tw-gate");
     const cap = 1024 * 1024;
 
@@ -970,6 +971,7 @@ describe("Test-Writer broker failure and cap branches", () => {
   it("parses non-zero JSON stdout, rejects non-JSON, arrays, and invalid JSON", async () => {
     const root = path.join(tmpRoot, "json-install");
     installWrapper(root, "tw-gate", 0o700);
+    vi.stubEnv("TW_INSTALL_ROOT", root);
 
     spawnControl.handler = () =>
       streamChild({ stdout: [Buffer.from('{"error":"validation"}')], code: 2 });
