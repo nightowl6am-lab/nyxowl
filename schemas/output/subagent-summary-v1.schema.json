@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nyxowl.dev/schemas/output/subagent-summary-v1.schema.json",
+  "title": "subagent-summary-v1",
+  "description": "Role-switch summary emitted by every Nyxowl subagent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "role",
+    "slice",
+    "filesChanged",
+    "receipts",
+    "contractsPublished",
+    "openIssues",
+    "nextAction"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "One of done, blocked, or handoff."
+    },
+    "role": {
+      "type": "string",
+      "description": "Agent id that produced the summary."
+    },
+    "slice": {
+      "type": "string",
+      "description": "Slice identifier or short slice name."
+    },
+    "filesChanged": {
+      "type": "array",
+      "description": "Files changed by the role.",
+      "items": {}
+    },
+    "receipts": {
+      "type": "array",
+      "description": "Receipt id/status pairs backing the summary.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      }
+    },
+    "contractsPublished": {
+      "type": "array",
+      "description": "Blackboard contracts published by the role.",
+      "items": {}
+    },
+    "openIssues": {
+      "type": "array",
+      "description": "Unresolved issues for the next role.",
+      "items": {}
+    },
+    "nextAction": {
+      "type": "string",
+      "description": "The next action or role transition."
+    }
+  }
+}

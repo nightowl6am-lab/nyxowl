@@ -37,7 +37,9 @@
     "lint": "eslint src tests",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:node": "node --test tests/unit/*.test.ts"
+    "test:node": "node --test tests/unit/*.test.ts",
+    "test:agents": "vitest run tests/agent-readiness",
+    "agents:live": "node --experimental-strip-types scripts/agent-readiness/live.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

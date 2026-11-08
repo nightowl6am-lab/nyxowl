@@ -1,0 +1,4 @@
+FAILED src/consumer.test.ts::applies patch
+AssertionError: expected 'raw' to equal 'patched'
+    at src/consumer.test.ts:14:5
+    at runTest (tests/runner.mjs:42:11)

@@ -1,0 +1,24 @@
+{
+  "agent": "nyx-db",
+  "contract": "subagent-summary-v1",
+  "prompt": "Act as nyx-db inside this repository only. Never read .env or .env.* (the .env.example placeholder is allowed). Call nyx_trace_symbol with {\"symbolName\":\"rollbackPlan\",\"repoPath\":\".\"} and nyx_env_inspect with {\"worktreePath\":\".\"}. Audit migrations/001_init.sql, then write rls-findings.json in the repository root with key findings: an array of {code,table} where code is RLS_DISABLED or TAUTOLOGICAL_POLICY. Return only a subagent-summary-v1 JSON object with keys status, role, slice, filesChanged, receipts, contractsPublished, openIssues, nextAction; role must be nyx-db and receipts must contain at least one {id,status}.",
+  "expectedNyTools": ["trace_symbol", "env_inspect"],
+  "forbiddenNyTools": ["worktree_pr", "testwriter_job"],
+  "expectedArtifact": "rls-findings.json",
+  "check": "rls.check.mjs",
+  "forbiddenHost": ["webfetch", "websearch"],
+  "artifactSchema": {
+    "type": "object",
+    "required": ["findings"],
+    "properties": {
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["code"],
+          "properties": { "code": { "type": "string" }, "table": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

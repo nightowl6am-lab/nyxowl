@@ -39,6 +39,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Agent readiness
+        run: npm run test:agents
+
       - name: Pack & Install Smoke Test
         run: |
           TARBALL=$(npm pack --ignore-scripts)
