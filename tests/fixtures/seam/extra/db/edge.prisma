@@ -1,0 +1,13 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model Audit_Log {
+  id Int @id
+  // comments and attributes must be skipped
+  @@index([id])
+}
+
+model Empty {
+  @@map("empty")
+}

@@ -8,7 +8,7 @@ import {
   maskSourceLines,
   scanFileLinesForSlop,
 } from "../../src/mcp/engines/probe-exploit/slop/rules.ts";
-import { invokeToolDefinition } from "../../src/mcp/tool.ts";
+import { createToolContext, invokeToolDefinition } from "../../src/mcp/tool.ts";
 
 interface TokenMatrix {
   real: string[];
@@ -295,6 +295,218 @@ describe("Slop scanner accuracy hardening", () => {
     expect(exceptFindings).toHaveLength(1);
     expect(exceptFindings[0]?.line).toBe(3);
   });
+
+  it("masks escaped quotes, backticks, and hash comments without losing real code", () => {
+    const escaped = findingIds(
+      "src/example.ts",
+      'const text = "say \\"hi\\""; const value: any = 1;\n',
+    );
+    expect(escaped).toContain("explicit-any");
+
+    const backtick = scanFileLinesForSlop(
+      "src/example.ts",
+      "const tpl = `start\nTODO hidden in template\nend`;\n// TODO real comment\n",
+      null,
+    );
+    const todos = backtick.findings.filter((f) => f.ruleId === "todo-fixme");
+    expect(todos).toHaveLength(1);
+    expect(todos[0]?.line).toBe(4);
+
+    const hash = findingIds("src/example.py", "x = 1  # TODO trailing\n");
+    expect(hash).toContain("todo-fixme");
+    const notHash = findingIds("src/example.py", "value = 'foo#bar'\n");
+    expect(notHash).not.toContain("todo-fixme");
+
+    const block = findingIds("src/example.ts", "/* note */ const value: any = 1;\n");
+    expect(block).toContain("explicit-any");
+    const unterminated = maskSourceLines("/* TODO never closed\nstill comment\n");
+    expect(unterminated[1]?.comments).toContain("still comment");
+
+    // Single/double quotes do not leak into the next line for JS.
+    const quoteReset = findingIds(
+      "src/example.ts",
+      'const broken = "unterminated\nconst value: any = 1;\n',
+    );
+    expect(quoteReset).toContain("explicit-any");
+  });
+
+  it("honors target line filters, disabled rules, and advisory escalation", () => {
+    const targeted = scanFileLinesForSlop(
+      "src/app.ts",
+      "// TODO first\n// TODO second\n",
+      new Set([2]),
+    );
+    const todo = targeted.findings.filter((f) => f.ruleId === "todo-fixme");
+    expect(todo).toHaveLength(1);
+    expect(todo[0]?.line).toBe(2);
+
+    const disabled = scanFileLinesForSlop(
+      "src/app.ts",
+      "const value: any = 1;\n",
+      null,
+      { disabledRules: new Set(["explicit-any"]) },
+    );
+    expect(disabled.findings).toHaveLength(0);
+
+    const escalated = scanFileLinesForSlop(
+      "src/Color.tsx",
+      "const color = #ff00aa;\n",
+      null,
+      { advisoryAsBlocking: true },
+    );
+    const raw = escalated.findings.find((f) => f.ruleId === "raw-design-token");
+    expect(raw?.severity).toBe("blocking");
+  });
+
+  it("filters a suppression directive outside the targeted lines", () => {
+    const outside = scanFileLinesForSlop(
+      "src/app.ts",
+      "// nyx-allow: explicit-any\nconst value: any = 1;\n",
+      new Set([2]),
+    );
+    expect(
+      outside.findings.filter((f) => f.ruleId === "missing-allow-reason"),
+    ).toHaveLength(0);
+    // Without a reason there is no suppression, so the targeted line still fails.
+    expect(outside.findings.filter((f) => f.ruleId === "explicit-any")).toHaveLength(1);
+
+    const suppressed = scanFileLinesForSlop(
+      "src/app.ts",
+      "// nyx-allow: explicit-any — legacy bridge\nconst value: any = 1;\n",
+      new Set([2]),
+    );
+    expect(
+      suppressed.findings.filter((f) => f.ruleId === "explicit-any"),
+    ).toHaveLength(0);
+
+    const blankReason = scanFileLinesForSlop(
+      "src/app.ts",
+      "// nyx-allow: explicit-any — \nconst value: any = 1;\n",
+      null,
+    );
+    expect(
+      blankReason.findings.filter((f) => f.ruleId === "missing-allow-reason"),
+    ).toHaveLength(1);
+  });
+
+  it("detects placeholder returns and exempts test files", () => {
+    for (const line of [
+      'throw new Error("Not implemented yet");',
+      "raise NotImplementedError()",
+      "unimplemented!()",
+      "todo!()",
+      'return "MOCK_value";',
+      "return { mock: true };",
+    ]) {
+      expect(findingIds("src/app.ts", `${line}\n`), line).toContain("placeholder-return");
+    }
+    expect(findingIds("src/app.test.ts", "todo!()\n")).not.toContain("placeholder-return");
+  });
+
+  it("flags hardcoded credentials but not env references or placeholders", () => {
+    expect(findingIds("src/app.ts", 'const password = "supersecretvalue";\n')).toContain(
+      "hardcoded-secret",
+    );
+    expect(
+      findingIds("src/app.ts", "const password = process.env.PASSWORD;\n"),
+    ).not.toContain("hardcoded-secret");
+    expect(
+      findingIds("src/app.ts", 'const apiKey = "${API_KEY}";\n'),
+    ).not.toContain("hardcoded-secret");
+  });
+
+  it("allows config-style URL files and documented URL allowlist hosts", () => {
+    for (const filePath of [
+      "src/config.ts",
+      "src/constants.ts",
+      "src/schema.ts",
+      "docs/README.md",
+      "data/registry.json",
+    ]) {
+      expect(
+        findingIds(filePath, 'const url = "https://evil.example.com/api";\n'),
+        filePath,
+      ).not.toContain("hardcoded-url");
+    }
+    for (const url of [
+      "https://json-schema.org/draft",
+      "https://www.w3.org/TR",
+      "https://unpkg.com/pkg",
+      "http://0.0.0.0:3000",
+      "http://[::1]:3000",
+    ]) {
+      expect(
+        findingIds("src/app.ts", `const url = "${url}";\n`),
+        url,
+      ).not.toContain("hardcoded-url");
+    }
+  });
+
+  it("reports restating comments and focused or skipped tests", () => {
+    const restating = scanFileLinesForSlop(
+      "src/app.ts",
+      "// fetch user data\nfetchUserData();\n",
+      null,
+    );
+    expect(restating.findings.some((f) => f.ruleId === "restating-comment")).toBe(true);
+
+    for (const line of [
+      'it.only("focused", () => {});',
+      'test.skip("skipped", () => {});',
+      "@pytest.mark.skip()",
+    ]) {
+      expect(findingIds("src/app.ts", `${line}\n`), line).toContain(
+        "focused-or-skipped-test",
+      );
+    }
+    expect(
+      findingIds("src/app.ts", '@pytest.mark.skip(reason="tracked")\n'),
+    ).not.toContain("focused-or-skipped-test");
+  });
+
+  it("detects UI slop rules and async state combinations", () => {
+    expect(findingIds("src/App.tsx", "<img src=\"/a.png\">\n")).toContain("img-missing-alt");
+    expect(findingIds("src/App.tsx", '<img src="/a.png" alt="a">\n')).not.toContain(
+      "img-missing-alt",
+    );
+    expect(findingIds("src/App.tsx", "<button></button>\n")).toContain(
+      "a11y-control-name",
+    );
+    expect(findingIds("src/App.tsx", '<button aria-label="go"></button>\n')).not.toContain(
+      "a11y-control-name",
+    );
+    expect(findingIds("src/App.tsx", "<button>Go</button>\n")).not.toContain(
+      "a11y-control-name",
+    );
+    expect(findingIds("src/App.tsx", "const title = 'Lorem ipsum';\n")).toContain(
+      "placeholder-copy",
+    );
+
+    const useQueryMissing = findingIds(
+      "src/App.tsx",
+      'useQuery({ queryKey: ["x"] });\nconst loading = true;\n',
+    );
+    expect(useQueryMissing).toContain("async-missing-states");
+    const useQueryComplete = findingIds(
+      "src/App.tsx",
+      'useQuery({ queryKey: ["x"] });\nconst loading = true;\nconst error = null;\n',
+    );
+    expect(useQueryComplete).not.toContain("async-missing-states");
+  });
+
+  it("detects inline and bare except empty-catch variants", () => {
+    expect(findingIds("src/app.ts", "try { run(); } catch (e) { }\n")).toContain(
+      "empty-catch",
+    );
+    const bareExcept = scanFileLinesForSlop(
+      "src/app.py",
+      "try:\n    run()\nexcept:\n    pass\n",
+      null,
+    );
+    expect(
+      bareExcept.findings.filter((f) => f.ruleId === "empty-catch"),
+    ).toHaveLength(1);
+  });
 });
 
 describe("Slop tool containment and read caps", () => {
@@ -392,5 +604,130 @@ describe("Slop tool containment and read caps", () => {
     );
     expect(response.isError).toBe(true);
     expect((response.structuredContent as { code: string }).code).toBe("ERR_INVALID_INPUT");
+  });
+
+  it("scans tracked diffs and untracked additions in the default diff scope", async () => {
+    fs.writeFileSync(path.join(repoDir, "src", "tracked.ts"), "export const ok = 1;\n");
+    await execCommand("git", ["add", "-A"], { cwd: repoDir });
+    await execCommand("git", ["commit", "-m", "tracked base"], { cwd: repoDir });
+
+    fs.writeFileSync(
+      path.join(repoDir, "src", "tracked.ts"),
+      "export const ok = 1;\n// TODO tracked change\n",
+    );
+    fs.writeFileSync(path.join(repoDir, "src", "untracked.ts"), "// TODO untracked change\n");
+
+    const response = await invokeToolDefinition(
+      nyxSlopCheckTool,
+      { worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(response.isError).toBeFalsy();
+    const data = response.structuredContent as {
+      status: string;
+      scope: string;
+      findings: Array<{ ruleId: string; filePath: string }>;
+    };
+    expect(data.scope).toBe("diff");
+    expect(data.status).toBe("RED");
+    const files = data.findings
+      .filter((finding) => finding.ruleId === "todo-fixme")
+      .map((finding) => finding.filePath)
+      .sort();
+    expect(files).toEqual(["src/tracked.ts", "src/untracked.ts"]);
+
+    // An explicitly empty changedFiles list also falls back to git diff.
+    const emptyList = await invokeToolDefinition(
+      nyxSlopCheckTool,
+      { worktreePath: repoDir, scope: "diff", changedFiles: [] },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((emptyList.structuredContent as { status: string }).status).toBe("RED");
+  });
+
+  it("walks code files in full scope while skipping ignored directories", async () => {
+    for (const dir of ["node_modules", "dist", "coverage", ".nyxowl"]) {
+      fs.mkdirSync(path.join(repoDir, dir), { recursive: true });
+      fs.writeFileSync(path.join(repoDir, dir, "ignored.ts"), "// TODO ignored\n");
+    }
+    fs.writeFileSync(path.join(repoDir, "src", "ok.ts"), "// TODO real\n");
+
+    const ctx = await createToolContext(
+      { worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    ctx.db.db
+      .prepare(
+        "INSERT INTO dna (repo_id, manifest_hash, dna_json, updated_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(ctx.repoId, "hash", "{broken", new Date().toISOString());
+    ctx.db.close();
+
+    const response = await invokeToolDefinition(
+      nyxSlopCheckTool,
+      { worktreePath: repoDir, scope: "full" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(response.isError).toBeFalsy();
+    const findings = (response.structuredContent as {
+      findings: Array<{ ruleId: string; filePath: string }>;
+    }).findings.filter((finding) => finding.ruleId === "todo-fixme");
+    expect(findings.map((finding) => finding.filePath)).toEqual(["src/ok.ts"]);
+  });
+
+  it("skips broken symlinks, directories, and unreadable paths", async () => {
+    fs.symlinkSync(
+      path.join(repoDir, "missing-target.ts"),
+      path.join(repoDir, "src", "broken.ts"),
+    );
+    fs.mkdirSync(path.join(repoDir, "src", "directory.ts"));
+
+    const response = await invokeToolDefinition(
+      nyxSlopCheckTool,
+      {
+        worktreePath: repoDir,
+        scope: "full",
+        changedFiles: ["src/broken.ts", "src/directory.ts", "src/missing.ts"],
+      },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(response.isError).toBeFalsy();
+    expect((response.structuredContent as { status: string }).status).toBe("GREEN");
+    expect((response.structuredContent as { findings: unknown[] }).findings).toEqual([]);
+  });
+
+  it("applies disabled rules and advisory escalation from repository config", async () => {
+    fs.writeFileSync(path.join(repoDir, "src", "ok.ts"), "// TODO real\n");
+    fs.mkdirSync(path.join(repoDir, ".nyxowl"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, ".nyxowl", "config.json"),
+      JSON.stringify({ slop: { disable: ["todo-fixme"] } }),
+    );
+
+    const disabled = await invokeToolDefinition(
+      nyxSlopCheckTool,
+      { worktreePath: repoDir, scope: "full", changedFiles: ["src/ok.ts"] },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((disabled.structuredContent as { status: string }).status).toBe("GREEN");
+
+    fs.writeFileSync(
+      path.join(repoDir, ".nyxowl", "config.json"),
+      JSON.stringify({ slop: { advisoryAsBlocking: true } }),
+    );
+    fs.writeFileSync(path.join(repoDir, "src", "Color.tsx"), "const c = #ff00aa;\n");
+    const escalated = await invokeToolDefinition(
+      nyxSlopCheckTool,
+      { worktreePath: repoDir, scope: "full", changedFiles: ["src/Color.tsx"] },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    const data = escalated.structuredContent as {
+      status: string;
+      blockingCount: number;
+      advisoryCount: number;
+    };
+    expect(data.status).toBe("RED");
+    expect(data.blockingCount).toBe(1);
+    expect(data.advisoryCount).toBe(0);
   });
 });

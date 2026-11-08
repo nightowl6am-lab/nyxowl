@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -140,6 +141,157 @@ describe("seam extractor normalization", () => {
   });
 });
 
+describe("seam extractor edge cases", () => {
+  it("parses SQL nested/quoted columns, Prisma attributes, and Drizzle table helpers", () => {
+    const root = path.join(fixtureRoot, "extra", "db");
+    const models = extractDbAndOrmModels(root, listFiles(root));
+
+    const sql = models.find((model) => model.source === "sql");
+    expect(sql?.tableName).toBe("order_item");
+    expect([...(sql?.fields ?? [])].sort()).toEqual([
+      "amount",
+      "escaped",
+      "id",
+      "meta",
+      "note",
+      "weird",
+    ]);
+
+    const prismaNames = models
+      .filter((model) => model.source === "prisma")
+      .map((model) => model.tableName)
+      .sort();
+    expect(prismaNames).toEqual(["audit_log", "empty"]);
+    const auditLog = models.find(
+      (model) => model.source === "prisma" && model.tableName === "audit_log",
+    );
+    expect([...(auditLog?.fields ?? [])]).toEqual(["id"]);
+    const empty = models.find(
+      (model) => model.source === "prisma" && model.tableName === "empty",
+    );
+    expect(empty?.fields.size).toBe(0);
+
+    const drizzle = models
+      .filter((model) => model.source === "drizzle")
+      .map((model) => model.tableName)
+      .sort();
+    expect(drizzle).toEqual(["audit_log", "setting", "user"]);
+    const users = models.find(
+      (model) => model.source === "drizzle" && model.tableName === "user",
+    );
+    expect([...(users?.fields ?? [])].sort()).toEqual(["displayname", "id"]);
+  });
+
+  it("extracts FastAPI router prefixes, inline dict returns, and simple non-inline routes", () => {
+    const root = path.join(fixtureRoot, "extra", "api");
+    const endpoints = extractApiEndpoints(root, ["routes.py"]);
+
+    const at = (method: string, routePath: string) =>
+      endpoints.find((endpoint) => endpoint.method === method && endpoint.path === routePath);
+
+    expect(at("GET", "/api/v1/items")).toMatchObject({ framework: "fastapi" });
+    expect([...(at("GET", "/api/v1/items")?.responseFields ?? [])].sort()).toEqual([
+      "id",
+      "name",
+    ]);
+    expect(at("POST", "/api/v1/items/:param")?.responseFields.size).toBe(0);
+    expect([...(at("PUT", "/api/v1/items/:param")?.responseFields ?? [])].sort()).toEqual([
+      "item_id",
+      "updated",
+    ]);
+    expect([...(at("DELETE", "/admin/:param")?.responseFields ?? [])]).toEqual([
+      "deleted",
+    ]);
+  });
+
+  it("extracts every Go Chi verb and ignores lowercase pseudo-routes", () => {
+    const root = path.join(fixtureRoot, "extra", "api");
+    const endpoints = extractApiEndpoints(root, ["routes.go"]);
+
+    expect(
+      endpoints.map((endpoint) => `${endpoint.method} ${endpoint.path}`).sort(),
+    ).toEqual([
+      "DELETE /widgets/:param",
+      "GET /users/:param",
+      "PATCH /widgets/:param",
+      "POST /users",
+      "PUT /widgets/:param",
+    ]);
+    expect(endpoints.every((endpoint) => endpoint.framework === "chi")).toBe(true);
+  });
+
+  it("resolves App Router root/group/slot/dynamic/catch-all and Pages Router index/dynamic/method variants", () => {
+    const root = path.join(fixtureRoot, "extra", "next");
+    const endpoints = extractApiEndpoints(root, listFiles(root));
+
+    const keys = endpoints.map((endpoint) => `${endpoint.method} ${endpoint.path}`).sort();
+    expect(keys).toEqual([
+      "DELETE /api/items/:param",
+      "DELETE /api/session",
+      "GET /",
+      "GET /api",
+      "GET /api/files/*",
+      "GET /api/files/*",
+      "GET /api/users/:param",
+      "PATCH /api/items/:param",
+      "POST /page",
+      "POST /api/users/:param",
+    ].sort());
+  });
+
+  it("covers client verb generics, unknown bases, query/hash stripping, asset/absolute rejection, and expected fields", () => {
+    const root = path.join(fixtureRoot, "extra", "client");
+    const calls = extractFrontendApiCalls(root, ["extra.ts"]);
+
+    const byKey = new Map(
+      calls.map((call) => [`${call.method} ${call.path}`, call]),
+    );
+    expect([...byKey.keys()].sort()).toEqual([
+      "DELETE /api/things/1",
+      "GET /api/items/1",
+      "GET /api/profile",
+      "GET /api/search",
+      "GET /api/health",
+      "PATCH /api/things/1",
+      "POST /api/items",
+      "PUT /api/things/1",
+    ].sort());
+    expect([...(byKey.get("GET /api/profile")?.expectedFields ?? [])].sort()).toEqual([
+      "email",
+      "name",
+    ]);
+    expect(calls.some((call) => call.path.includes("example.com"))).toBe(false);
+    expect(calls.some((call) => call.path.endsWith(".js"))).toBe(false);
+  });
+
+  it("extracts python and bracket env syntax while skipping comments, test files, directories, and oversized files", () => {
+    const root = path.join(fixtureRoot, "extra", "env");
+    const refs = extractEnvReferences(root, listFiles(root));
+    const keys = new Set(refs.map((ref) => ref.key));
+    expect(keys.has("PYTHON_KEY")).toBe(true);
+    expect(keys.has("PYTHON_GET_KEY")).toBe(true);
+    expect(keys.has("SINGLE_QUOTED_KEY")).toBe(true);
+    expect(keys.has("INLINE_KEY")).toBe(true);
+    expect(keys.has("SHOULD_NOT_APPEAR")).toBe(false);
+    expect(keys.has("BLOCK_COMMENTED_KEY")).toBe(false);
+
+    expect(
+      extractEnvReferences(root, ["missing.ts", "tests/helper.ts", "component.test.ts"]),
+    ).toEqual([]);
+
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-env-"));
+    try {
+      const huge = path.join(tmp, "huge.ts");
+      fs.writeFileSync(huge, `const key = process.env.HUGE_KEY;\n${"x".repeat(2 * 1024 * 1024)}`);
+      const dir = path.join(tmp, "directory.ts");
+      fs.mkdirSync(dir);
+      expect(extractEnvReferences(tmp, ["huge.ts", "directory.ts"])).toEqual([]);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("routePathMatches", () => {
   it("matches :param against exactly one segment", () => {
     expect(routePathMatches("/api/users/:param", "/api/users/42")).toBe(true);
@@ -200,5 +352,14 @@ describe("normalizeTableOrModelName", () => {
     expect(normalizeTableOrModelName("movies")).toBe("movie");
     expect(normalizeTableOrModelName("statuses")).toBe("status");
     expect(normalizeTableOrModelName("users")).toBe("user");
+    expect(normalizeTableOrModelName("companies")).toBe("company");
+    expect(normalizeTableOrModelName("matches")).toBe("match");
+    expect(normalizeTableOrModelName("boxes")).toBe("box");
+    expect(normalizeTableOrModelName("classes")).toBe("class");
+    expect(normalizeTableOrModelName("buses")).toBe("bus");
+    expect(normalizeTableOrModelName("virus")).toBe("virus");
+    expect(normalizeTableOrModelName("analysis")).toBe("analysis");
+    expect(normalizeTableOrModelName("cookies")).toBe("cookie");
+    expect(normalizeTableOrModelName("  UserProfiles  ")).toBe("user_profile");
   });
 });

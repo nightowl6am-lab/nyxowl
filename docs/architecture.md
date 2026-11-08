@@ -44,6 +44,7 @@ All Nyxowl state lives outside the user's repository in `~/.nyxowl/` (`0700`, ov
 
 Engine 2's tree-sitter path treats grammar files as a supply-chain boundary:
 
+- Seven vendored grammars are supported: Python, Go, Rust, Java, Ruby, PHP, and C# (`tree-sitter-{python,go,rust,java,ruby,php,c_sharp}.wasm`).
 - `data/grammars/manifest.json` pins `version: 1` plus the byte length and SHA-256 of each vendored `.wasm`.
 - The manifest is read from the same directory as the grammar, so `NYXOWL_GRAMMARS_DIR` overrides must ship matching pins.
 - Grammar bytes are read once, checked for size and digest, and the verified `Uint8Array` is handed directly to `Parser.Language.load`. A missing/invalid manifest, missing entry, size mismatch, hash mismatch, or read error returns `null` and the caller uses the legacy regex outline. Unverified bytes are never loaded.
@@ -55,5 +56,7 @@ Parsing and skeleton extraction are bounded before recursion:
 - An iterative AST pre-walk rejects trees deeper than 200 or larger than 50,000 named nodes, so recursive extractors cannot overflow the call stack; callers fall back to the legacy outline.
 - `nyx_symbol_skeleton` stats files before reading and rejects files over 2 MiB or 50,000 lines with `ERR_FILE_TOO_LARGE`.
 - Skeleton results are cached FIFO with a 256-entry cap.
+
+Coverage gates are enforced per glob in addition to the global thresholds: `src/core/**` and `src/mcp/engines/**` require at least 85% lines and 85% branches, `src/cli/**` requires at least 75% lines and 75% branches, and the whole tree keeps 80% statements/functions and 65% branches.
 
 Version reporting in the MCP server, bootstrap commit trailers, and PR footer is sourced from `NYXOWL_VERSION` (`src/core/version.ts`), which resolves `package.json` at runtime.

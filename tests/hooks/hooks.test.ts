@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { computeRepoIdSync } from "../../src/core/git.ts";
-import { ensureProjectNyxowlDirs } from "../../src/core/paths.ts";
+import { ensureProjectNyxowlDirs, resolveProjectNyxowlPaths } from "../../src/core/paths.ts";
 import { openProjectDb } from "../../src/mcp/db/sqlite.ts";
 import {
   evaluateEditGuardPayload,
@@ -13,6 +13,7 @@ import {
   evaluateGuardPayload,
   evaluateShellCommandGuard,
   runGuardCli,
+  splitShellCommandsRecursive,
 } from "../../src/cli/hooks/guard.ts";
 import { runPreCompactCli } from "../../src/cli/hooks/pre-compact.ts";
 import { runSessionStartCli } from "../../src/cli/hooks/session-start.ts";
@@ -279,6 +280,577 @@ describe("Step 9 — Host Hooks (guard, edit-guard, session-start, pre-compact)"
     } finally {
       if (prevSession === undefined) delete process.env["NYXOWL_SESSION"];
       else process.env["NYXOWL_SESSION"] = prevSession;
+    }
+  });
+
+  it("covers secret variants, shell splitting, assignments, rm targets, and package ecosystems", () => {
+    const evaluate = (
+      command: string,
+      opts: { cwd?: string } = {},
+    ): ReturnType<typeof evaluateShellCommandGuard> =>
+      evaluateShellCommandGuard(command, {
+        ...opts,
+        projectPath: projectDir,
+        nyxowlHome,
+      });
+    const deny = (command: string, opts: { cwd?: string } = {}): void => {
+      expect(evaluate(command, opts).decision, command).toBe("deny");
+    };
+    const allow = (command: string, opts: { cwd?: string } = {}): void => {
+      expect(evaluate(command, opts).decision, command).toBe("allow");
+    };
+
+    // Empty / whitespace-only commands.
+    allow("");
+    allow("   ");
+
+    // Certificate, credential, and dotfile secret variants.
+    for (const command of [
+      "cat certs/client.pfx",
+      "cat certs/private.key",
+      "cat certs/private.p12",
+      "cat certs/private.pem",
+      "cat config/credentials-prod.json",
+      "cat config/service-account-prod.json",
+      "cat .npmrc",
+      "cat .pypirc",
+      "cat .netrc",
+      "cat .git-credentials",
+      "cat kubeconfig",
+      "cat id_rsa",
+      "cat id_ed25519",
+      "cat id_ecdsa",
+      "cat ~/.aws/credentials",
+    ]) {
+      deny(command);
+    }
+
+    // Env-assignment secret path and assignment-only commands.
+    deny("DATABASE_URL=.env node app.js");
+    allow("FOO=bar npm test");
+    allow("FOO=bar");
+
+    // shell-quote glob entries and empty command segments around operators.
+    allow("ls *.ts");
+    allow("&& echo hi");
+    allow("echo hi &&");
+
+    // Recursive splitting edge cases.
+    allow("bash -c");
+    allow('eval "echo hi"');
+    expect(splitShellCommandsRecursive("echo hi", 6).commands).toEqual([]);
+
+    // Recursive removal targets.
+    for (const target of ["/", "/*", "~", "~/data", "..", "../tmp"]) {
+      deny(`rm -rf ${target}`);
+    }
+    allow("rm -rf ./build");
+
+    // git config short flag and a non-protected push.
+    deny("git config -l");
+    allow("git push origin feature");
+
+    // Publishing / deployment variants.
+    for (const command of [
+      "pnpm publish",
+      "yarn publish",
+      "cargo publish",
+      "twine upload dist/app.whl",
+      "gem push pkg.gem",
+      "terraform apply -auto-approve",
+      "kubectl apply -f k8s.yaml",
+      "fly deploy",
+      "vercel --prod",
+    ]) {
+      deny(command);
+    }
+
+    // Destructive git outside vs inside an isolated worktree.
+    deny("git clean -xfd");
+    const worktreeDir = path.join(tmpRoot, "worktrees", "repo", "feat-auth");
+    fs.mkdirSync(worktreeDir, { recursive: true });
+    allow("git clean -xfd", { cwd: worktreeDir });
+    allow("git reset --hard", { cwd: worktreeDir });
+    allow("git clean -fd");
+
+    // Package installation detection across ecosystems.
+    for (const command of [
+      "npm i left-pad",
+      "npm install left-pad",
+      "npm add left-pad",
+      "pnpm add left-pad",
+      "yarn add left-pad",
+      "bun add left-pad",
+      "pip install left-pad",
+      "uv add left-pad",
+      "poetry add left-pad",
+      "cargo add left-pad",
+      "go get example.com/left-pad",
+      "gem install left-pad",
+      "composer require vendor/left-pad",
+      "npm install --save-dev left-pad",
+    ]) {
+      deny(command);
+    }
+    allow("pip install -r requirements.txt");
+    allow("pip install .");
+
+    // Non-dump env/export/set variants.
+    allow("env FOO=bar");
+    allow("export FOO=bar");
+    allow("set -- x");
+
+    // Version-spec stripping against an approved dependency.
+    const repoId = computeRepoIdSync(projectDir);
+    const projPaths = ensureProjectNyxowlDirs(repoId, nyxowlHome);
+    const db = openProjectDb(projPaths.stateDbFile);
+    db.withWriteTransaction((conn) => {
+      conn
+        .prepare(
+          `INSERT INTO dep_approvals (pkg_key, package_name, version, ecosystem, approved, findings_json, created_at)
+           VALUES (?, ?, ?, ?, 1, '[]', ?)`,
+        )
+        .run("npm:zod@4.6.7", "zod", "4.6.7", "npm", new Date().toISOString());
+    });
+    db.close();
+    allow("npm install zod@4.6.7");
+
+    // projectPath fallbacks: cwd only, then process.cwd() only.
+    expect(
+      evaluateShellCommandGuard("npm install evilpkg", {
+        cwd: projectDir,
+        nyxowlHome,
+      }).decision,
+    ).toBe("deny");
+    expect(evaluateShellCommandGuard("npm install evilpkg", { nyxowlHome }).decision).toBe(
+      "deny",
+    );
+  });
+
+  it("covers guard payload tool-name and tool-input dispatch variants", () => {
+    const env = { NYXOWL_SESSION: "1", NYXOWL_PROJECT: projectDir } as NodeJS.ProcessEnv;
+
+    const secret = evaluateGuardPayload(
+      { tool_name: "Read", tool_input: { file_path: ".env" } },
+      { env, nyxowlHome },
+    );
+    expect(secret?.decision).toBe("deny");
+    expect(secret?.ruleId).toBe("SEC_SECRET_PATH");
+
+    expect(
+      evaluateGuardPayload(
+        { tool_name: "Read", tool_input: { file_path: 123 } },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("allow");
+
+    expect(
+      evaluateGuardPayload({ tool_name: "Read" }, { env, nyxowlHome })?.decision,
+    ).toBe("allow");
+
+    for (const key of ["CommandLine", "cmd", "script"]) {
+      const decision = evaluateGuardPayload(
+        { tool_name: "Bash", tool_input: { [key]: "rm -rf /" } },
+        { env, nyxowlHome },
+      );
+      expect(decision?.decision, key).toBe("deny");
+    }
+
+    // Command present but tool_name omitted still dispatches to the shell guard.
+    expect(
+      evaluateGuardPayload(
+        { tool_input: { command: "rm -rf /" } },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("deny");
+
+    for (const name of ["shell", "run_command", "exec"]) {
+      expect(
+        evaluateGuardPayload({ tool_name: name, tool_input: {} }, { env, nyxowlHome })
+          ?.decision,
+        name,
+      ).toBe("allow");
+    }
+
+    expect(
+      evaluateGuardPayload(
+        { tool_name: "bash", tool_input: { command: 123 } },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("allow");
+
+    const worktreeDir = path.join(tmpRoot, "worktrees", "repo", "feat-auth");
+    fs.mkdirSync(worktreeDir, { recursive: true });
+    expect(
+      evaluateGuardPayload(
+        { tool_name: "Bash", tool_input: { command: "git reset --hard" }, cwd: worktreeDir },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("allow");
+    expect(
+      evaluateGuardPayload(
+        { tool_name: "Bash", tool_input: { command: "git reset --hard" } },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("deny");
+  });
+
+  it("covers guard CLI empty, self-scoped, exit-code, and fail-safe branches", async () => {
+    const prevSession = process.env["NYXOWL_SESSION"];
+    const prevExit = process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+    try {
+      delete process.env["NYXOWL_SESSION"];
+      delete process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+      expect(await runGuardCli("")).toEqual({ exitCode: 0, stdout: "" });
+      expect(await runGuardCli("   ")).toEqual({ exitCode: 0, stdout: "" });
+      expect(
+        await runGuardCli(
+          JSON.stringify({ tool_name: "Bash", tool_input: { command: "rm -rf /" } }),
+        ),
+      ).toEqual({ exitCode: 0, stdout: "" });
+
+      process.env["NYXOWL_SESSION"] = "1";
+      process.env["NYXOWL_HOOK_EXIT_ON_DENY"] = "1";
+      const denied = await runGuardCli(
+        JSON.stringify({
+          agent_name: "nyxowl",
+          tool_name: "Bash",
+          tool_input: { command: "rm -rf /" },
+        }),
+      );
+      expect(denied.exitCode).toBe(2);
+      expect(JSON.parse(denied.stdout).permissionDecision).toBe("deny");
+
+      process.env["NYXOWL_SESSION"] = "0";
+      expect(await runGuardCli("{bad-json")).toEqual({ exitCode: 0, stdout: "" });
+
+      process.env["NYXOWL_SESSION"] = "1";
+      const failSafe = await runGuardCli("{bad-json");
+      expect(failSafe.exitCode).toBe(2);
+      expect(JSON.parse(failSafe.stdout).permissionDecision).toBe("deny");
+      expect(JSON.parse(failSafe.stdout).reason).toContain("fail-safe");
+
+      delete process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+      const failSafeNoExit = await runGuardCli("{bad-json");
+      expect(failSafeNoExit.exitCode).toBe(0);
+      expect(JSON.parse(failSafeNoExit.stdout).permissionDecision).toBe("deny");
+    } finally {
+      if (prevSession === undefined) delete process.env["NYXOWL_SESSION"];
+      else process.env["NYXOWL_SESSION"] = prevSession;
+      if (prevExit === undefined) delete process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+      else process.env["NYXOWL_HOOK_EXIT_ON_DENY"] = prevExit;
+    }
+  });
+
+  it("covers edit-guard path keys, role variants, CI asks, and lock suffix conflicts", () => {
+    const repoId = computeRepoIdSync(projectDir);
+    const projPaths = ensureProjectNyxowlDirs(repoId, nyxowlHome);
+    const worktreeDir = path.join(projPaths.worktreesRootDir, "feat-auth");
+    fs.mkdirSync(worktreeDir, { recursive: true });
+    const env = { NYXOWL_SESSION: "1", NYXOWL_PROJECT: projectDir } as NodeJS.ProcessEnv;
+
+    expect(
+      evaluateEditGuardPayload({ tool_name: "Edit" }, { env, nyxowlHome })?.decision,
+    ).toBe("allow");
+
+    for (const key of ["path", "target_file", "filePath"]) {
+      const decision = evaluateEditGuardPayload(
+        { tool_name: "Edit", tool_input: { [key]: ".env" } },
+        { env, nyxowlHome },
+      );
+      expect(decision?.decision, key).toBe("deny");
+      expect(decision?.ruleId, key).toBe("EDIT_SECRET_PATH");
+    }
+
+    expect(
+      evaluateEditGuardPayload(
+        { tool_name: "Edit", tool_input: { file_path: 42 } },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("allow");
+
+    const ci = evaluateEditGuardPayload(
+      {
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(worktreeDir, ".github/workflows/ci.yml") },
+        cwd: worktreeDir,
+      },
+      { env, nyxowlHome },
+    );
+    expect(ci?.decision).toBe("ask");
+    expect(ci?.ruleId).toBe("REDLINE_CI_WORKFLOW");
+
+    expect(
+      evaluateEditGuardPayload(
+        {
+          tool_name: "Edit",
+          tool_input: { file_path: path.join(worktreeDir, "a.ts") },
+          subagent_type: "nyx-product",
+          cwd: worktreeDir,
+        },
+        { env, nyxowlHome },
+      )?.ruleId,
+    ).toBe("ROLE_READ_ONLY");
+    expect(
+      evaluateEditGuardPayload(
+        {
+          tool_name: "Edit",
+          tool_input: { file_path: path.join(worktreeDir, "a.ts") },
+          agent: "nyx-architect",
+          cwd: worktreeDir,
+        },
+        { env, nyxowlHome },
+      )?.ruleId,
+    ).toBe("ROLE_READ_ONLY");
+    expect(
+      evaluateEditGuardPayload(
+        {
+          tool_name: "Edit",
+          tool_input: { file_path: path.join(worktreeDir, "a.ts") },
+          cwd: worktreeDir,
+        },
+        {
+          env: {
+            NYXOWL_SESSION: "1",
+            NYXOWL_PROJECT: projectDir,
+            NYXOWL_ROLE: "nyx-product",
+          },
+          nyxowlHome,
+        },
+      )?.ruleId,
+    ).toBe("ROLE_READ_ONLY");
+
+    expect(
+      evaluateEditGuardPayload(
+        {
+          tool_name: "Edit",
+          tool_input: { file_path: path.join(worktreeDir, "a.ts") },
+          agent_name: "developer",
+          cwd: worktreeDir,
+        },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("allow");
+
+    // Path with only one segment after /worktrees/ does not match the worktree regex.
+    const shallowPath = path.join(tmpRoot, "worktrees", "feat", "a.ts");
+    expect(
+      evaluateEditGuardPayload(
+        {
+          tool_name: "Edit",
+          tool_input: { file_path: shallowPath },
+          agent_name: "nyx-api",
+          cwd: projectDir,
+        },
+        { env, nyxowlHome },
+      )?.decision,
+    ).toBe("allow");
+
+    // Lock suffix conflict: relCandidates do not contain this path, but it is a suffix.
+    const db = openProjectDb(projPaths.stateDbFile);
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    db.withWriteTransaction((conn) => {
+      conn
+        .prepare(
+          "INSERT INTO locks (file_path, owner_role, acquired_at, expires_at) VALUES (?, ?, ?, ?)",
+        )
+        .run("feat-auth/src/schema.ts", "nyx-db", nowEpoch, nowEpoch + 600);
+    });
+    db.close();
+    const conflict = evaluateEditGuardPayload(
+      {
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(worktreeDir, "src/schema.ts") },
+        agent_name: "nyx-api",
+        cwd: worktreeDir,
+      },
+      { env, nyxowlHome },
+    );
+    expect(conflict?.decision).toBe("deny");
+    expect(conflict?.ruleId).toBe("FILE_LOCKED_BY_OTHER_ROLE");
+
+    // cwd fallback when NYXOWL_PROJECT is absent.
+    expect(
+      evaluateEditGuardPayload(
+        {
+          tool_name: "Edit",
+          tool_input: { file_path: path.join(worktreeDir, "b.ts") },
+          agent_name: "nyx-api",
+          cwd: worktreeDir,
+        },
+        { env: { NYXOWL_SESSION: "1" }, nyxowlHome },
+      )?.decision,
+    ).toBe("allow");
+
+    // nyxowlHome option omitted: NYXOWL_HOME env supplies the temporary home.
+    const prevHome = process.env["NYXOWL_HOME"];
+    process.env["NYXOWL_HOME"] = nyxowlHome;
+    try {
+      expect(
+        evaluateEditGuardPayload(
+          {
+            tool_name: "Edit",
+            tool_input: { file_path: path.join(worktreeDir, "c.ts") },
+            agent_name: "nyx-api",
+            cwd: worktreeDir,
+          },
+          { env },
+        )?.decision,
+      ).toBe("allow");
+    } finally {
+      if (prevHome === undefined) delete process.env["NYXOWL_HOME"];
+      else process.env["NYXOWL_HOME"] = prevHome;
+    }
+  });
+
+  it("covers edit-guard CLI empty, self-scoped, exit-code, and fail-safe branches", async () => {
+    const prevSession = process.env["NYXOWL_SESSION"];
+    const prevExit = process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+    try {
+      delete process.env["NYXOWL_SESSION"];
+      delete process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+      expect(await runEditGuardCli("")).toEqual({ exitCode: 0, stdout: "" });
+      expect(await runEditGuardCli("   ")).toEqual({ exitCode: 0, stdout: "" });
+      expect(
+        await runEditGuardCli(
+          JSON.stringify({
+            tool_name: "Edit",
+            tool_input: { file_path: path.join(projectDir, "src/x.ts") },
+          }),
+        ),
+      ).toEqual({ exitCode: 0, stdout: "" });
+
+      process.env["NYXOWL_SESSION"] = "1";
+      process.env["NYXOWL_HOOK_EXIT_ON_DENY"] = "1";
+      const denied = await runEditGuardCli(
+        JSON.stringify({
+          agent_name: "nyxowl",
+          tool_name: "Edit",
+          tool_input: { file_path: path.join(projectDir, "src/x.ts") },
+          cwd: projectDir,
+        }),
+      );
+      expect(denied.exitCode).toBe(2);
+      expect(JSON.parse(denied.stdout).permissionDecision).toBe("deny");
+
+      process.env["NYXOWL_SESSION"] = "0";
+      expect(await runEditGuardCli("{bad-json")).toEqual({ exitCode: 0, stdout: "" });
+
+      process.env["NYXOWL_SESSION"] = "1";
+      const failSafe = await runEditGuardCli("{bad-json");
+      expect(failSafe.exitCode).toBe(2);
+      expect(JSON.parse(failSafe.stdout).permissionDecision).toBe("deny");
+      expect(JSON.parse(failSafe.stdout).reason).toContain("fail-safe");
+
+      delete process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+      const failSafeNoExit = await runEditGuardCli("{bad-json");
+      expect(failSafeNoExit.exitCode).toBe(0);
+      expect(JSON.parse(failSafeNoExit.stdout).permissionDecision).toBe("deny");
+    } finally {
+      if (prevSession === undefined) delete process.env["NYXOWL_SESSION"];
+      else process.env["NYXOWL_SESSION"] = prevSession;
+      if (prevExit === undefined) delete process.env["NYXOWL_HOOK_EXIT_ON_DENY"];
+      else process.env["NYXOWL_HOOK_EXIT_ON_DENY"] = prevExit;
+    }
+  });
+
+  it("hydrates worktree, slice, and handoff details from the project state DB", async () => {
+    const repoId = computeRepoIdSync(projectDir);
+    const projPaths = ensureProjectNyxowlDirs(repoId, nyxowlHome);
+    const db = openProjectDb(projPaths.stateDbFile);
+    const now = new Date().toISOString();
+    db.withWriteTransaction((conn) => {
+      conn
+        .prepare(
+          `INSERT INTO worktrees (task_slug, branch, root, worktree_path, base_branch, base_sha, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("feat-auth", "nyx/feat-auth", tmpRoot, projPaths.worktreesRootDir, "main", "abc", "active", now, now);
+      conn
+        .prepare(
+          `INSERT INTO slices (slice_id, task_slug, seq, label, ref_name, tree_hash, commit_sha, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run("S1", "feat-auth", 1, "slice one", "nyx/S1", "tree", "sha", now);
+      conn
+        .prepare(
+          `INSERT INTO handoffs (completed_task, files_changed_json, key_decisions_json, next_task, receipts_json, digest_markdown, token_count, created_at)
+           VALUES (?, '[]', '[]', ?, '[]', '', 0, ?)`,
+        )
+        .run("finished work", "next work", now);
+    });
+    db.close();
+
+    const prevHome = process.env["NYXOWL_HOME"];
+    const prevProject = process.env["NYXOWL_PROJECT"];
+    process.env["NYXOWL_HOME"] = nyxowlHome;
+    delete process.env["NYXOWL_PROJECT"];
+    try {
+      const session = await runSessionStartCli(
+        JSON.stringify({ agent_name: "nyxowl", cwd: projectDir }),
+      );
+      expect(session.exitCode).toBe(0);
+      const sessionContext = JSON.parse(session.stdout).additionalContext as string;
+      expect(sessionContext).toContain("Active Worktree: feat-auth");
+      expect(sessionContext).toContain("Latest Slice: S1");
+      expect(sessionContext).toContain(
+        'Last Handoff: completed="finished work" -> next="next work"',
+      );
+
+      const compact = await runPreCompactCli(
+        JSON.stringify({ agent_name: "nyxowl", cwd: projectDir }),
+      );
+      expect(compact.exitCode).toBe(0);
+      expect(JSON.parse(compact.stdout).hookSpecificOutput.hookEventName).toBe("PreCompact");
+
+      // NYXOWL_PROJECT wins when the payload has no cwd.
+      process.env["NYXOWL_PROJECT"] = projectDir;
+      const noCwd = await runSessionStartCli(JSON.stringify({ agent_name: "nyxowl" }));
+      expect(JSON.parse(noCwd.stdout).additionalContext).toContain("Nyxowl Session Hydrate");
+      delete process.env["NYXOWL_PROJECT"];
+
+      // process.cwd() fallback.
+      const cwdFallback = await runSessionStartCli(JSON.stringify({ agent_name: "nyxowl" }));
+      expect(cwdFallback.exitCode).toBe(0);
+      expect(cwdFallback.stdout).toContain("Nyxowl Session Hydrate");
+
+      // Empty stdin and inactive sessions are no-ops.
+      expect(await runSessionStartCli("")).toEqual({ exitCode: 0, stdout: "" });
+      expect(
+        await runSessionStartCli(JSON.stringify({ agent_name: "default-assistant" })),
+      ).toEqual({ exitCode: 0, stdout: "" });
+      expect(await runPreCompactCli("")).toEqual({ exitCode: 0, stdout: "" });
+      expect(
+        await runPreCompactCli(JSON.stringify({ agent_name: "default-assistant" })),
+      ).toEqual({ exitCode: 0, stdout: "" });
+    } finally {
+      if (prevHome === undefined) delete process.env["NYXOWL_HOME"];
+      else process.env["NYXOWL_HOME"] = prevHome;
+      if (prevProject === undefined) delete process.env["NYXOWL_PROJECT"];
+      else process.env["NYXOWL_PROJECT"] = prevProject;
+    }
+  });
+
+  it("hydrates from HANDOFF.md when no state DB exists", async () => {
+    const repoId = computeRepoIdSync(projectDir);
+    const projPaths = resolveProjectNyxowlPaths(repoId, nyxowlHome);
+    fs.mkdirSync(projPaths.projectStateDir, { recursive: true });
+    fs.writeFileSync(projPaths.handoffFile, "# Handoff\nnext: ship it\n");
+
+    const prevHome = process.env["NYXOWL_HOME"];
+    const prevProject = process.env["NYXOWL_PROJECT"];
+    process.env["NYXOWL_HOME"] = nyxowlHome;
+    delete process.env["NYXOWL_PROJECT"];
+    try {
+      const session = await runSessionStartCli(
+        JSON.stringify({ agent_name: "nyxowl", cwd: projectDir }),
+      );
+      expect(JSON.parse(session.stdout).additionalContext).toContain("next: ship it");
+    } finally {
+      if (prevHome === undefined) delete process.env["NYXOWL_HOME"];
+      else process.env["NYXOWL_HOME"] = prevHome;
+      if (prevProject === undefined) delete process.env["NYXOWL_PROJECT"];
+      else process.env["NYXOWL_PROJECT"] = prevProject;
     }
   });
 });

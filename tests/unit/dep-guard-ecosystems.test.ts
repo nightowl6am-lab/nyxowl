@@ -4,6 +4,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   fetchRegistryMetadata,
+  findTyposquatMatch,
+  levenshteinDistance,
+  parsePackageSpec,
   queryOsvVulnerabilities,
   resolveOsvVersion,
   setDepGuardFetchImpl,
@@ -469,6 +472,463 @@ describe("resolveOsvVersion", () => {
     expect(resolveOsvVersion("3.22.4", "3.23.8")).toBe("3.22.4");
     expect(resolveOsvVersion("latest", "3.23.8")).toBe("3.23.8");
     expect(resolveOsvVersion(undefined, "3.23.8")).toBe("3.23.8");
+  });
+});
+
+describe("dep-guard pure helpers", () => {
+  it("computes Levenshtein distance including empty and case-insensitive inputs", () => {
+    expect(levenshteinDistance("zod", "zod")).toBe(0);
+    expect(levenshteinDistance("ZOD", "zod")).toBe(0);
+    expect(levenshteinDistance("", "react")).toBe(5);
+    expect(levenshteinDistance("react", "")).toBe(5);
+    expect(levenshteinDistance("zodd", "zod")).toBe(1);
+    expect(levenshteinDistance("reac", "react")).toBe(1);
+    expect(levenshteinDistance("kitten", "sitting")).toBe(3);
+  });
+
+  it("detects typosquats only for near-length, non-exact popular names", () => {
+    expect(findTyposquatMatch("zod", "npm")).toBeNull();
+    expect(findTyposquatMatch(" ZOD ", "npm")).toBeNull();
+    expect(findTyposquatMatch("zodd", "npm")).toEqual({
+      matchedPopular: "zod",
+      distance: 1,
+    });
+    expect(findTyposquatMatch("reac", "npm")).toEqual({
+      matchedPopular: "react",
+      distance: 1,
+    });
+    // Too short: no typo classification below 4 characters.
+    expect(findTyposquatMatch("abc", "npm")).toBeNull();
+    expect(findTyposquatMatch("this-name-is-nothing-like-a-popular-package", "npm")).toBeNull();
+  });
+
+  it("parses plain, scoped, and versioned package specs", () => {
+    expect(parsePackageSpec("zod")).toEqual({ name: "zod", version: "latest" });
+    expect(parsePackageSpec("zod@3.23.8")).toEqual({ name: "zod", version: "3.23.8" });
+    expect(parsePackageSpec("zod@")).toEqual({ name: "zod", version: "latest" });
+    expect(parsePackageSpec("@scope/pkg")).toEqual({
+      name: "@scope/pkg",
+      version: "latest",
+    });
+    expect(parsePackageSpec("@scope/pkg@1.2.3")).toEqual({
+      name: "@scope/pkg",
+      version: "1.2.3",
+    });
+    expect(parsePackageSpec("@scope/pkg@")).toEqual({
+      name: "@scope/pkg",
+      version: "latest",
+    });
+    expect(parsePackageSpec("  padded@1.0.0  ")).toEqual({
+      name: "padded",
+      version: "1.0.0",
+    });
+  });
+});
+
+describe("fetchRegistryMetadata missing and sparse payloads", () => {
+  const ecosystems: PackageEcosystem[] = [
+    "npm",
+    "pypi",
+    "crates",
+    "go",
+    "rubygems",
+    "packagist",
+    "maven",
+    "nuget",
+    "hex",
+  ];
+  const names: Record<PackageEcosystem, string> = {
+    npm: "ghost",
+    pypi: "ghost",
+    crates: "ghost",
+    go: "example.com/ghost",
+    rubygems: "ghost",
+    packagist: "vendor/ghost",
+    maven: "group:ghost",
+    nuget: "Ghost",
+    hex: "ghost",
+  };
+
+  afterEach(() => {
+    setDepGuardFetchImpl(null);
+  });
+
+  it.each(ecosystems)("treats a 404/410 as a missing %s package", async (ecosystem) => {
+    setDepGuardFetchImpl(async () => new Response("{}", { status: 404 }));
+    await expect(fetchRegistryMetadata(names[ecosystem], ecosystem)).resolves.toEqual({
+      exists: false,
+      latestVersion: "0.0.0",
+    });
+  });
+
+  it.each(ecosystems)("treats a non-object %s payload as missing", async (ecosystem) => {
+    setDepGuardFetchImpl(async () => jsonResponse(null));
+    await expect(fetchRegistryMetadata(names[ecosystem], ecosystem)).resolves.toEqual({
+      exists: false,
+      latestVersion: "0.0.0",
+    });
+  });
+
+  it("throws for non-ok registry responses", async () => {
+    setDepGuardFetchImpl(async () => new Response("{}", { status: 500 }));
+    await expect(fetchRegistryMetadata("zod", "npm")).rejects.toThrow(
+      /Registry request failed \(500\)/,
+    );
+  });
+
+  it("fills npm defaults when dist-tags, time, and downloads are absent", async () => {
+    setDepGuardFetchImpl(
+      routedFetch([
+        {
+          match: "registry.npmjs.org/zod",
+          body: { versions: { "1.0.0": {} } },
+        },
+        {
+          match: "api.npmjs.org/downloads/point/last-week/zod",
+          body: { error: "nope" },
+          status: 500,
+        },
+      ]),
+    );
+    await expect(fetchRegistryMetadata("zod", "npm")).resolves.toEqual({
+      exists: true,
+      latestVersion: "1.0.0",
+      hasInstallScripts: false,
+      deprecated: false,
+      hasRepositoryUrl: false,
+    });
+  });
+
+  it("falls back to the latest version timestamp and detects preinstall scripts", async () => {
+    setDepGuardFetchImpl(
+      routedFetch([
+        {
+          match: "registry.npmjs.org/zod",
+          body: {
+            "dist-tags": { latest: "2.0.0" },
+            time: { "2.0.0": "2020-02-02T00:00:00.000Z" },
+            versions: {
+              "2.0.0": {
+                scripts: { preinstall: "node pre.js" },
+                repository: { url: "https://github.com/colinhacks/zod" },
+                deprecated: "",
+              },
+            },
+          },
+        },
+        {
+          match: "api.npmjs.org/downloads/point/last-week/zod",
+          body: { downloads: 42 },
+        },
+      ]),
+    );
+    const meta = await fetchRegistryMetadata("zod", "npm");
+    expect(meta.publishedAt).toBe("2020-02-02T00:00:00.000Z");
+    expect(meta.hasInstallScripts).toBe(true);
+    expect(meta.deprecated).toBe(false);
+    expect(meta.weeklyDownloads).toBe(42);
+    expect(meta.hasRepositoryUrl).toBe(true);
+  });
+
+  it("handles pypi upload_time fallback and missing metadata", async () => {
+    setDepGuardFetchImpl(
+      routedFetch([
+        {
+          match: "pypi.org/pypi/requests/json",
+          body: {
+            info: {},
+            urls: [{ upload_time: "2021-01-01T00:00:00" }],
+          },
+        },
+      ]),
+    );
+    const meta = await fetchRegistryMetadata("requests", "pypi");
+    expect(meta.latestVersion).toBe("1.0.0");
+    expect(meta.publishedAt).toBe("2021-01-01T00:00:00");
+    expect(meta.hasRepositoryUrl).toBe(false);
+
+    setDepGuardFetchImpl(async () => jsonResponse({ info: { project_urls: {} } }));
+    const sparse = await fetchRegistryMetadata("requests", "pypi");
+    expect(sparse.publishedAt).toBeUndefined();
+    expect(sparse.hasRepositoryUrl).toBe(true);
+  });
+
+  it("handles sparse crates, go, rubygems, and hex payloads", async () => {
+    setDepGuardFetchImpl(async () => jsonResponse({ crate: {} }));
+    await expect(fetchRegistryMetadata("serde", "crates")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+      hasRepositoryUrl: false,
+    });
+
+    setDepGuardFetchImpl(async () => jsonResponse({}));
+    await expect(fetchRegistryMetadata("example.com/ghost", "go")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+    });
+
+    setDepGuardFetchImpl(async () => jsonResponse({}));
+    await expect(fetchRegistryMetadata("rails", "rubygems")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+      hasRepositoryUrl: false,
+    });
+
+    setDepGuardFetchImpl(async () => jsonResponse({ homepage_uri: "https://rubyonrails.org" }));
+    const homepage = await fetchRegistryMetadata("rails", "rubygems");
+    expect(homepage.hasRepositoryUrl).toBe(true);
+
+    setDepGuardFetchImpl(async () => jsonResponse({}));
+    await expect(fetchRegistryMetadata("phoenix", "hex")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+      hasRepositoryUrl: false,
+    });
+  });
+
+  it("rejects malformed packagist names without fetching", async () => {
+    let calls = 0;
+    setDepGuardFetchImpl(async () => {
+      calls++;
+      return jsonResponse({});
+    });
+    for (const name of ["noslash", "/leading", "trailing/"]) {
+      await expect(fetchRegistryMetadata(name, "packagist")).resolves.toEqual({
+        exists: false,
+        latestVersion: "0.0.0",
+      });
+    }
+    expect(calls).toBe(0);
+
+    setDepGuardFetchImpl(async () => jsonResponse({ packages: {} }));
+    await expect(fetchRegistryMetadata("vendor/pkg", "packagist")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+      hasRepositoryUrl: false,
+    });
+  });
+
+  it("supports maven coordinates without a colon and rejects invalid timestamps", async () => {
+    const urls: string[] = [];
+    setDepGuardFetchImpl(async (input) => {
+      urls.push(requestUrl(input));
+      return jsonResponse({ response: { docs: [] } });
+    });
+    await expect(fetchRegistryMetadata("plainartifact", "maven")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+    });
+    expect(urls[0]).toContain(encodeURIComponent('g:"plainartifact" AND a:"plainartifact"'));
+
+    setDepGuardFetchImpl(async () =>
+      jsonResponse({ response: { docs: [{ latestVersion: "1.0.0", timestamp: 1e300 }] } }),
+    );
+    const invalidDate = await fetchRegistryMetadata("group:artifact", "maven");
+    expect(invalidDate.publishedAt).toBeUndefined();
+  });
+
+  it("handles empty nuget version lists", async () => {
+    setDepGuardFetchImpl(async () => jsonResponse({ versions: [] }));
+    await expect(fetchRegistryMetadata("Ghost", "nuget")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+    });
+
+    setDepGuardFetchImpl(async () => jsonResponse({}));
+    await expect(fetchRegistryMetadata("Ghost", "nuget")).resolves.toEqual({
+      exists: true,
+      latestVersion: "0.0.0",
+    });
+  });
+
+  it("rejects unsupported ecosystems", async () => {
+    await expect(
+      fetchRegistryMetadata("thing", "cargo" as PackageEcosystem),
+    ).rejects.toThrow(/Unsupported package ecosystem/);
+  });
+});
+
+describe("queryOsvVulnerabilities malformed payloads", () => {
+  afterEach(() => {
+    setDepGuardFetchImpl(null);
+  });
+
+  it("returns an empty list when vulns is absent or not an array", async () => {
+    setDepGuardFetchImpl(async () => jsonResponse({ vulns: "nope" }));
+    await expect(queryOsvVulnerabilities("zod", "npm", "1.0.0")).resolves.toEqual([]);
+
+    setDepGuardFetchImpl(async () => jsonResponse([]));
+    await expect(queryOsvVulnerabilities("zod", "npm", "1.0.0")).resolves.toEqual([]);
+  });
+
+  it("throws on malformed JSON", async () => {
+    setDepGuardFetchImpl(async () => new Response("not json", { status: 200 }));
+    await expect(queryOsvVulnerabilities("zod", "npm", "1.0.0")).rejects.toThrow(
+      /malformed JSON/,
+    );
+  });
+});
+
+describe("nyx_dep_guard tool policy and finding branches", () => {
+  afterEach(() => {
+    setDepGuardFetchImpl(null);
+    setDepGuardRegistryFetcher(null);
+  });
+
+  function makeRepo(prefix: string, config?: unknown): { repoDir: string; homeDir: string } {
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), `nyx-dep-guard-${prefix}-`));
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), `nyx-dep-guard-${prefix}-home-`));
+    if (config !== undefined) {
+      fs.mkdirSync(path.join(repoDir, ".nyxowl"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoDir, ".nyxowl", "config.json"),
+        JSON.stringify(config),
+      );
+    }
+    return { repoDir, homeDir };
+  }
+
+  async function run(
+    packages: string[],
+    repoDir: string,
+    homeDir: string,
+  ): Promise<{
+    allApproved: boolean;
+    results: Array<{ version: string; approved: boolean; findings: string[] }>;
+  }> {
+    const res = await invokeToolDefinition(
+      nyxDepGuardTool,
+      { packages, ecosystem: "npm", repoPath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome: homeDir },
+    );
+    expect(res.isError).toBeFalsy();
+    return res.structuredContent as {
+      allApproved: boolean;
+      results: Array<{ version: string; approved: boolean; findings: string[] }>;
+    };
+  }
+
+  it("records explicit deny findings and deny-by-raw-spec", async () => {
+    const { repoDir, homeDir } = makeRepo("deny", {
+      deps: { deny: ["evilpkg", "badpkg@1.0.0"] },
+    });
+    setDepGuardRegistryFetcher(async () => ({
+      exists: true,
+      latestVersion: "1.0.0",
+      publishedAt: "2020-01-01T00:00:00.000Z",
+      weeklyDownloads: 10_000,
+      hasRepositoryUrl: true,
+    }));
+    try {
+      const data = await run(["evilpkg", "badpkg@1.0.0"], repoDir, homeDir);
+      expect(data.allApproved).toBe(false);
+      expect(data.results[0]?.findings).toContain("explicitly-denied-by-config");
+      expect(data.results[1]?.findings).toContain("explicitly-denied-by-config");
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("approves allow-listed packages without querying the registry", async () => {
+    const { repoDir, homeDir } = makeRepo("allow", {
+      deps: { allow: ["safe-pkg", "pinned@2.0.0"] },
+    });
+    setDepGuardRegistryFetcher(async () => {
+      throw new Error("registry must not be called for allow-listed packages");
+    });
+    try {
+      const data = await run(["safe-pkg", "pinned@2.0.0"], repoDir, homeDir);
+      expect(data.allApproved).toBe(true);
+      expect(data.results[0]?.findings).toEqual([]);
+      expect(data.results[0]?.version).toBe("latest");
+      expect(data.results[1]?.version).toBe("2.0.0");
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails open only when depGuard policy is warn", async () => {
+    const { repoDir, homeDir } = makeRepo("warn", {
+      network: { depGuard: "warn" },
+    });
+    setDepGuardRegistryFetcher(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    try {
+      const data = await run(["zod@1.2.3"], repoDir, homeDir);
+      expect(data.allApproved).toBe(true);
+      expect(data.results[0]?.version).toBe("1.2.3");
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("flags hallucinated packages and sparse metadata findings", async () => {
+    const { repoDir, homeDir } = makeRepo("findings");
+    try {
+      setDepGuardRegistryFetcher(async () => ({
+        exists: false,
+        latestVersion: "0.0.0",
+      }));
+      const missing = await run(["ghost-package"], repoDir, homeDir);
+      expect(missing.results[0]?.findings).toEqual([
+        'hallucinated-package: "ghost-package" does not exist on npm',
+      ]);
+
+      setDepGuardRegistryFetcher(async () => ({
+        exists: true,
+        latestVersion: "1.0.0",
+        publishedAt: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+        weeklyDownloads: 99,
+        deprecated: true,
+        hasRepositoryUrl: false,
+        osvVulnerabilities: ["OSV-1", "OSV-2"],
+      }));
+      const flagged = await run(["zod"], repoDir, homeDir);
+      const findings = flagged.results[0]?.findings ?? [];
+      expect(findings).toContain("low-downloads: 99 weekly downloads");
+      expect(findings).toContain("deprecated: package is marked deprecated");
+      expect(findings).toContain("missing-repo: package metadata has no repository link");
+      expect(findings).toContain("osv-vulnerability: OSV-1, OSV-2");
+      expect(findings.some((f) => f.startsWith("young-package"))).toBe(false);
+      expect(flagged.results[0]?.approved).toBe(false);
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores exactly-at-threshold downloads, old packages, and empty OSV lists", async () => {
+    const { repoDir, homeDir } = makeRepo("thresholds");
+    try {
+      setDepGuardRegistryFetcher(async () => ({
+        exists: true,
+        latestVersion: "1.0.0",
+        publishedAt: new Date(Date.now() - 60 * 86_400_000).toISOString(),
+        weeklyDownloads: 100,
+        hasRepositoryUrl: true,
+        osvVulnerabilities: [],
+      }));
+      const data = await run(["zod"], repoDir, homeDir);
+      expect(data.allApproved).toBe(true);
+      expect(data.results[0]?.findings).toEqual([]);
+
+      setDepGuardRegistryFetcher(async () => ({
+        exists: true,
+        latestVersion: "1.0.0",
+        publishedAt: "not-a-date",
+        weeklyDownloads: 100,
+        hasRepositoryUrl: true,
+      }));
+      const invalidDate = await run(["zod"], repoDir, homeDir);
+      expect(invalidDate.allApproved).toBe(true);
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    }
   });
 });
 

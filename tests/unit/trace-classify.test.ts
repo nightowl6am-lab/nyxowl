@@ -142,7 +142,7 @@ const cases: Case[] = [
   },
   {
     language: "unknown extension",
-    filePath: "src/handler.rb",
+    filePath: "src/handler.elm",
     symbol: "fetchData",
     line: "fetchData()",
     expected: "call",

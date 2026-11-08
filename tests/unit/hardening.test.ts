@@ -61,8 +61,12 @@ describe("Slice 6 — grammar integrity pinning and bounded scanning", () => {
     expect(manifest.version).toBe(1);
     const names = Object.keys(manifest.files).sort();
     expect(names).toEqual([
+      "tree-sitter-c_sharp.wasm",
       "tree-sitter-go.wasm",
+      "tree-sitter-java.wasm",
+      "tree-sitter-php.wasm",
       "tree-sitter-python.wasm",
+      "tree-sitter-ruby.wasm",
       "tree-sitter-rust.wasm",
     ]);
 
@@ -83,8 +87,12 @@ describe("Slice 6 — grammar integrity pinning and bounded scanning", () => {
     const dir = withTempDir();
     try {
       for (const name of [
+        "tree-sitter-c_sharp.wasm",
         "tree-sitter-go.wasm",
+        "tree-sitter-java.wasm",
+        "tree-sitter-php.wasm",
         "tree-sitter-python.wasm",
+        "tree-sitter-ruby.wasm",
         "tree-sitter-rust.wasm",
         "manifest.json",
       ]) {
