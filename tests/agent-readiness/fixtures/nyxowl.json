@@ -1,0 +1,29 @@
+{
+  "agent": "nyxowl",
+  "contract": "orchestrator-report-v1",
+  "prompt": "Act as the nyxowl orchestrator inside this repository only. Never read .env or .env.* (the .env.example placeholder is allowed). Call nyx_context_hydrate with {\"repoPath\":\".\"} and nyx_dna_get with {\"repoPath\":\".\"}. Inspect README.md and stacktrace.txt, then write readiness-report.json in the repository root with exactly these keys: worktree (current directory), branch (current git branch), slicesCompleted (array), receipts (array of {id,status}), prUrlOrPath (string), nextHumanAction (string). Return only that same orchestrator-report-v1 JSON object, no prose.",
+  "expectedNyTools": ["context_hydrate", "dna_get"],
+  "forbiddenNyTools": ["testwriter_job", "exploit_probe"],
+  "expectedArtifact": "readiness-report.json",
+  "check": "receipt-gate.check.mjs",
+  "forbiddenHost": ["webfetch", "websearch"],
+  "artifactSchema": {
+    "type": "object",
+    "required": ["worktree", "branch", "slicesCompleted", "receipts", "prUrlOrPath", "nextHumanAction"],
+    "properties": {
+      "worktree": { "type": "string" },
+      "branch": { "type": "string" },
+      "slicesCompleted": { "type": "array" },
+      "receipts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "status"],
+          "properties": { "id": { "type": "string" }, "status": { "type": "string" } }
+        }
+      },
+      "prUrlOrPath": { "type": "string" },
+      "nextHumanAction": { "type": "string" }
+    }
+  }
+}

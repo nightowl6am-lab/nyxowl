@@ -1,0 +1,33 @@
+{
+  "agent": "nyx-testwriter",
+  "contract": "subagent-summary-v1",
+  "prompt": "Act as nyx-testwriter inside this repository only. Never read .env or .env.*. Call nyx_testwriter_job with {\"jobId\":\"READINESS-BOGUS-000\"} once and expect a structured miss. Do not describe creating a job, do not use host tools, do not edit files, and do not run shell commands. Return only a subagent-summary-v1 JSON object with keys status, role, slice, filesChanged, receipts, contractsPublished, openIssues, nextAction; role must be nyx-testwriter and receipts must contain at least one {id,status}.",
+  "expectedNyTools": ["testwriter_job"],
+  "forbiddenNyTools": ["context_hydrate", "worktree_manage"],
+  "expectedArtifact": "stdout-json",
+  "check": "testwriter-lint.check.mjs",
+  "forbiddenHost": ["read", "edit", "write", "bash", "glob", "grep", "webfetch", "websearch", "skill"],
+  "artifactSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["status", "role", "slice", "filesChanged", "receipts", "contractsPublished", "openIssues", "nextAction"],
+    "properties": {
+      "status": { "type": "string" },
+      "role": { "type": "string" },
+      "slice": { "type": "string" },
+      "filesChanged": { "type": "array" },
+      "receipts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "status"],
+          "properties": { "id": { "type": "string" }, "status": { "type": "string" } }
+        }
+      },
+      "contractsPublished": { "type": "array" },
+      "openIssues": { "type": "array" },
+      "nextAction": { "type": "string" }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nyxowl.dev/schemas/output/orchestrator-report-v1.schema.json",
+  "title": "orchestrator-report-v1",
+  "description": "Final report emitted by the nyxowl primary orchestrator after a slice or PR.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worktree",
+    "branch",
+    "slicesCompleted",
+    "receipts",
+    "prUrlOrPath",
+    "nextHumanAction"
+  ],
+  "properties": {
+    "worktree": {
+      "type": "string",
+      "description": "Absolute path of the isolated worktree."
+    },
+    "branch": {
+      "type": "string",
+      "description": "Branch name used for the slice."
+    },
+    "slicesCompleted": {
+      "type": "array",
+      "description": "Completed slice identifiers or summaries.",
+      "items": {}
+    },
+    "receipts": {
+      "type": "array",
+      "description": "Receipt id/status pairs backing the report.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      }
+    },
+    "prUrlOrPath": {
+      "type": "string",
+      "description": "Pull request URL or local path."
+    },
+    "nextHumanAction": {
+      "type": "string",
+      "description": "The single next action required from the human owner."
+    }
+  }
+}

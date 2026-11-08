@@ -1,0 +1,33 @@
+{
+  "agent": "nyx-architect",
+  "contract": "subagent-summary-v1",
+  "prompt": "Act as nyx-architect inside this repository only. Never read .env or .env.* (the .env.example placeholder is allowed). Call nyx_symbol_skeleton with {\"filePath\":\"src/applyPatch.ts\",\"repoPath\":\".\"} and nyx_seam_check with {\"worktreePath\":\".\"}. Do not edit files. Return only a subagent-summary-v1 JSON object with keys status, role, slice, filesChanged, receipts, contractsPublished, openIssues, nextAction; role must be nyx-architect and receipts must contain at least one {id,status}.",
+  "expectedNyTools": ["symbol_skeleton", "seam_check"],
+  "forbiddenNyTools": ["worktree_manage", "exploit_probe"],
+  "expectedArtifact": "stdout-json",
+  "check": "seam.check.mjs",
+  "forbiddenHost": ["edit", "write", "bash", "webfetch", "websearch"],
+  "artifactSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["status", "role", "slice", "filesChanged", "receipts", "contractsPublished", "openIssues", "nextAction"],
+    "properties": {
+      "status": { "type": "string" },
+      "role": { "type": "string" },
+      "slice": { "type": "string" },
+      "filesChanged": { "type": "array" },
+      "receipts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "status"],
+          "properties": { "id": { "type": "string" }, "status": { "type": "string" } }
+        }
+      },
+      "contractsPublished": { "type": "array" },
+      "openIssues": { "type": "array" },
+      "nextAction": { "type": "string" }
+    }
+  }
+}

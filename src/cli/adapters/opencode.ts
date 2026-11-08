@@ -130,8 +130,9 @@ export function buildOpenCodePermissions(
     ...rules("shell", "deny", SHELL_DENY_RESOURCES),
     ...rules("shell", "ask", SHELL_ASK_RESOURCES),
 
-    // Web fetch stays disabled; external directory access is scoped to Nyxowl worktrees.
+    // Web fetch/search stay disabled; external directory access is scoped to Nyxowl worktrees.
     { action: "webfetch", resource: "*", effect: "deny" },
+    { action: "websearch", resource: "*", effect: "deny" },
     { action: "external_directory", resource: "*", effect: "ask" },
     ...rules("external_directory", "allow", externalAllowResources),
   ];
@@ -162,7 +163,7 @@ const FULLY_ISOLATED_DENY_ACTIONS = [
   "execute",
 ] as const;
 
-function buildAgentPermissionRules(agent: {
+export function buildAgentPermissionRules(agent: {
   contract: {
     host_tools: {
       read: "allow" | "deny";
@@ -183,7 +184,7 @@ function buildAgentPermissionRules(agent: {
   // Fully isolated agents (e.g. nyx-testwriter) get explicit denies for every
   // known host action, including MCP-resource and host-inspection actions, so a
   // wildcard deny is never needed. Partially privileged agents keep the narrower
-  // read/edit/shell/webfetch rule set.
+  // read/edit/shell/webfetch/websearch rule set.
   if (fullyIsolated) {
     for (const action of FULLY_ISOLATED_DENY_ACTIONS) {
       rulesOut.push({ action, resource: "*", effect: "deny" });
@@ -199,6 +200,7 @@ function buildAgentPermissionRules(agent: {
       rulesOut.push({ action: "shell", resource: "*", effect: "deny" });
     }
     rulesOut.push({ action: "webfetch", resource: "*", effect: "deny" });
+    rulesOut.push({ action: "websearch", resource: "*", effect: "deny" });
   }
 
   // Last-match-wins: deny every MCP tool, then allow only this role's tools.

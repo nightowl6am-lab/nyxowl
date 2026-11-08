@@ -1,0 +1,18 @@
+{
+  "agent": "nyx-probe",
+  "contract": "subagent-summary-v1",
+  "prompt": "Act as nyx-probe inside this repository only. Never read .env or .env.* (the .env.example placeholder is allowed). Call nyx_debug_isolate with {\"stackTraceOrError\":\"FAILED src/consumer.test.ts::applies patch\\nAssertionError: expected 'raw' to equal 'patched'\\n    at src/consumer.test.ts:14:5\\n    at runTest (tests/runner.mjs:42:11)\",\"worktreePath\":\".\"} and nyx_trace_symbol with {\"symbolName\":\"flakyValue\",\"repoPath\":\".\"}. Read src/flaky.mjs and stacktrace.txt, then write flake-evidence.json in the repository root with keys diverges (boolean) and seeds (array of two numbers). Return only a subagent-summary-v1 JSON object with keys status, role, slice, filesChanged, receipts, contractsPublished, openIssues, nextAction; role must be nyx-probe and receipts must contain at least one {id,status}.",
+  "expectedNyTools": ["debug_isolate", "trace_symbol"],
+  "forbiddenNyTools": ["worktree_manage", "exploit_probe"],
+  "expectedArtifact": "flake-evidence.json",
+  "check": "flake.check.mjs",
+  "forbiddenHost": ["webfetch", "websearch"],
+  "artifactSchema": {
+    "type": "object",
+    "required": ["diverges", "seeds"],
+    "properties": {
+      "diverges": { "type": "boolean" },
+      "seeds": { "type": "array", "items": { "type": "number" } }
+    }
+  }
+}

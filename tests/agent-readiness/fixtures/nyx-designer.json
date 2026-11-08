@@ -1,0 +1,29 @@
+{
+  "agent": "nyx-designer",
+  "contract": "subagent-summary-v1",
+  "prompt": "Act as nyx-designer inside this repository only. Never read .env or .env.* (the .env.example placeholder is allowed). Call nyx_slop_check with {\"worktreePath\":\".\",\"scope\":\"full\"} and nyx_symbol_skeleton with {\"filePath\":\"src/component.tsx\",\"repoPath\":\".\"}. Read src/tokens.css and write contrast-findings.json in the repository root with key pairs: an array of {fg,bg,ratio,passes} for literal #777777 on #ffffff and #000000 on #ffffff, using the WCAG AA threshold 4.5. Return only a subagent-summary-v1 JSON object with keys status, role, slice, filesChanged, receipts, contractsPublished, openIssues, nextAction; role must be nyx-designer and receipts must contain at least one {id,status}.",
+  "expectedNyTools": ["slop_check", "symbol_skeleton"],
+  "forbiddenNyTools": ["worktree_pr", "testwriter_job"],
+  "expectedArtifact": "contrast-findings.json",
+  "check": "wcag.check.mjs",
+  "forbiddenHost": ["webfetch", "websearch"],
+  "artifactSchema": {
+    "type": "object",
+    "required": ["pairs"],
+    "properties": {
+      "pairs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["fg", "bg", "ratio", "passes"],
+          "properties": {
+            "fg": { "type": "string" },
+            "bg": { "type": "string" },
+            "ratio": { "type": "number" },
+            "passes": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}
