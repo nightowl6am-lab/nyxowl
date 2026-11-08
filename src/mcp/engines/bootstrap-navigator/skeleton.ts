@@ -340,7 +340,15 @@ export async function computeFileSkeleton(filePath: string): Promise<{
   }
 
   const isTsJs = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"].includes(ext);
-  const isWasmLanguage = [".py", ".go", ".rs"].includes(ext);
+  const isWasmLanguage = [
+    ".py",
+    ".go",
+    ".rs",
+    ".java",
+    ".rb",
+    ".php",
+    ".cs",
+  ].includes(ext);
 
   let symbols: SymbolSkeletonItem[];
   if (isTsJs) {

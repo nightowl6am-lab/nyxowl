@@ -9,13 +9,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAndCompileAgentFile, ROLE_ALLOWED_NYX_TOOLS } from "../../src/cli/compiler.ts";
 import { generateOpenCodeHostPackage } from "../../src/cli/adapters/opencode.ts";
 import { ALL_NYX_TOOLS, createNyxMcpServer } from "../../src/mcp/server.ts";
+import { nyxTestwriterPrepareTool } from "../../src/mcp/engines/testwriter/tools.ts";
+import { createToolContext } from "../../src/mcp/tool.ts";
 import {
   buildWrapperArgv,
+  installRoot,
   normalizeJobInputs,
+  runProcess,
+  runWrapperJson,
+  runWrapperText,
   sanitizeFeedback,
   sha256Text,
   stagedTestPath,
   validateJobId,
+  wrapperPath,
+  workspaceRoot,
 } from "../../src/mcp/engines/testwriter/broker.ts";
 
 const spawnControl = vi.hoisted(() => ({
@@ -721,5 +729,664 @@ describe("Test-Writer broker and tools", () => {
     expect(pluginCode).toContain("if (isDeniedTool(tools[i])) tools.splice(i, 1);");
     expect(pluginCode).toContain('ctx.session.hook("context", hydrateSession)');
     expect(pluginCode).toContain('ctx.session.hook("context", restrictTools)');
+  });
+});
+
+describe("Test-Writer broker failure and cap branches", () => {
+  let tmpRoot: string;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-testwriter-broker-"));
+    spawnControl.calls = [];
+    spawnControl.handler = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    spawnControl.handler = null;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  function streamChild(options: {
+    stdout?: Buffer[];
+    stderr?: Buffer[];
+    code?: number;
+    pid?: number;
+    stdinError?: boolean;
+  }): ChildProcess {
+    const child = new EventEmitter() as EventEmitter & ChildProcess;
+    const out = new EventEmitter();
+    const err = new EventEmitter();
+    const stdin = new EventEmitter() as EventEmitter & {
+      write: () => boolean;
+      end: () => void;
+    };
+    stdin.write = () => true;
+    stdin.end = () => undefined;
+    child.stdout = out as unknown as ChildProcess["stdout"];
+    child.stderr = err as unknown as ChildProcess["stderr"];
+    child.stdin = stdin as unknown as ChildProcess["stdin"];
+    if (options.pid !== undefined) {
+      Object.assign(child, { pid: options.pid });
+    }
+    child.kill = () => true;
+    setImmediate(() => {
+      for (const chunk of options.stdout ?? []) out.emit("data", chunk);
+      for (const chunk of options.stderr ?? []) err.emit("data", chunk);
+      if (options.stdinError) stdin.emit("error", new Error("EPIPE"));
+      child.emit("close", options.code ?? 0);
+    });
+    return child;
+  }
+
+  function errorChild(code: string): ChildProcess {
+    const child = new EventEmitter() as EventEmitter & ChildProcess;
+    const stdin = new EventEmitter() as EventEmitter & {
+      write: () => boolean;
+      end: () => void;
+    };
+    stdin.write = () => true;
+    stdin.end = () => undefined;
+    child.stdin = stdin as unknown as ChildProcess["stdin"];
+    child.kill = () => true;
+    setImmediate(() => {
+      child.emit("error", Object.assign(new Error("spawn failed"), { code }));
+    });
+    return child;
+  }
+
+  it("resolves install and workspace roots from environment overrides", () => {
+    vi.stubEnv("TW_INSTALL_ROOT", "/tmp/custom-tw");
+    vi.stubEnv("TW_WORKSPACE_ROOT", "/tmp/custom-jobs");
+    expect(installRoot()).toBe("/tmp/custom-tw");
+    expect(workspaceRoot()).toBe("/tmp/custom-jobs");
+    expect(wrapperPath("gate")).toBe("/tmp/custom-tw/bin/tw-gate");
+    expect(wrapperPath("status")).toBe("/tmp/custom-tw/bin/tw-status");
+    expect(wrapperPath("newJob")).toBe("/tmp/custom-tw/bin/tw-new-job");
+
+    vi.unstubAllEnvs();
+    vi.stubEnv("NYXOWL_HOME", "/tmp/nyx-home");
+    expect(installRoot()).toBe(path.join("/tmp/nyx-home", "test-writer"));
+  });
+
+  it("rejects non-string job ids", () => {
+    expect(() => validateJobId(42 as unknown as string)).toThrow(/Invalid Test-Writer job id/);
+  });
+
+  it("fails closed when the wrapper path is a directory or missing", async () => {
+    const root = path.join(tmpRoot, "dir-install");
+    fs.mkdirSync(path.join(root, "bin", "tw-gate"), { recursive: true });
+    vi.stubEnv("TW_INSTALL_ROOT", root);
+    await expect(runWrapperJson("gate", ["J1"], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_TESTWRITER_UNAVAILABLE",
+    });
+
+    vi.stubEnv("TW_INSTALL_ROOT", path.join(tmpRoot, "absent"));
+    await expect(runWrapperText("gate", ["J1"], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_TESTWRITER_UNAVAILABLE",
+    });
+  });
+
+  it("classifies missing, ENOTDIR, directory, and non-executable targets", async () => {
+    const plainFile = path.join(tmpRoot, "plain-file");
+    fs.writeFileSync(plainFile, "x");
+
+    await expect(
+      runProcess([path.join(tmpRoot, "missing-bin")], { timeoutMs: 1000 }),
+    ).rejects.toMatchObject({ code: "ERR_TESTWRITER_UNAVAILABLE" });
+
+    await expect(
+      runProcess([path.join(plainFile, "child")], { timeoutMs: 1000 }),
+    ).rejects.toMatchObject({ code: "ERR_TESTWRITER_UNAVAILABLE" });
+
+    await expect(runProcess([tmpRoot], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_EXEC_FAILED",
+    });
+
+    const nonExec = path.join(tmpRoot, "non-exec");
+    fs.writeFileSync(nonExec, "#!/bin/sh\n", { mode: 0o600 });
+    await expect(runProcess([nonExec], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_EXEC_FAILED",
+    });
+  });
+
+  it("maps synchronous spawn ENOENT and other failures", async () => {
+    const root = path.join(tmpRoot, "spawn-install");
+    const executable = installWrapper(root, "tw-gate", 0o700);
+
+    spawnControl.handler = () => {
+      throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+    };
+    await expect(runProcess([executable], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_TESTWRITER_UNAVAILABLE",
+    });
+
+    spawnControl.handler = () => {
+      throw Object.assign(new Error("spawn EACCES"), { code: "EACCES" });
+    };
+    await expect(runProcess([executable], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_EXEC_FAILED",
+    });
+  });
+
+  it("maps asynchronous child error events", async () => {
+    const root = path.join(tmpRoot, "error-install");
+    const executable = installWrapper(root, "tw-gate", 0o700);
+
+    spawnControl.handler = () => errorChild("ENOENT");
+    await expect(runProcess([executable], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_TESTWRITER_UNAVAILABLE",
+    });
+
+    spawnControl.handler = () => errorChild("EACCES");
+    await expect(runProcess([executable], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_EXEC_FAILED",
+    });
+  });
+
+  it("times out and kills both pid-less and process-group children", async () => {
+    const root = path.join(tmpRoot, "timeout-install");
+    const executable = installWrapper(root, "tw-gate", 0o700);
+
+    spawnControl.handler = () => {
+      const child = new EventEmitter() as EventEmitter & ChildProcess;
+      child.kill = () => true;
+      return child;
+    };
+    await expect(runProcess([executable], { timeoutMs: 10 })).rejects.toMatchObject({
+      code: "ERR_EXEC_TIMEOUT",
+    });
+
+    spawnControl.handler = () => {
+      const child = new EventEmitter() as EventEmitter & ChildProcess;
+      Object.assign(child, { pid: 999_999_999 });
+      child.kill = () => true;
+      return child;
+    };
+    await expect(runProcess([executable], { timeoutMs: 10 })).rejects.toMatchObject({
+      code: "ERR_EXEC_TIMEOUT",
+    });
+  });
+
+  it("truncates stdout at the 1 MiB cap and reports oversized JSON output", async () => {
+    const root = path.join(tmpRoot, "stdout-cap-install");
+    const _executable = installWrapper(root, "tw-gate", 0o700);
+    expect(_executable).toContain("tw-gate");
+    const cap = 1024 * 1024;
+
+    spawnControl.handler = () =>
+      streamChild({
+        stdout: [Buffer.alloc(cap + 10, 0x61), Buffer.from("overflow")],
+        code: 0,
+      });
+    await expect(
+      runWrapperJson("gate", ["J1"], { timeoutMs: 1000 }),
+    ).rejects.toMatchObject({ code: "ERR_FILE_TOO_LARGE" });
+
+    spawnControl.handler = () =>
+      streamChild({ stdout: [Buffer.alloc(cap + 1, 0x61)], code: 0 });
+    await expect(runWrapperText("gate", ["J1"], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_FILE_TOO_LARGE",
+    });
+  });
+
+  it("truncates stderr at the 64 KiB cap", async () => {
+    const root = path.join(tmpRoot, "stderr-cap-install");
+    const executable = installWrapper(root, "tw-gate", 0o700);
+
+    spawnControl.handler = () =>
+      streamChild({
+        stderr: [Buffer.alloc(70 * 1024, 0x62), Buffer.from("more")],
+        stdout: [Buffer.from('{"ok":true}')],
+        code: 0,
+      });
+    const result = await runProcess([executable], { timeoutMs: 1000 });
+    expect(result.stderrTruncated).toBe(true);
+    expect(Buffer.byteLength(result.stderr, "utf8")).toBe(64 * 1024);
+    expect(result.code).toBe(0);
+  });
+
+  it("handles stdin errors and absent stdin without failing the wrapper", async () => {
+    const root = path.join(tmpRoot, "stdin-install");
+    const executable = installWrapper(root, "tw-gate", 0o700);
+
+    spawnControl.handler = () =>
+      streamChild({ stdout: [Buffer.from("{}")], code: 0, stdinError: true });
+    await expect(runProcess([executable], { timeoutMs: 1000, input: "x" })).resolves.toMatchObject({
+      code: 0,
+    });
+
+    spawnControl.handler = () => {
+      const child = new EventEmitter() as EventEmitter & ChildProcess;
+      child.kill = () => true;
+      setImmediate(() => child.emit("close", 0));
+      return child;
+    };
+    await expect(runProcess([executable], { timeoutMs: 1000, input: "x" })).resolves.toMatchObject({
+      code: 0,
+    });
+  });
+
+  it("parses non-zero JSON stdout, rejects non-JSON, arrays, and invalid JSON", async () => {
+    const root = path.join(tmpRoot, "json-install");
+    installWrapper(root, "tw-gate", 0o700);
+
+    spawnControl.handler = () =>
+      streamChild({ stdout: [Buffer.from('{"error":"validation"}')], code: 2 });
+    await expect(runWrapperJson("gate", ["J1"], { timeoutMs: 1000 })).resolves.toEqual({
+      error: "validation",
+    });
+
+    spawnControl.handler = () => streamChild({ stdout: [Buffer.from("boom")], code: 2 });
+    await expect(runWrapperJson("gate", ["J1"], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_EXEC_FAILED",
+    });
+
+    spawnControl.handler = () => streamChild({ stdout: [Buffer.from("[1,2]")], code: 0 });
+    await expect(runWrapperJson("gate", ["J1"], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_TESTWRITER_PROTOCOL",
+    });
+
+    spawnControl.handler = () => streamChild({ stdout: [Buffer.from("not json")], code: 0 });
+    await expect(runWrapperJson("gate", ["J1"], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_TESTWRITER_PROTOCOL",
+    });
+
+    spawnControl.handler = () =>
+      streamChild({ stdout: [Buffer.from("report text")], code: 3 });
+    await expect(runWrapperText("gate", ["J1"], { timeoutMs: 1000 })).rejects.toMatchObject({
+      code: "ERR_EXEC_FAILED",
+    });
+  });
+
+  it("sanitizes only known keys, caps strings, and drops cyclic or forbidden values", () => {
+    expect(sanitizeFeedback(null)).toEqual({});
+    expect(sanitizeFeedback([])).toEqual({});
+    expect(sanitizeFeedback("raw")).toEqual({});
+
+    expect(sanitizeFeedback({ hint: undefined, counts: { passed: 1 } })).toEqual({
+      counts: { passed: 1 },
+    });
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    expect(sanitizeFeedback({ counts: cyclic, verdict: "PROVEN" })).toEqual({
+      verdict: "PROVEN",
+    });
+
+    expect(sanitizeFeedback({ verdict: "STDOUT leak" })).toEqual({});
+
+    const capped = sanitizeFeedback({
+      verdict: "v".repeat(600),
+      reason: "r".repeat(1100),
+      hint: "h".repeat(2100),
+      message: "m".repeat(2100),
+      test_traceback: "t".repeat(20_100),
+    }) as Record<string, string>;
+    expect(capped["verdict"]).toHaveLength(500);
+    expect(capped["reason"]).toHaveLength(1000);
+    expect(capped["hint"]).toHaveLength(2000);
+    expect(capped["message"]).toHaveLength(2000);
+    expect(capped["test_traceback"]).toHaveLength(20_000);
+  });
+
+  it("normalizes aliases, running jobs, and rejects oversized job inputs", () => {
+    expect(normalizeJobInputs(null)).toMatchObject({
+      status: "missing",
+      reason: "JOB_MISSING",
+      applicable: false,
+    });
+    expect(normalizeJobInputs([])).toMatchObject({ reason: "JOB_MISSING" });
+    expect(normalizeJobInputs({})).toMatchObject({ reason: "JOB_MISSING" });
+
+    const running = normalizeJobInputs({
+      job_id: "J1",
+      status: "RUNNING",
+      target_stack: "python3",
+      spec_markdown: "spec",
+      interface_markdown: "iface",
+      helper_api: "helper",
+    });
+    expect(running).toMatchObject({
+      jobId: "J1",
+      applicable: true,
+      reason: null,
+      targetStack: "python3",
+      spec: "spec",
+      interface: "iface",
+      helperApi: "helper",
+      detector: null,
+      budget: null,
+    });
+
+    expect(
+      normalizeJobInputs({ status: "approved", targetStack: "PYTHON" }).applicable,
+    ).toBe(true);
+    expect(
+      normalizeJobInputs({ status: "approved", targetStack: "" }).reason,
+    ).toBe("UNSUPPORTED_STACK");
+    expect(normalizeJobInputs({ status: "queued", targetStack: "python" }).reason).toBe(
+      "JOB_NOT_OPEN",
+    );
+
+    expect(() =>
+      normalizeJobInputs({ status: "approved", targetStack: "python", spec: "x".repeat(200_001) }),
+    ).toThrow(/Job spec exceeds 200000 bytes/);
+    expect(() =>
+      normalizeJobInputs({
+        status: "approved",
+        targetStack: "python",
+        interface: "x".repeat(100_001),
+      }),
+    ).toThrow(/Job interface exceeds 100000 bytes/);
+    expect(() =>
+      normalizeJobInputs({
+        status: "approved",
+        targetStack: "python",
+        helperApi: "x".repeat(50_001),
+      }),
+    ).toThrow(/Job helper API exceeds 50000 bytes/);
+  });
+});
+
+describe("Test-Writer tool validation and wrapper response branches", () => {
+  let tmpRoot: string;
+  let nyxHome: string;
+  let repoPath: string;
+  let client: Client;
+
+  const validSpec =
+    "## Claim\nclaim\n## Intended behavior\nbehavior\n## Rejection behavior\nreject\n## Entry point\nentry\n## Benign example\nBENIGN: ok\n## Detector\ndetector\n";
+
+  beforeEach(async () => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-testwriter-tools-"));
+    nyxHome = path.join(tmpRoot, "home");
+    repoPath = path.join(tmpRoot, "repo");
+    fs.mkdirSync(repoPath, { recursive: true });
+    spawnControl.calls = [];
+    spawnControl.handler = null;
+    vi.stubEnv("TW_WORKSPACE_ROOT", path.join(tmpRoot, "tw-jobs"));
+
+    const server = createNyxMcpServer({ defaultProjectPath: repoPath, nyxHome });
+    client = new Client({ name: "nyx-testwriter-tools-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    spawnControl.handler = null;
+    await client.close();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  function prepareArgs(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      jobId: "P1",
+      repoPath,
+      vulnerableRef: "a".repeat(40),
+      patchedRef: "b".repeat(40),
+      module: "pkg.module",
+      function: "check",
+      fixOrigin: "upstream",
+      specMarkdown: validSpec,
+      ...overrides,
+    };
+  }
+
+  async function errorCode(promise: ReturnType<typeof client.callTool>): Promise<string> {
+    const res = await promise;
+    expect(res.isError).toBe(true);
+    return (res.structuredContent as { code: string }).code;
+  }
+
+  it("rejects non-object wrapper output and missing staged tests", async () => {
+    const wrapperRoot = path.join(tmpRoot, "protocol-install");
+    installWrapper(wrapperRoot, "tw-status", 0o700);
+    installWrapper(wrapperRoot, "tw-gate", 0o700);
+    vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
+
+    spawnControl.handler = () => fakeChildProcess("[1,2]", "", 0);
+    expect(
+      await errorCode(client.callTool({ name: "nyx_testwriter_job", arguments: { jobId: "T1" } })),
+    ).toBe("ERR_TESTWRITER_PROTOCOL");
+
+    expect(
+      await errorCode(client.callTool({ name: "nyx_testwriter_lint", arguments: { jobId: "T2" } })),
+    ).toBe("ERR_TESTWRITER_TEST_MISSING");
+  });
+
+  it("rejects writes for non-writable jobs and malformed UTF-16 content", async () => {
+    const wrapperRoot = path.join(tmpRoot, "write-guard-install");
+    installWrapper(wrapperRoot, "tw-status", 0o700);
+    vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
+    spawnControl.handler = () =>
+      fakeChildProcess(JSON.stringify({ status: "closed" }), "", 0);
+
+    expect(
+      await errorCode(
+        client.callTool({
+          name: "nyx_testwriter_write",
+          arguments: { jobId: "T3", content: "def test_x():\n    pass\n" },
+        }),
+      ),
+    ).toBe("ERR_INVALID_INPUT");
+
+    spawnControl.handler = () =>
+      fakeChildProcess(JSON.stringify({ status: "approved" }), "", 0);
+    expect(
+      await errorCode(
+        client.callTool({
+          name: "nyx_testwriter_write",
+          arguments: { jobId: "T4", content: "\uD800" },
+        }),
+      ),
+    ).toBe("ERR_INVALID_INPUT");
+  });
+
+  it("rejects oversized finish notes", async () => {
+    expect(
+      await errorCode(
+        client.callTool({
+          name: "nyx_testwriter_finish",
+          arguments: { jobId: "T5", notes: "n".repeat(4097), flags: [] },
+        }),
+      ),
+    ).toBe("ERR_FILE_TOO_LARGE");
+  });
+
+  it("validates prepare repo paths, module, function, spec, and pythonPath", async () => {
+    const cases: Array<Record<string, unknown>> = [
+      { repoPath: "relative/path" },
+      { repoPath: path.join(tmpRoot, "does-not-exist") },
+      { module: "1bad" },
+      { module: "pkg-module" },
+      { function: "bad-name" },
+      { specMarkdown: "## Claim\nBENIGN: ok\n" },
+      { specMarkdown: validSpec.replace("BENIGN: ok\n", "") },
+      { pythonPath: Array.from({ length: 21 }, () => "pkg") },
+      { pythonPath: [""] },
+      { pythonPath: ["/absolute"] },
+      { pythonPath: ["win\\path"] },
+      { pythonPath: ["pkg/../escape"] },
+    ];
+    fs.writeFileSync(path.join(tmpRoot, "plain.txt"), "not a directory");
+    for (const overrides of cases) {
+      expect(
+        await errorCode(
+          client.callTool({
+            name: "nyx_testwriter_prepare",
+            arguments: prepareArgs(overrides),
+          }),
+        ),
+        Object.keys(overrides).join(","),
+      ).toBe("ERR_INVALID_INPUT");
+    }
+
+    expect(
+      await errorCode(
+        client.callTool({
+          name: "nyx_testwriter_prepare",
+          arguments: prepareArgs({ specMarkdown: "x".repeat(200_001) }),
+        }),
+      ),
+    ).toBe("ERR_FILE_TOO_LARGE");
+
+    // The tool context cannot be created with a file as the project path, so
+    // exercise the repoPath regular-file guard through the handler directly.
+    const ctx = await createToolContext(
+      { repoPath },
+      { defaultProjectPath: repoPath, nyxHome },
+    );
+    try {
+      await expect(
+        nyxTestwriterPrepareTool.handler(
+          prepareArgs({ repoPath: path.join(tmpRoot, "plain.txt") }) as never,
+          ctx,
+        ),
+      ).rejects.toMatchObject({ code: "ERR_INVALID_INPUT" });
+    } finally {
+      ctx.db.close();
+    }
+  });
+
+  it("normalizes status aliases, numeric strings, and non-array flags", async () => {
+    const wrapperRoot = path.join(tmpRoot, "status-alias-install");
+    installWrapper(wrapperRoot, "tw-status", 0o700);
+    vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
+
+    spawnControl.handler = () =>
+      fakeChildProcess(
+        JSON.stringify({
+          status: "running",
+          verdict: "",
+          reason: "",
+          flags: "not-an-array",
+          advisoryFlags: 7,
+          attempts: "7",
+        }),
+        "",
+        0,
+      );
+    const res = await client.callTool({
+      name: "nyx_testwriter_status",
+      arguments: { jobId: "T6" },
+    });
+    expect(res.isError).toBeFalsy();
+    expect(res.structuredContent).toMatchObject({
+      status: "running",
+      verdict: null,
+      reason: null,
+      flags: [],
+      advisoryFlags: [],
+      attemptsUsed: 7,
+    });
+    expect(res.structuredContent).not.toHaveProperty("report");
+
+    spawnControl.handler = () =>
+      fakeChildProcess(JSON.stringify({ status: "running", attempts: "nope" }), "", 0);
+    const zero = await client.callTool({
+      name: "nyx_testwriter_status",
+      arguments: { jobId: "T7", report: false },
+    });
+    expect((zero.structuredContent as { attemptsUsed: number }).attemptsUsed).toBe(0);
+    expect(zero.structuredContent).not.toHaveProperty("report");
+  });
+
+  it("runs lint, gate, finish, write, and prepare through wrappers", async () => {
+    const wrapperRoot = path.join(tmpRoot, "success-install");
+    installWrapper(wrapperRoot, "tw-status", 0o700);
+    installWrapper(wrapperRoot, "tw-gate", 0o700);
+    installWrapper(wrapperRoot, "tw-new-job", 0o700);
+    vi.stubEnv("TW_INSTALL_ROOT", wrapperRoot);
+
+    const staged = stagedTestPath("T8");
+    fs.mkdirSync(path.dirname(staged), { recursive: true });
+    fs.writeFileSync(staged, "def test_ok():\n    assert True\n");
+
+    spawnControl.handler = (args) => {
+      const executable = path.basename(String(args[0] ?? ""));
+      const argv = (args[1] ?? []) as string[];
+      if (executable === "tw-new-job") {
+        return fakeChildProcess(JSON.stringify({ id: "RETURNED1" }), "", 0);
+      }
+      if (executable === "tw-status") {
+        return fakeChildProcess(JSON.stringify({ status: "running" }), "", 0);
+      }
+      if (argv.includes("--lint-only")) {
+        return fakeChildProcess(
+          JSON.stringify({ ok: true, violations: [{ rule: "x" }], stdout: "leak" }),
+          "",
+          0,
+        );
+      }
+      if (argv.includes("--finish")) {
+        return fakeChildProcess(
+          JSON.stringify({ verdict: "PROVEN", reason: "ok", canary: "secret" }),
+          "",
+          0,
+        );
+      }
+      return fakeChildProcess(
+        JSON.stringify({ verdict: "PROVEN", counts: { passed: 1 }, stderr: "leak" }),
+        "",
+        0,
+      );
+    };
+
+    const lint = await client.callTool({
+      name: "nyx_testwriter_lint",
+      arguments: { jobId: "T8" },
+    });
+    expect(lint.isError).toBeFalsy();
+    expect(lint.structuredContent).toMatchObject({ ok: true });
+    expect((lint.structuredContent as { violations: unknown[] }).violations).toHaveLength(1);
+    expect(lint.structuredContent).not.toHaveProperty("stdout");
+
+    const gate = await client.callTool({
+      name: "nyx_testwriter_gate",
+      arguments: { jobId: "T8" },
+    });
+    expect(gate.structuredContent).toMatchObject({ verdict: "PROVEN", counts: { passed: 1 } });
+    expect(gate.structuredContent).not.toHaveProperty("stderr");
+
+    const finish = await client.callTool({
+      name: "nyx_testwriter_finish",
+      arguments: { jobId: "T8", notes: "done", flags: ["INJECTION_SUSPECTED"] },
+    });
+    expect(finish.structuredContent).toMatchObject({ verdict: "PROVEN", reason: "ok" });
+    expect(finish.structuredContent).not.toHaveProperty("canary");
+
+    const write = await client.callTool({
+      name: "nyx_testwriter_write",
+      arguments: { jobId: "T9", content: "def test_new():\n    pass\n" },
+    });
+    expect(write.isError).toBeFalsy();
+    expect((write.structuredContent as { jobId: string }).jobId).toBe("T9");
+
+    const prepared = await client.callTool({
+      name: "nyx_testwriter_prepare",
+      arguments: prepareArgs(),
+    });
+    expect(prepared.isError).toBeFalsy();
+    expect((prepared.structuredContent as { jobId: string }).jobId).toBe("RETURNED1");
+
+    spawnControl.handler = () => fakeChildProcess("{}", "", 0);
+    const fallback = await client.callTool({
+      name: "nyx_testwriter_prepare",
+      arguments: prepareArgs({ jobId: "P2" }),
+    });
+    expect((fallback.structuredContent as { jobId: string }).jobId).toBe("P2");
+
+    spawnControl.handler = () =>
+      fakeChildProcess(JSON.stringify({ id: "../bad" }), "", 0);
+    expect(
+      await errorCode(
+        client.callTool({
+          name: "nyx_testwriter_prepare",
+          arguments: prepareArgs({ jobId: "P3" }),
+        }),
+      ),
+    ).toBe("ERR_INVALID_INPUT");
   });
 });

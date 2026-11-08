@@ -35,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Engine 2 AST accuracy:** `nyx_symbol_skeleton` now parses Python, Go, and Rust with vendored tree-sitter WebAssembly grammars (offline, no runtime network) instead of regex-only outlines, preserving the legacy outline as a fallback when a grammar is unavailable. Added language-aware symbol classification to `nyx_trace_symbol` (definitions, imports, and call sites for Python/Go/Rust, with symbol-aware import detection for TS/JS). Vendored `tree-sitter-wasms@0.1.13` grammars for Python, Go, and Rust under `data/grammars/`.
 - **Cache bounds:** Grammar languages are cached per path plus verified digest (FIFO, max 32), and skeleton results are cached FIFO with a maximum of 256 entries.
 - **Version single-source:** The MCP server version, bootstrap commit trailers, and PR footer now derive from `NYXOWL_VERSION` instead of hardcoded `1.0.0` literals.
+- **Engine 2 AST/trace coverage:** `nyx_symbol_skeleton` and `nyx_trace_symbol` now cover Java, Ruby, PHP, and C# with vendored tree-sitter WebAssembly grammars, in addition to Python, Go, and Rust. Java/C# interface methods are reported as exported without an explicit `public` modifier, and top-level Ruby `def`/`def self.` symbols are reported as `function` rather than `method`.
+- **Per-glob coverage gates:** `vitest.config.ts` now enforces `src/core/**` and `src/mcp/engines/**` at 85% lines/branches and `src/cli/**` at 75% lines/branches alongside the existing global 80/65/80/80 thresholds.
+
+### Fixed
+- **FastAPI route-return attribution:** The route-return regex no longer spans a following route handler, so a handler's response fields are no longer attributed to the preceding endpoint.
 
 ## [1.0.0] - 2026-11-04
 

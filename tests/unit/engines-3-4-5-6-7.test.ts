@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
@@ -11,13 +12,28 @@ import {
   nyxTraceSymbolTool,
 } from "../../src/mcp/engines/bootstrap-navigator/index.ts";
 import {
+  computeManifestHash,
+  extractProjectDna,
+  nyxDnaGetTool,
+} from "../../src/mcp/engines/bootstrap-navigator/dna.ts";
+import {
   nyxDebugIsolateTool,
   nyxExploitProbeTool,
   nyxProcTool,
   nyxSlopCheckTool,
   nyxVerifySliceTool,
+  reapOrphanProcs,
+  stopAllRunningProcs,
 } from "../../src/mcp/engines/probe-exploit/index.ts";
-import { normalizeErrorSignature } from "../../src/mcp/engines/probe-exploit/verify.ts";
+import {
+  normalizeErrorSignature,
+  resolveVerifyCommands,
+} from "../../src/mcp/engines/probe-exploit/verify.ts";
+import { parseStackFrames } from "../../src/mcp/engines/probe-exploit/debug.ts";
+import {
+  allocateFreePort,
+  isProcessAlive,
+} from "../../src/mcp/engines/probe-exploit/proc.ts";
 import {
   nyxDocsGroundTool,
   nyxPkgVerifyTool,
@@ -31,13 +47,20 @@ import {
   setDepGuardRegistryFetcher,
   setWebFetchTestHooks,
 } from "../../src/mcp/engines/shield/index.ts";
+import { classifyEnvValueShape } from "../../src/mcp/engines/shield/env-inspect.ts";
+import {
+  extractReadableTextFromHtml,
+  isPrivateOrReservedIp,
+  isSuspiciousHostname,
+  validateSafeExternalUrl,
+} from "../../src/mcp/engines/shield/web-fetch.ts";
 import {
   nyxSliceCheckpointTool,
   nyxSliceRewindTool,
   nyxWorktreePrTool,
   nyxWorktreeStartTool,
 } from "../../src/mcp/engines/worktree-slice/index.ts";
-import { invokeToolDefinition } from "../../src/mcp/tool.ts";
+import { createToolContext, invokeToolDefinition } from "../../src/mcp/tool.ts";
 
 describe("Steps 3–7 — Engines 1, 2, 3, 4, 6 Verification", () => {
   let tmpRoot: string;
@@ -727,5 +750,1822 @@ describe("Steps 3–7 — Engines 1, 2, 3, 4, 6 Verification", () => {
       { defaultProjectPath: seamDir, nyxHome },
     );
     expect(unloggedDoc.isError).toBe(true);
+  });
+});
+
+describe("Project DNA polyglot detection", () => {
+  function writeJson(file: string, value: unknown): void {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(value), "utf8");
+  }
+
+  function write(file: string, content: string): void {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content, "utf8");
+  }
+
+  it("detects Node/TypeScript package managers, workspaces, ORM/DB, HTTP/UI frameworks, and tool tags", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-dna-node-"));
+    try {
+      const pnpmRepo = path.join(root, "pnpm");
+      writeJson(path.join(pnpmRepo, "package.json"), {
+        name: "pnpm-app",
+        dependencies: {
+          typescript: "^5.8.0",
+          prisma: "^6.0.0",
+          "@supabase/supabase-js": "^2.0.0",
+          pg: "^8.0.0",
+          "@upstash/redis": "^1.0.0",
+          "@playwright/test": "^1.50.0",
+          fastify: "^5.0.0",
+          react: "^19.0.0",
+        },
+        scripts: {
+          typecheck: "tsc",
+          lint: "eslint",
+          test: "vitest",
+          build: "tsup",
+        },
+        workspaces: ["packages/a", "packages/b"],
+        bin: { app: "./dist/bin.js" },
+        main: "./dist/index.js",
+      });
+      write(path.join(pnpmRepo, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
+      write(path.join(pnpmRepo, "prisma", "schema.prisma"), 'provider = "postgresql"\n');
+      fs.mkdirSync(path.join(pnpmRepo, "prisma", "migrations"), { recursive: true });
+
+      const pnpmDna = extractProjectDna(pnpmRepo, "repo-pnpm");
+      expect(pnpmDna).toMatchObject({
+        primaryStack: "typescript-node",
+        packageManager: "pnpm",
+        orm: "prisma",
+        migrationsDir: "prisma/migrations",
+        database: "postgres",
+        httpFramework: "fastify",
+        uiFramework: "react",
+        httpSurface: true,
+        isCli: true,
+        isLibrary: true,
+      });
+      expect(pnpmDna.workspaces).toEqual(["packages/a", "packages/b"]);
+      expect(pnpmDna.commands).toEqual({
+        typecheck: "pnpm run typecheck",
+        lint: "pnpm run lint",
+        test: "pnpm run test",
+        build: "pnpm run build",
+      });
+      expect([...pnpmDna.tags].sort()).toEqual([
+        "fastify",
+        "playwright",
+        "postgres",
+        "prisma",
+        "react",
+        "supabase",
+        "typescript",
+        "upstash",
+      ]);
+
+      const bunRepo = path.join(root, "bun");
+      writeJson(path.join(bunRepo, "package.json"), {
+        dependencies: {
+          hono: "^4.0.0",
+          vue: "^3.0.0",
+          "drizzle-orm": "^0.39.0",
+        },
+        scripts: { test: "bun test" },
+      });
+      write(path.join(bunRepo, "bun.lockb"), "binary-lock");
+      fs.mkdirSync(path.join(bunRepo, "drizzle"), { recursive: true });
+      const bunDna = extractProjectDna(bunRepo, "repo-bun");
+      expect(bunDna).toMatchObject({
+        primaryStack: "javascript-node",
+        packageManager: "bun",
+        orm: "drizzle",
+        migrationsDir: "drizzle",
+        httpFramework: "hono",
+        uiFramework: "vue",
+        httpSurface: true,
+        commands: { test: "bun run test" },
+      });
+      expect(bunDna.languages).toEqual(["javascript"]);
+
+      const yarnRepo = path.join(root, "yarn");
+      writeJson(path.join(yarnRepo, "package.json"), {
+        dependencies: { express: "^5.0.0", svelte: "^5.0.0" },
+      });
+      write(path.join(yarnRepo, "yarn.lock"), "# yarn lock\n");
+      expect(extractProjectDna(yarnRepo, "repo-yarn")).toMatchObject({
+        packageManager: "yarn",
+        httpFramework: "express",
+        uiFramework: "svelte",
+      });
+
+      const nextRepo = path.join(root, "next");
+      writeJson(path.join(nextRepo, "package.json"), {
+        dependencies: { next: "^15.0.0" },
+        exports: { ".": "./dist/index.js" },
+        workspaces: { packages: ["apps/*"] },
+      });
+      const nextDna = extractProjectDna(nextRepo, "repo-next");
+      expect(nextDna).toMatchObject({
+        packageManager: "npm",
+        httpFramework: "next",
+        uiFramework: "react",
+        isLibrary: true,
+        workspaces: ["apps/*"],
+      });
+
+      const solidRepo = path.join(root, "solid");
+      writeJson(path.join(solidRepo, "package.json"), {
+        dependencies: { "solid-js": "^1.9.0" },
+      });
+      expect(extractProjectDna(solidRepo, "repo-solid").uiFramework).toBe("solid");
+
+      const prismaOnly = path.join(root, "prisma-only");
+      writeJson(path.join(prismaOnly, "package.json"), { dependencies: {} });
+      write(path.join(prismaOnly, "prisma", "schema.prisma"), 'provider = "postgresql"\n');
+      fs.mkdirSync(path.join(prismaOnly, "prisma", "migrations"), { recursive: true });
+      expect(extractProjectDna(prismaOnly, "repo-prisma")).toMatchObject({
+        orm: "prisma",
+        migrationsDir: "prisma/migrations",
+        database: "postgres",
+      });
+
+      const malformed = path.join(root, "malformed");
+      write(path.join(malformed, "package.json"), "{ not json");
+      expect(extractProjectDna(malformed, "repo-malformed")).toMatchObject({
+        primaryStack: "unknown",
+        packageManager: null,
+        languages: [],
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("detects Python, Go, Rust, Ruby, PHP, JVM, and Elixir stacks with their command/framework branches", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-dna-polyglot-"));
+    try {
+      const pyUv = path.join(root, "py-uv");
+      write(path.join(pyUv, "pyproject.toml"), 'dependencies = ["fastapi", "sqlalchemy"]\n');
+      write(path.join(pyUv, "uv.lock"), "version = 1\n");
+      expect(extractProjectDna(pyUv, "repo-py-uv")).toMatchObject({
+        primaryStack: "python",
+        packageManager: "uv",
+        httpFramework: "fastapi",
+        orm: "sqlalchemy",
+        httpSurface: true,
+        commands: { test: "python3 -m pytest" },
+      });
+
+      const pyFlask = path.join(root, "py-flask");
+      write(path.join(pyFlask, "requirements.txt"), "flask==3.0.0\n");
+      expect(extractProjectDna(pyFlask, "repo-py-flask")).toMatchObject({
+        packageManager: "pip",
+        httpFramework: "flask",
+        httpSurface: true,
+      });
+
+      const pyDjango = path.join(root, "py-django");
+      write(path.join(pyDjango, "pyproject.toml"), 'dependencies = ["django"]\n');
+      expect(extractProjectDna(pyDjango, "repo-py-django").httpFramework).toBe("django");
+
+      const goChi = path.join(root, "go-chi");
+      write(path.join(goChi, "go.mod"), "module example.com/app\nrequire github.com/go-chi/chi/v5 v5.0.0\n");
+      expect(extractProjectDna(goChi, "repo-go-chi")).toMatchObject({
+        primaryStack: "go",
+        packageManager: "go",
+        httpFramework: "chi",
+        httpSurface: true,
+        commands: { test: "go test ./...", build: "go build ./..." },
+      });
+
+      const goGin = path.join(root, "go-gin");
+      write(path.join(goGin, "go.mod"), "module example.com/app\nrequire github.com/gin-gonic/gin v1.9.0\n");
+      expect(extractProjectDna(goGin, "repo-go-gin").httpFramework).toBe("gin");
+
+      const goHttp = path.join(root, "go-http");
+      write(path.join(goHttp, "go.mod"), "module example.com/app\nrequire net/http v0.0.0\n");
+      const goHttpDna = extractProjectDna(goHttp, "repo-go-http");
+      expect(goHttpDna.httpSurface).toBe(true);
+      expect(goHttpDna.httpFramework).toBeNull();
+
+      const rustAxum = path.join(root, "rust-axum");
+      write(path.join(rustAxum, "Cargo.toml"), '[dependencies]\naxum = "0.7"\n');
+      expect(extractProjectDna(rustAxum, "repo-rust-axum")).toMatchObject({
+        primaryStack: "rust",
+        packageManager: "cargo",
+        httpFramework: "axum",
+        httpSurface: true,
+        commands: { test: "cargo test", build: "cargo build" },
+      });
+
+      const rustPlain = path.join(root, "rust-plain");
+      write(path.join(rustPlain, "Cargo.toml"), '[package]\nname = "lib"\n');
+      const rustPlainDna = extractProjectDna(rustPlain, "repo-rust-plain");
+      expect(rustPlainDna.httpSurface).toBe(false);
+      expect(rustPlainDna.httpFramework).toBeNull();
+
+      const ruby = path.join(root, "ruby");
+      write(path.join(ruby, "Gemfile"), 'gem "rails"\n');
+      expect(extractProjectDna(ruby, "repo-ruby")).toMatchObject({
+        primaryStack: "ruby",
+        languages: ["ruby"],
+      });
+
+      const php = path.join(root, "php");
+      write(path.join(php, "composer.json"), '{"require": {"php": ">=8.2"}}');
+      expect(extractProjectDna(php, "repo-php")).toMatchObject({
+        primaryStack: "php",
+        languages: ["php"],
+      });
+
+      const javaPom = path.join(root, "java-pom");
+      write(path.join(javaPom, "pom.xml"), "<project />");
+      expect(extractProjectDna(javaPom, "repo-java-pom")).toMatchObject({
+        primaryStack: "jvm",
+        languages: ["java-kotlin"],
+      });
+      expect(extractProjectDna(javaPom, "repo-java-pom").tags).toContain("java");
+
+      const javaGradle = path.join(root, "java-gradle");
+      write(path.join(javaGradle, "build.gradle.kts"), 'plugins { kotlin("jvm") }\n');
+      expect(extractProjectDna(javaGradle, "repo-java-gradle").languages).toEqual([
+        "java-kotlin",
+      ]);
+
+      const elixir = path.join(root, "elixir");
+      write(path.join(elixir, "mix.exs"), "defmodule App.MixProject do\nend\n");
+      expect(extractProjectDna(elixir, "repo-elixir")).toMatchObject({
+        primaryStack: "elixir",
+        languages: ["elixir"],
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("hashes manifests deterministically, tracks lockfile changes, and selects exemplars across candidate dirs", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-dna-hash-"));
+    try {
+      const repo = path.join(root, "repo");
+      writeJson(path.join(repo, "package.json"), { name: "hash-app" });
+      write(path.join(repo, "package-lock.json"), '{"lockfileVersion": 3}\n');
+      write(path.join(repo, "src", "a.ts"), Array.from({ length: 80 }, (_, i) => `export const a${i} = ${i};`).join("\n"));
+      write(path.join(repo, "src", "nested", "b.py"), "def b():\n    pass\n");
+      write(path.join(repo, "src", "nested", "deep", "c.go"), "package c\n");
+      write(path.join(repo, "app", "d.rb"), "def d; end\n");
+
+      const hash1 = computeManifestHash(repo);
+      const hash2 = computeManifestHash(repo);
+      expect(hash1).toBe(hash2);
+      expect(hash1).toMatch(/^[0-9a-f]{64}$/);
+
+      write(path.join(repo, "package-lock.json"), '{"lockfileVersion": 4}\n');
+      expect(computeManifestHash(repo)).not.toBe(hash1);
+
+      const dna = extractProjectDna(repo, "repo-hash");
+      expect(dna.exemplars).toHaveLength(3);
+      expect(dna.exemplars.every((ex) => ex.reason === "Primary source module exemplar")).toBe(true);
+      expect(dna.exemplars.every((ex) => /^L1-L\d+$/.test(ex.lineRange))).toBe(true);
+      expect(dna.exemplars.map((ex) => ex.filePath).sort()).toEqual([
+        "src/a.ts",
+        "src/nested/b.py",
+        "src/nested/deep/c.go",
+      ]);
+      const first = dna.exemplars.find((ex) => ex.filePath === "src/a.ts");
+      expect(first?.lineRange).toBe("L1-L50");
+
+      const rootOnly = path.join(root, "root-only");
+      write(rootOnly + path.sep + "main.rs", "fn main() {}\n");
+      const rootDna = extractProjectDna(rootOnly, "repo-root");
+      expect(rootDna.exemplars).toEqual([
+        {
+          filePath: "main.rs",
+          lineRange: "L1-L2",
+          reason: "Primary source module exemplar",
+        },
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("caches DNA by manifest hash and refreshes when the manifest changes", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-dna-cache-"));
+    const nyxHome = path.join(root, "home");
+    const repo = path.join(root, "repo");
+    try {
+      writeJson(path.join(repo, "package.json"), {
+        dependencies: { typescript: "^5.8.0" },
+        scripts: { test: "vitest run" },
+      });
+
+      const first = await invokeToolDefinition(
+        nyxDnaExtractTool,
+        { repoPath: repo },
+        { defaultProjectPath: repo, nyxHome },
+      );
+      expect(first.isError).toBeFalsy();
+      expect((first.structuredContent as { cached: boolean }).cached).toBe(false);
+
+      const cached = await invokeToolDefinition(
+        nyxDnaGetTool,
+        { repoPath: repo },
+        { defaultProjectPath: repo, nyxHome },
+      );
+      expect((cached.structuredContent as { cached: boolean }).cached).toBe(true);
+      expect(
+        (cached.structuredContent as { dna: { primaryStack: string } }).dna.primaryStack,
+      ).toBe("typescript-node");
+
+      writeJson(path.join(repo, "package.json"), {
+        dependencies: { typescript: "^5.8.0", fastify: "^5.0.0" },
+        scripts: { test: "vitest run" },
+      });
+      const refreshed = await invokeToolDefinition(
+        nyxDnaGetTool,
+        { repoPath: repo },
+        { defaultProjectPath: repo, nyxHome },
+      );
+      expect((refreshed.structuredContent as { cached: boolean }).cached).toBe(false);
+      expect(
+        (refreshed.structuredContent as { dna: { httpFramework: string } }).dna
+          .httpFramework,
+      ).toBe("fastify");
+
+      const forced = await invokeToolDefinition(
+        nyxDnaExtractTool,
+        { repoPath: repo, refresh: true },
+        { defaultProjectPath: repo, nyxHome },
+      );
+      expect((forced.structuredContent as { cached: boolean }).cached).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("pkg_verify local artifact grounding", () => {
+  it("walks npm export maps, tolerates malformed manifests, and reports missing symbols", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-pkg-verify-"));
+    const nyxHome = path.join(root, "home");
+    try {
+      const alpha = path.join(root, "node_modules", "alpha");
+      fs.mkdirSync(path.join(alpha, "dist"), { recursive: true });
+      fs.mkdirSync(path.join(alpha, "esm"), { recursive: true });
+      fs.mkdirSync(path.join(alpha, "sub"), { recursive: true });
+      fs.writeFileSync(
+        path.join(alpha, "package.json"),
+        JSON.stringify({
+          name: "alpha",
+          version: "1.2.3",
+          types: "dist/types.d.ts",
+          main: "dist/index.js",
+          module: "esm/index.mjs",
+          exports: {
+            ".": { types: "./dist/types.d.ts", import: "./esm/index.mjs" },
+            "./sub": "./sub/index.js",
+          },
+        }),
+      );
+      fs.writeFileSync(
+        path.join(alpha, "dist", "types.d.ts"),
+        "export declare function alphaOne(): void;\n",
+      );
+      fs.writeFileSync(path.join(alpha, "dist", "index.js"), "module.exports = {};\n");
+      fs.writeFileSync(path.join(alpha, "esm", "index.mjs"), "export const alphaTwo = 2;\n");
+      fs.writeFileSync(path.join(alpha, "sub", "index.js"), "exports.alphaSub = true;\n");
+
+      const alphaRes = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        {
+          packageName: "alpha",
+          importedSymbols: ["alphaOne", "alphaTwo", "alphaSub", "alphaMissing"],
+          worktreePath: root,
+        },
+        { defaultProjectPath: root, nyxHome },
+      );
+      expect(alphaRes.structuredContent).toMatchObject({
+        packageName: "alpha",
+        installed: true,
+        installedVersion: "1.2.3",
+        verified: false,
+        verifiedSymbols: ["alphaOne", "alphaTwo", "alphaSub"],
+        missingSymbols: ["alphaMissing"],
+      });
+
+      const broken = path.join(root, "node_modules", "broken");
+      fs.mkdirSync(broken, { recursive: true });
+      fs.writeFileSync(path.join(broken, "package.json"), "{ malformed");
+      fs.writeFileSync(path.join(broken, "index.js"), "exports.brokenSymbol = 1;\n");
+      const brokenRes = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        { packageName: "broken", importedSymbols: ["brokenSymbol"], worktreePath: root },
+        { defaultProjectPath: root, nyxHome },
+      );
+      expect(brokenRes.structuredContent).toMatchObject({
+        installed: true,
+        installedVersion: null,
+        verified: true,
+        verifiedSymbols: ["brokenSymbol"],
+      });
+
+      const emptyPkg = path.join(root, "node_modules", "empty-pkg");
+      fs.mkdirSync(emptyPkg, { recursive: true });
+      fs.writeFileSync(path.join(emptyPkg, "package.json"), JSON.stringify({ name: "empty-pkg" }));
+      const emptyRes = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        {
+          packageName: "empty-pkg",
+          importedSymbols: ["nothingHere", "also+missing"],
+          worktreePath: root,
+        },
+        { defaultProjectPath: root, nyxHome },
+      );
+      expect(emptyRes.structuredContent).toMatchObject({
+        installed: true,
+        verified: false,
+        verifiedSymbols: [],
+        missingSymbols: ["nothingHere", "also+missing"],
+      });
+
+      const absentRes = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        { packageName: "not-installed", importedSymbols: ["a", "b"], worktreePath: root },
+        { defaultProjectPath: root, nyxHome },
+      );
+      expect(absentRes.structuredContent).toEqual({
+        packageName: "not-installed",
+        installed: false,
+        installedVersion: null,
+        verified: false,
+        verifiedSymbols: [],
+        missingSymbols: ["a", "b"],
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("introspects Python modules and shells out to Go for symbol existence", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-pkg-verify-poly-"));
+    const nyxHome = path.join(root, "home");
+    const originalPath = process.env["PATH"];
+    try {
+      const pyRepo = path.join(root, "py-repo");
+      fs.mkdirSync(pyRepo, { recursive: true });
+      fs.writeFileSync(path.join(pyRepo, "requirements.txt"), "json\n");
+
+      const pyRes = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        {
+          packageName: "json",
+          importedSymbols: ["dumps", "loads", "notAJsonSymbol"],
+          worktreePath: pyRepo,
+        },
+        { defaultProjectPath: pyRepo, nyxHome },
+      );
+      expect(pyRes.structuredContent).toMatchObject({
+        installed: true,
+        verified: false,
+        verifiedSymbols: ["dumps", "loads"],
+        missingSymbols: ["notAJsonSymbol"],
+      });
+
+      const pyMissing = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        {
+          packageName: "definitely_not_installed_pkg_xyz",
+          importedSymbols: ["thing"],
+          worktreePath: pyRepo,
+        },
+        { defaultProjectPath: pyRepo, nyxHome },
+      );
+      expect(pyMissing.structuredContent).toMatchObject({
+        installed: false,
+        installedVersion: null,
+        verified: false,
+        missingSymbols: ["thing"],
+      });
+
+      const goRepo = path.join(root, "go-repo");
+      const fakeBin = path.join(root, "bin");
+      fs.mkdirSync(goRepo, { recursive: true });
+      fs.mkdirSync(fakeBin, { recursive: true });
+      fs.writeFileSync(path.join(goRepo, "go.mod"), "module example.com/pkg\n");
+      fs.writeFileSync(
+        path.join(fakeBin, "go"),
+        [
+          "#!/usr/bin/env node",
+          'const target = process.argv[process.argv.length - 1] ?? "";',
+          'if (target.endsWith(".Good")) { console.log("doc for Good"); process.exit(0); }',
+          "process.exit(1);",
+          "",
+        ].join("\n"),
+        { mode: 0o755 },
+      );
+      process.env["PATH"] = `${fakeBin}${path.delimiter}${originalPath ?? ""}`;
+
+      const goRes = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        {
+          packageName: "example.com/pkg",
+          importedSymbols: ["Good", "Bad"],
+          worktreePath: goRepo,
+        },
+        { defaultProjectPath: goRepo, nyxHome },
+      );
+      expect(goRes.structuredContent).toMatchObject({
+        installed: true,
+        installedVersion: "go.mod",
+        verified: false,
+        verifiedSymbols: ["Good"],
+        missingSymbols: ["Bad"],
+      });
+
+      const goAllMissing = await invokeToolDefinition(
+        nyxPkgVerifyTool,
+        {
+          packageName: "example.com/pkg",
+          importedSymbols: ["Bad"],
+          worktreePath: goRepo,
+        },
+        { defaultProjectPath: goRepo, nyxHome },
+      );
+      expect(goAllMissing.structuredContent).toMatchObject({
+        installed: false,
+        installedVersion: null,
+        verified: false,
+        verifiedSymbols: [],
+        missingSymbols: ["Bad"],
+      });
+    } finally {
+      if (originalPath === undefined) delete process.env["PATH"];
+      else process.env["PATH"] = originalPath;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("seam graph drift classification", () => {
+  async function makeGitRepo(root: string, name: string): Promise<string> {
+    const repo = path.join(root, name);
+    fs.mkdirSync(repo, { recursive: true });
+    await execCommand("git", ["init", "-b", "main"], { cwd: repo, throwOnNonZero: true });
+    await execCommand("git", ["config", "user.email", "test@example.com"], { cwd: repo });
+    await execCommand("git", ["config", "user.name", "Test"], { cwd: repo });
+    fs.writeFileSync(path.join(repo, ".gitignore"), "node_modules/\n");
+    return repo;
+  }
+
+  async function commit(repo: string): Promise<void> {
+    await execCommand("git", ["add", "-A"], { cwd: repo, throwOnNonZero: true });
+    await execCommand("git", ["commit", "-m", "init"], {
+      cwd: repo,
+      throwOnNonZero: true,
+    });
+  }
+
+  it("detects DB->ORM and API response-field drift while keeping full coverage", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-graph-"));
+    const nyxHome = path.join(root, "home");
+    try {
+      const repo = await makeGitRepo(root, "drift");
+      fs.mkdirSync(path.join(repo, "migrations"), { recursive: true });
+      fs.mkdirSync(path.join(repo, "prisma"), { recursive: true });
+      fs.mkdirSync(path.join(repo, "src", "app", "api", "users"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repo, "migrations", "001.sql"),
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT);\n",
+      );
+      fs.writeFileSync(
+        path.join(repo, "prisma", "schema.prisma"),
+        'datasource db {\n  provider = "postgresql"\n}\nmodel User {\n  id String @id\n  email String\n}\n',
+      );
+      fs.writeFileSync(
+        path.join(repo, "src", "app", "api", "users", "route.ts"),
+        'export async function GET() {\n  const key = process.env.SECRET_KEY;\n  return Response.json({ id: 1 });\n}\n',
+      );
+      fs.writeFileSync(
+        path.join(repo, "src", "Client.tsx"),
+        'export async function load() {\n  const res = await fetch("/api/users");\n  const data = await res.json();\n  return data.email;\n}\n',
+      );
+      fs.writeFileSync(path.join(repo, ".env.example"), "SECRET_KEY=placeholder\n");
+      await commit(repo);
+
+      const res = await invokeToolDefinition(
+        nyxSeamCheckTool,
+        { worktreePath: repo },
+        { defaultProjectPath: repo, nyxHome },
+      );
+      const data = res.structuredContent as {
+        status: string;
+        coverage: string;
+        checkedLayers: string[];
+        uncheckedLayers: string[];
+        mismatches: Array<{ kind: string; message: string }>;
+      };
+      expect(data.status).toBe("RED");
+      expect(data.coverage).toBe("full");
+      expect(data.checkedLayers.sort()).toEqual(["api-client", "db-orm", "env-keys"]);
+      expect(data.uncheckedLayers).toEqual([]);
+      expect(data.mismatches.map((mismatch) => mismatch.kind)).toEqual([
+        "api-field-drift",
+      ]);
+      expect(data.mismatches[0]?.message).toContain('"email"');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips field drift when either side has no fields and matches exact routes", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-graph-green-"));
+    const nyxHome = path.join(root, "home");
+    try {
+      const repo = await makeGitRepo(root, "green");
+      fs.mkdirSync(path.join(repo, "src", "app", "api", "ping"), { recursive: true });
+      fs.mkdirSync(path.join(repo, "src", "app", "api", "events"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repo, "src", "app", "api", "ping", "route.ts"),
+        'export async function GET() {\n  return new Response("pong");\n}\n',
+      );
+      fs.writeFileSync(
+        path.join(repo, "src", "app", "api", "events", "route.ts"),
+        "export async function POST() {\n  return Response.json({ id: 1 });\n}\n",
+      );
+      fs.writeFileSync(
+        path.join(repo, "src", "Ping.tsx"),
+        [
+          "export async function ping() {",
+          '  const res = await fetch("/api/ping");',
+          "  const data = await res.json();",
+          "  return data.anything;",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      fs.writeFileSync(
+        path.join(repo, "src", "Events.tsx"),
+        [
+          "export async function createEvent() {",
+          '  return fetch("/api/events", { method: "POST" });',
+          "}",
+          "",
+        ].join("\n"),
+      );
+      await commit(repo);
+
+      const res = await invokeToolDefinition(
+        nyxSeamCheckTool,
+        { worktreePath: repo },
+        { defaultProjectPath: repo, nyxHome },
+      );
+      const data = res.structuredContent as {
+        status: string;
+        coverage: string;
+        checkedLayers: string[];
+        uncheckedLayers: string[];
+        mismatches: unknown[];
+      };
+      expect(data.status).toBe("GREEN");
+      expect(data.coverage).toBe("partial");
+      expect(data.checkedLayers).toEqual(["api-client"]);
+      expect(data.uncheckedLayers.sort()).toEqual(["db-orm", "env-keys"]);
+      expect(data.mismatches).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies ORM-only, API-routes-only, missing-ORM, and empty projects", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-graph-shapes-"));
+    const nyxHome = path.join(root, "home");
+    try {
+      const ormOnly = await makeGitRepo(root, "orm-only");
+      fs.mkdirSync(path.join(ormOnly, "prisma"), { recursive: true });
+      fs.writeFileSync(
+        path.join(ormOnly, "prisma", "schema.prisma"),
+        "model User {\n  id String @id\n}\n",
+      );
+      await commit(ormOnly);
+      const ormRes = await invokeToolDefinition(
+        nyxSeamCheckTool,
+        { worktreePath: ormOnly },
+        { defaultProjectPath: ormOnly, nyxHome },
+      );
+      expect(ormRes.structuredContent).toMatchObject({
+        status: "GREEN",
+        coverage: "partial",
+        checkedLayers: ["orm-models"],
+      });
+
+      const apiOnly = await makeGitRepo(root, "api-only");
+      fs.mkdirSync(path.join(apiOnly, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(apiOnly, "src", "server.ts"),
+        'import Fastify from "fastify";\nconst app = Fastify();\napp.get("/api/health", async () => ({ ok: true }));\n',
+      );
+      await commit(apiOnly);
+      const apiRes = await invokeToolDefinition(
+        nyxSeamCheckTool,
+        { worktreePath: apiOnly },
+        { defaultProjectPath: apiOnly, nyxHome },
+      );
+      const apiData = apiRes.structuredContent as {
+        status: string;
+        coverage: string;
+        checkedLayers: string[];
+        uncheckedLayers: string[];
+      };
+      expect(apiData.status).toBe("GREEN");
+      expect(apiData.coverage).toBe("partial");
+      expect(apiData.checkedLayers.sort()).toEqual(["api-routes"]);
+      expect(apiData.uncheckedLayers.sort()).toEqual(["db-orm", "env-keys", "frontend-client"]);
+
+      const missingOrm = await makeGitRepo(root, "missing-orm");
+      fs.mkdirSync(path.join(missingOrm, "migrations"), { recursive: true });
+      fs.mkdirSync(path.join(missingOrm, "prisma"), { recursive: true });
+      fs.writeFileSync(
+        path.join(missingOrm, "migrations", "001.sql"),
+        "CREATE TABLE users (id TEXT);\n",
+      );
+      fs.writeFileSync(
+        path.join(missingOrm, "prisma", "schema.prisma"),
+        "model Account {\n  id String @id\n}\n",
+      );
+      await commit(missingOrm);
+      const missingRes = await invokeToolDefinition(
+        nyxSeamCheckTool,
+        { worktreePath: missingOrm },
+        { defaultProjectPath: missingOrm, nyxHome },
+      );
+      const missingData = missingRes.structuredContent as {
+        status: string;
+        mismatches: Array<{ kind: string; message: string }>;
+      };
+      expect(missingData.status).toBe("RED");
+      expect(missingData.mismatches).toEqual([
+        expect.objectContaining({
+          kind: "db-orm-drift",
+          message: expect.stringContaining("has no matching ORM model"),
+        }),
+      ]);
+
+      const empty = await makeGitRepo(root, "empty");
+      fs.writeFileSync(path.join(empty, "README.md"), "# empty\n");
+      await commit(empty);
+      const emptyRes = await invokeToolDefinition(
+        nyxSeamCheckTool,
+        { worktreePath: empty },
+        { defaultProjectPath: empty, nyxHome },
+      );
+      expect(emptyRes.structuredContent).toMatchObject({
+        status: "GREEN",
+        coverage: "none",
+        checkedLayers: [],
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("env_inspect value shapes and drift", () => {
+  it("classifies every value shape without emitting the value", () => {
+    expect(classifyEnvValueShape("")).toBe("EMPTY");
+    expect(classifyEnvValueShape("   ")).toBe("EMPTY");
+    expect(classifyEnvValueShape("true")).toBe("BOOLEAN");
+    expect(classifyEnvValueShape("FALSE")).toBe("BOOLEAN");
+    expect(classifyEnvValueShape("42")).toBe("NUMBER");
+    expect(classifyEnvValueShape("-3.5")).toBe("NUMBER");
+    expect(classifyEnvValueShape("postgres://user:pass@db/app")).toBe("URL(postgres)");
+    expect(classifyEnvValueShape("HTTPS://example.com")).toBe("URL(https)");
+    expect(classifyEnvValueShape('{"a":1}')).toBe("JSON");
+    expect(classifyEnvValueShape("[1,2,3]")).toBe("JSON");
+    expect(classifyEnvValueShape("{bad}")).toBe("STRING(len: 1-16)");
+    expect(classifyEnvValueShape("123abc")).toBe("STRING(len: 1-16)");
+    expect(classifyEnvValueShape("a".repeat(17))).toBe("STRING(len: 17-64)");
+    expect(classifyEnvValueShape("a".repeat(64))).toBe("STRING(len: 17-64)");
+    expect(classifyEnvValueShape("a".repeat(65))).toBe("STRING(len: 65+)");
+  });
+
+  it("reports key presence, example drift, code-referenced drift, and undocumented keys", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-env-inspect-"));
+    const nyxHome = path.join(root, "home");
+    const wt = path.join(root, "wt");
+    try {
+      fs.mkdirSync(wt, { recursive: true });
+      fs.writeFileSync(
+        path.join(wt, ".env.example"),
+        "PRESENT=placeholder\nEXTRA=placeholder\n",
+      );
+      fs.writeFileSync(path.join(wt, ".env.sample"), "SAMPLE_KEY=1\n");
+      fs.writeFileSync(path.join(wt, ".env.defaults"), "DEFAULT_KEY=1\n");
+      fs.symlinkSync(".env.example", path.join(wt, ".env.template"));
+      fs.writeFileSync(
+        path.join(wt, ".env.local"),
+        [
+          "PRESENT=1",
+          "EMPTY=",
+          "SHORT=abc",
+          "MID=abcdefghijklmnopq",
+          `LONG=${"a".repeat(65)}`,
+          'JSONVAL={"a":1}',
+          "URLVAL=https://example.com",
+          "BOOL=true",
+          "",
+        ].join("\n"),
+      );
+
+      fs.mkdirSync(path.join(wt, "src", "nested"), { recursive: true });
+      fs.writeFileSync(
+        path.join(wt, "src", "a.ts"),
+        [
+          "const a = process.env.CODE_KEY;",
+          'const b = process.env["BRACKET_KEY"];',
+          "const c = import.meta.env.VITE_KEY;",
+          "const n = process.env.NODE_ENV;",
+          "",
+        ].join("\n"),
+      );
+      fs.writeFileSync(
+        path.join(wt, "src", "b.py"),
+        [
+          'x = os.environ["PY_KEY"]',
+          'y = os.getenv("PY_GET_KEY")',
+          'z = os.environ.get("PY_ENV_GET_KEY")',
+          "",
+        ].join("\n"),
+      );
+      fs.writeFileSync(path.join(wt, "src", "c.go"), '_ = os.Getenv("GO_KEY")\n');
+      fs.writeFileSync(path.join(wt, "src", "d.rs"), 'std::env::var("RUST_KEY");\n');
+      fs.writeFileSync(path.join(wt, "src", "e.js"), "process.env.JS_KEY;\n");
+      fs.writeFileSync(
+        path.join(wt, "src", "nested", "deep.ts"),
+        "process.env.DEEP_KEY;\n",
+      );
+      for (const ignored of ["node_modules", "dist", "coverage", ".nyxowl", ".git"]) {
+        fs.mkdirSync(path.join(wt, ignored), { recursive: true });
+        fs.writeFileSync(
+          path.join(wt, ignored, "ignored.ts"),
+          "process.env.IGNORED_KEY;\n",
+        );
+      }
+
+      const res = await invokeToolDefinition(
+        nyxEnvInspectTool,
+        { worktreePath: wt },
+        { defaultProjectPath: wt, nyxHome },
+      );
+      expect(res.isError).toBeFalsy();
+      const data = res.structuredContent as {
+        envFilesFound: string[];
+        exampleFilesFound: string[];
+        keys: Array<{ name: string; presence: string; shape: string }>;
+        drift: {
+          missingFromEnvButInExample: string[];
+          missingFromEnvButReferencedInCode: string[];
+          undocumentedInExample: string[];
+        };
+      };
+
+      expect(data.envFilesFound).toEqual([".env.local"]);
+      expect(data.exampleFilesFound).toEqual([
+        ".env.defaults",
+        ".env.example",
+        ".env.sample",
+        ".env.template",
+      ]);
+
+      const shapes = new Map(data.keys.map((key) => [key.name, key]));
+      expect(shapes.get("PRESENT")).toEqual({
+        name: "PRESENT",
+        presence: "SET",
+        shape: "NUMBER",
+      });
+      expect(shapes.get("EMPTY")).toEqual({
+        name: "EMPTY",
+        presence: "EMPTY",
+        shape: "EMPTY",
+      });
+      expect(shapes.get("SHORT")?.shape).toBe("STRING(len: 1-16)");
+      expect(shapes.get("MID")?.shape).toBe("STRING(len: 17-64)");
+      expect(shapes.get("LONG")?.shape).toBe("STRING(len: 65+)");
+      expect(shapes.get("JSONVAL")?.shape).toBe("JSON");
+      expect(shapes.get("URLVAL")?.shape).toBe("URL(https)");
+      expect(shapes.get("BOOL")?.shape).toBe("BOOLEAN");
+
+      expect(data.drift.missingFromEnvButInExample).toEqual([
+        "DEFAULT_KEY",
+        "EXTRA",
+        "SAMPLE_KEY",
+      ]);
+      expect(data.drift.missingFromEnvButReferencedInCode).toEqual([
+        "BRACKET_KEY",
+        "CODE_KEY",
+        "DEEP_KEY",
+        "GO_KEY",
+        "JS_KEY",
+        "PY_ENV_GET_KEY",
+        "PY_GET_KEY",
+        "PY_KEY",
+        "RUST_KEY",
+        "VITE_KEY",
+      ]);
+      expect(data.drift.undocumentedInExample).toEqual([
+        "BOOL",
+        "EMPTY",
+        "JSONVAL",
+        "LONG",
+        "MID",
+        "SHORT",
+        "URLVAL",
+      ]);
+      expect(JSON.stringify(res)).not.toContain("abcdefghijklmnopq");
+      expect(JSON.stringify(res)).not.toContain("https://example.com");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Shield web_fetch SSRF primitives and handler branches", () => {
+  afterEach(() => {
+    setWebFetchTestHooks({ fetch: null, dnsLookup: null });
+  });
+
+  it("classifies IPv4, IPv6, and IPv4-mapped addresses as reserved or public", () => {
+    const reserved = [
+      "0.0.0.0",
+      "0.1.2.3",
+      "10.0.0.1",
+      "127.0.0.1",
+      "169.254.169.254",
+      "172.16.0.1",
+      "172.31.255.255",
+      "192.168.1.1",
+      "100.64.0.1",
+      "100.127.255.255",
+      "198.18.0.1",
+      "198.19.0.1",
+      "224.0.0.1",
+      "240.0.0.1",
+      "::",
+      "::1",
+      "0:0:0:0:0:0:0:1",
+      "0:0:0:0:0:0:0:0",
+      "fc00::1",
+      "fd12:3456::1",
+      "fe80::1",
+      "fe9a::1",
+      "ff02::1",
+      "::ffff:127.0.0.1",
+      "::ffff:7f00:1",
+      "::ffff:10.0.0.1",
+      "::ffff:zzzz",
+      "not-an-ip",
+    ];
+    for (const ip of reserved) {
+      expect(isPrivateOrReservedIp(ip), ip).toBe(true);
+    }
+
+    for (const ip of [
+      "8.8.8.8",
+      "1.1.1.1",
+      "172.15.0.1",
+      "172.32.0.1",
+      "198.17.0.1",
+      "198.20.0.1",
+      "2001:4860:4860::8888",
+      "::ffff:8.8.8.8",
+      "[::1]",
+    ]) {
+      expect(isPrivateOrReservedIp(ip), ip).toBe(ip === "[::1]");
+    }
+  });
+
+  it("flags local, metadata, integer, hex, and octal hostnames", () => {
+    for (const host of [
+      "localhost",
+      "api.localhost",
+      "printer.local",
+      "db.internal",
+      "metadata.google.internal",
+      "metadata",
+      "instance-data",
+      "2130706433",
+      "0x7f000001",
+      "0177.0.0.1",
+      "0x7f.0.0.1",
+    ]) {
+      expect(isSuspiciousHostname(host), host).toBe(true);
+    }
+    for (const host of ["example.com", "1.2.3.4", "localhost.example.com"]) {
+      expect(isSuspiciousHostname(host), host).toBe(false);
+    }
+  });
+
+  it("rejects invalid schemes, credentials, oversized queries, and denied domains", async () => {
+    await expect(validateSafeExternalUrl("not a url")).rejects.toMatchObject({
+      code: "ERR_SSRF_BLOCKED",
+    });
+    await expect(validateSafeExternalUrl("ftp://example.com/file")).rejects.toThrow(
+      /Unsupported URL protocol/,
+    );
+    await expect(
+      validateSafeExternalUrl("https://user:pass@example.com/"),
+    ).rejects.toThrow(/embedded credentials/);
+    await expect(
+      validateSafeExternalUrl(`https://example.com/?q=${"a".repeat(300)}`),
+    ).rejects.toThrow(/Query string length/);
+    await expect(
+      validateSafeExternalUrl("https://docs.example.com/", {
+        denyDomains: ["example.com"],
+      }),
+    ).rejects.toThrow(/blocked by webFetchDeny/);
+    await expect(
+      validateSafeExternalUrl("https://other.example.com/", {
+        allowDomains: ["docs.example.com"],
+      }),
+    ).rejects.toThrow(/not in webFetchAllow/);
+    await expect(validateSafeExternalUrl("http://localhost/")).rejects.toThrow(
+      /Blocked internal\/suspicious hostname/,
+    );
+    await expect(validateSafeExternalUrl("http://10.0.0.1/")).rejects.toThrow(
+      /Blocked private\/reserved IP literal/,
+    );
+  });
+
+  it("accepts allow-listed domains and public IP literals", async () => {
+    const allowed = await validateSafeExternalUrl("https://docs.example.com/page", {
+      allowDomains: ["example.com"],
+      dnsLookup: async () => ["93.184.216.34"],
+    });
+    expect(allowed.hostname).toBe("docs.example.com");
+
+    const literal = await validateSafeExternalUrl("http://8.8.8.8/", {
+      dnsLookup: async () => {
+        throw new Error("DNS must not be used for IP literals");
+      },
+    });
+    expect(literal.hostname).toBe("8.8.8.8");
+  });
+
+  it("fails closed on DNS errors, empty answers, and private resolutions", async () => {
+    await expect(
+      validateSafeExternalUrl("https://example.com/", {
+        dnsLookup: async () => {
+          throw new Error("ENOTFOUND");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "ERR_NETWORK_BLOCKED" });
+
+    await expect(
+      validateSafeExternalUrl("https://example.com/", { dnsLookup: async () => [] }),
+    ).rejects.toThrow(/No DNS records resolved/);
+
+    await expect(
+      validateSafeExternalUrl("https://example.com/", {
+        dnsLookup: async () => ["93.184.216.34", "192.168.0.5"],
+      }),
+    ).rejects.toThrow(/DNS rebinding \/ SSRF blocked/);
+  });
+
+  it("extracts readable article text and falls back to tag stripping", () => {
+    const article = extractReadableTextFromHtml(
+      "<html><head><title>Guide</title></head><body><article><h1>Guide</h1><p>Useful body text for the reader.</p></article></body></html>",
+      "https://example.com/guide",
+    );
+    expect(article).toContain("Useful body text");
+
+    const fallback = extractReadableTextFromHtml(
+      "<html><body><span>plain</span> <span>text</span></body></html>",
+      "https://example.com/plain",
+    );
+    expect(fallback.replace(/\s+/g, " ").trim()).toContain("plain text");
+  });
+
+  async function runFetch(
+    url: string,
+    repoDir: string,
+    nyxHome: string,
+  ): Promise<{
+    isError?: boolean;
+    structuredContent: Record<string, unknown>;
+  }> {
+    return (await invokeToolDefinition(
+      nyxWebFetchTool,
+      { url, purpose: "coverage fetch" },
+      { defaultProjectPath: repoDir, nyxHome },
+    )) as unknown as {
+      isError?: boolean;
+      structuredContent: Record<string, unknown>;
+    };
+  }
+
+  it("fetches HTML, returns a hash, and logs the citation", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-web-fetch-"));
+    const repoDir = path.join(root, "repo");
+    const nyxHome = path.join(root, "home");
+    fs.mkdirSync(repoDir, { recursive: true });
+    try {
+      setWebFetchTestHooks({
+        dnsLookup: async () => ["93.184.216.34"],
+        fetch: async () =>
+          new Response(
+            "<html><head><title>Doc</title></head><body><article><p>Safe article text.</p></article></body></html>",
+            { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+          ),
+      });
+      const res = await runFetch("https://example.com/doc", repoDir, nyxHome);
+      expect(res.isError).toBeFalsy();
+      const data = res.structuredContent as {
+        url: string;
+        finalUrl: string;
+        statusCode: number;
+        contentHash: string;
+        riskScore: number;
+        detectedThreats: string[];
+        wrappedContent: string;
+      };
+      expect(data.finalUrl).toBe("https://example.com/doc");
+      expect(data.statusCode).toBe(200);
+      expect(data.contentHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(data.wrappedContent).toContain('<untrusted_data source="https://example.com/doc"');
+      expect(data.wrappedContent).toContain("Safe article text.");
+
+      const ctx = await createToolContext(
+        { url: "https://example.com/doc" },
+        { defaultProjectPath: repoDir, nyxHome },
+      );
+      const rows = ctx.db.db
+        .prepare("SELECT url FROM web_fetch_log ORDER BY id")
+        .all() as Array<{ url: string }>;
+      ctx.db.close();
+      expect(rows.map((r) => r.url)).toEqual(["https://example.com/doc"]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("follows a relative redirect and logs both URLs", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-web-fetch-redirect-"));
+    const repoDir = path.join(root, "repo");
+    const nyxHome = path.join(root, "home");
+    fs.mkdirSync(repoDir, { recursive: true });
+    try {
+      let calls = 0;
+      setWebFetchTestHooks({
+        dnsLookup: async () => ["93.184.216.34"],
+        fetch: async () => {
+          calls++;
+          if (calls === 1) {
+            return new Response(null, {
+              status: 302,
+              headers: { location: "/final" },
+            });
+          }
+          return new Response("plain final body", {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          });
+        },
+      });
+      const res = await runFetch("https://example.com/start", repoDir, nyxHome);
+      expect(res.isError).toBeFalsy();
+      const data = res.structuredContent as { finalUrl: string; wrappedContent: string };
+      expect(data.finalUrl).toBe("https://example.com/final");
+      expect(data.wrappedContent).toContain("plain final body");
+
+      const ctx = await createToolContext(
+        { url: "https://example.com/start" },
+        { defaultProjectPath: repoDir, nyxHome },
+      );
+      const rows = ctx.db.db
+        .prepare("SELECT url FROM web_fetch_log ORDER BY id")
+        .all() as Array<{ url: string }>;
+      ctx.db.close();
+      expect(rows.map((r) => r.url)).toEqual([
+        "https://example.com/start",
+        "https://example.com/final",
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects missing Location headers and redirect loops", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-web-fetch-loop-"));
+    const repoDir = path.join(root, "repo");
+    const nyxHome = path.join(root, "home");
+    fs.mkdirSync(repoDir, { recursive: true });
+    try {
+      setWebFetchTestHooks({
+        dnsLookup: async () => ["93.184.216.34"],
+        fetch: async () => new Response(null, { status: 302 }),
+      });
+      const missing = await runFetch("https://example.com/a", repoDir, nyxHome);
+      expect(missing.isError).toBe(true);
+      expect(missing.structuredContent["code"]).toBe("ERR_SSRF_BLOCKED");
+      expect(missing.structuredContent["message"]).toContain("missing Location");
+
+      setWebFetchTestHooks({
+        dnsLookup: async () => ["93.184.216.34"],
+        fetch: async () =>
+          new Response(null, { status: 302, headers: { location: "/again" } }),
+      });
+      const loop = await runFetch("https://example.com/a", repoDir, nyxHome);
+      expect(loop.isError).toBe(true);
+      expect(loop.structuredContent["code"]).toBe("ERR_SSRF_BLOCKED");
+      expect(loop.structuredContent["message"]).toContain("maximum redirects");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects disallowed content types and oversized bodies", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-web-fetch-caps-"));
+    const repoDir = path.join(root, "repo");
+    const nyxHome = path.join(root, "home");
+    fs.mkdirSync(repoDir, { recursive: true });
+    try {
+      setWebFetchTestHooks({
+        dnsLookup: async () => ["93.184.216.34"],
+        fetch: async () =>
+          new Response("binary", {
+            status: 200,
+            headers: { "content-type": "application/octet-stream" },
+          }),
+      });
+      const badType = await runFetch("https://example.com/bin", repoDir, nyxHome);
+      expect(badType.isError).toBe(true);
+      expect(badType.structuredContent["code"]).toBe("ERR_INVALID_INPUT");
+      expect(badType.structuredContent["message"]).toContain("Disallowed content-type");
+
+      setWebFetchTestHooks({
+        dnsLookup: async () => ["93.184.216.34"],
+        fetch: async () =>
+          new Response("x".repeat(2 * 1024 * 1024 + 1), {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      });
+      const tooLarge = await runFetch("https://example.com/big", repoDir, nyxHome);
+      expect(tooLarge.isError).toBe(true);
+      expect(tooLarge.structuredContent["code"]).toBe("ERR_BUDGET_EXCEEDED");
+      expect(tooLarge.structuredContent["message"]).toContain("2 MB cap");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults a missing content-type to text/plain", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-web-fetch-noct-"));
+    const repoDir = path.join(root, "repo");
+    const nyxHome = path.join(root, "home");
+    fs.mkdirSync(repoDir, { recursive: true });
+    try {
+      setWebFetchTestHooks({
+        dnsLookup: async () => ["93.184.216.34"],
+        fetch: async () => new Response("no header body", { status: 200 }),
+      });
+      const res = await runFetch("https://example.com/noct", repoDir, nyxHome);
+      expect(res.isError).toBeFalsy();
+      expect((res.structuredContent as { wrappedContent: string }).wrappedContent).toContain(
+        "no header body",
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Verify command resolution, circuit breaker, proc reaper, and stack frames", () => {
+  let tmpRoot: string;
+  let nyxHome: string;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-verify-proc-debug-"));
+    nyxHome = path.join(tmpRoot, "nyx-home");
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  async function makeGitRepo(name: string): Promise<string> {
+    const repoDir = path.join(tmpRoot, name);
+    fs.mkdirSync(repoDir, { recursive: true });
+    await execCommand("git", ["init", "-b", "main"], { cwd: repoDir, throwOnNonZero: true });
+    await execCommand("git", ["config", "user.email", "t@nyx.dev"], { cwd: repoDir });
+    await execCommand("git", ["config", "user.name", "T"], { cwd: repoDir });
+    fs.writeFileSync(path.join(repoDir, "README.md"), "# fixture\n");
+    await execCommand("git", ["add", "-A"], { cwd: repoDir });
+    await execCommand("git", ["commit", "-m", "init"], { cwd: repoDir });
+    return repoDir;
+  }
+
+  it("resolves explicit, DNA, package-script, and polyglot verify commands", () => {
+    const empty = path.join(tmpRoot, "empty");
+    fs.mkdirSync(empty);
+    expect(resolveVerifyCommands(empty, {
+      typecheck: null,
+      lint: null,
+      test: null,
+      build: null,
+    })).toEqual([]);
+
+    const scripts = path.join(tmpRoot, "scripts");
+    fs.mkdirSync(scripts);
+    fs.writeFileSync(
+      path.join(scripts, "package.json"),
+      JSON.stringify({
+        scripts: { typecheck: "tsc", lint: "eslint", test: "vitest", build: "tsup" },
+      }),
+    );
+    expect(resolveVerifyCommands(scripts, {
+      typecheck: null,
+      lint: null,
+      test: null,
+      build: null,
+    })).toEqual([
+      { step: "typecheck", command: "npm run typecheck" },
+      { step: "lint", command: "npm run lint" },
+      { step: "test", command: "npm run test" },
+      { step: "build", command: "npm run build" },
+    ]);
+
+    // Explicit config wins; DNA fills gaps.
+    expect(resolveVerifyCommands(
+      scripts,
+      { typecheck: "custom-tsc", lint: null, test: null, build: null },
+      { lint: "dna-lint", test: "dna-test" },
+    )).toEqual([
+      { step: "typecheck", command: "custom-tsc" },
+      { step: "lint", command: "dna-lint" },
+      { step: "test", command: "dna-test" },
+      { step: "build", command: "npm run build" },
+    ]);
+
+    // Malformed package.json is ignored.
+    const broken = path.join(tmpRoot, "broken");
+    fs.mkdirSync(broken);
+    fs.writeFileSync(path.join(broken, "package.json"), "{not json");
+    expect(resolveVerifyCommands(broken, {
+      typecheck: null,
+      lint: null,
+      test: null,
+      build: null,
+    })).toEqual([]);
+
+    for (const [name, file, command] of [
+      ["pyproject", "pyproject.toml", "python3 -m pytest"],
+      ["pytest-ini", "pytest.ini", "python3 -m pytest"],
+      ["go", "go.mod", "go test ./..."],
+      ["cargo", "Cargo.toml", "cargo test"],
+    ] as const) {
+      const dir = path.join(tmpRoot, `poly-${name}`);
+      fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(dir, file), "");
+      expect(resolveVerifyCommands(dir, {
+        typecheck: null,
+        lint: null,
+        test: null,
+        build: null,
+      })).toEqual([{ step: "test", command }]);
+    }
+  });
+
+  it("rejects a missing worktree and active writer locks", async () => {
+    const missing = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      { worktreePath: path.join(tmpRoot, "missing"), sliceId: "s1" },
+      { defaultProjectPath: tmpRoot, nyxHome },
+    );
+    expect(missing.isError).toBe(true);
+    expect((missing.structuredContent as { code: string }).code).toBe(
+      "ERR_WORKTREE_NOT_FOUND",
+    );
+
+    const repoDir = await makeGitRepo("locked");
+    const ctx = await createToolContext(
+      { worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    const now = Math.floor(Date.now() / 1000);
+    ctx.db.db
+      .prepare(
+        "INSERT INTO locks (file_path, owner_role, acquired_at, expires_at) VALUES (?, ?, ?, ?)",
+      )
+      .run("src/app.ts", "nyx-api", now, now + 300);
+    ctx.db.close();
+
+    const blocked = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      { worktreePath: repoDir, sliceId: "s1" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(blocked.isError).toBe(true);
+    expect((blocked.structuredContent as { code: string }).code).toBe("ERR_LOCK_CONFLICT");
+    expect((blocked.structuredContent as { message: string }).message).toContain(
+      "src/app.ts by nyx-api",
+    );
+  });
+
+  it("issues a GREEN receipt when no commands are configured", async () => {
+    const repoDir = await makeGitRepo("green");
+    const res = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      {
+        worktreePath: repoDir,
+        sliceId: "green-slice",
+        commandsOverride: { typecheck: null, lint: null, test: null, build: null },
+      },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(res.isError).toBeFalsy();
+    const data = res.structuredContent as {
+      status: string;
+      failedStep: string | null;
+      strikeCount: number;
+      summaryOutput: string;
+      circuitBreakerAction: string;
+    };
+    expect(data.status).toBe("GREEN");
+    expect(data.failedStep).toBeNull();
+    expect(data.strikeCount).toBe(0);
+    expect(data.circuitBreakerAction).toBe("none");
+    expect(data.summaryOutput).toContain("All 0 verification step(s) passed (none)");
+  });
+
+  it("uses DNA commands, tolerates malformed DNA, and lets overrides win", async () => {
+    const repoDir = await makeGitRepo("dna-commands");
+    const ctx = await createToolContext(
+      { worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    ctx.db.db
+      .prepare(
+        "INSERT INTO dna (repo_id, manifest_hash, dna_json, updated_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(
+        ctx.repoId,
+        "hash",
+        JSON.stringify({ commands: { test: "exit 0" } }),
+        new Date().toISOString(),
+      );
+    ctx.db.close();
+
+    const fromDna = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      { worktreePath: repoDir, sliceId: "dna-slice" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((fromDna.structuredContent as { status: string }).status).toBe("GREEN");
+    expect((fromDna.structuredContent as { summaryOutput: string }).summaryOutput).toContain(
+      "test",
+    );
+
+    const overridden = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      {
+        worktreePath: repoDir,
+        sliceId: "dna-slice",
+        commandsOverride: { test: "exit 0" },
+      },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((overridden.structuredContent as { status: string }).status).toBe("GREEN");
+
+    const brokenCtx = await createToolContext(
+      { worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    brokenCtx.db.db
+      .prepare("UPDATE dna SET dna_json = ? WHERE repo_id = ?")
+      .run("{broken", brokenCtx.repoId);
+    brokenCtx.db.close();
+
+    const broken = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      {
+        worktreePath: repoDir,
+        sliceId: "dna-slice",
+        commandsOverride: { typecheck: null, lint: null, test: null, build: null },
+      },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((broken.structuredContent as { status: string }).status).toBe("GREEN");
+  });
+
+  it("counts strikes and stops after a second escalation", async () => {
+    const repoDir = await makeGitRepo("strikes");
+    const fail = { test: "exit 1" };
+
+    const first = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      { worktreePath: repoDir, sliceId: "strike-slice", taskSlug: "task", commandsOverride: fail },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    const firstData = first.structuredContent as {
+      status: string;
+      strikeCount: number;
+      escalationCount: number;
+      signatureHash: string;
+      failedStep: string;
+      summaryOutput: string;
+      circuitBreakerAction: string;
+    };
+    expect(firstData.status).toBe("RED");
+    expect(firstData.strikeCount).toBe(1);
+    expect(firstData.escalationCount).toBe(0);
+    expect(firstData.failedStep).toBe("test");
+    expect(firstData.circuitBreakerAction).toBe("retry");
+    expect(firstData.summaryOutput).toContain('Step "test" exited with code 1');
+
+    const ctx = await createToolContext(
+      { worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    ctx.db.db
+      .prepare(
+        "UPDATE strikes SET strike_count = 2, escalation_count = 1 WHERE task_slug = ? AND slice_id = ? AND signature_hash = ?",
+      )
+      .run("task", "strike-slice", firstData.signatureHash);
+    ctx.db.close();
+
+    const second = await invokeToolDefinition(
+      nyxVerifySliceTool,
+      { worktreePath: repoDir, sliceId: "strike-slice", taskSlug: "task", commandsOverride: fail },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    const secondData = second.structuredContent as {
+      strikeCount: number;
+      escalationCount: number;
+      circuitBreakerAction: string;
+    };
+    expect(secondData.strikeCount).toBe(3);
+    expect(secondData.escalationCount).toBe(2);
+    expect(secondData.circuitBreakerAction).toBe("stop_report_user");
+  });
+
+  it("classifies process liveness and reaps or stops orphan rows", async () => {
+    expect(isProcessAlive(0)).toBe(false);
+    expect(isProcessAlive(-1)).toBe(false);
+    expect(isProcessAlive(process.pid)).toBe(true);
+    expect(isProcessAlive(999_999_999)).toBe(false);
+
+    const port = await allocateFreePort();
+    expect(port).toBeGreaterThan(1024);
+    expect(port).toBeLessThanOrEqual(65_535);
+
+    const repoDir = await makeGitRepo("procs");
+    const live = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"],
+      { detached: true, stdio: "ignore" },
+    );
+    expect(live.pid).toBeDefined();
+    const ctx = await createToolContext(
+      { worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    const insert = ctx.db.db.prepare(
+      `INSERT INTO procs (name, worktree_path, pid, port, command, status, log_artifact_id, started_at, updated_at)
+       VALUES (?, ?, ?, NULL, 'cmd', 'running', NULL, ?, ?)`,
+    );
+    const nowIso = new Date().toISOString();
+    insert.run("dead-one", repoDir, 999_999_999, nowIso, nowIso);
+    insert.run("dead-two", repoDir, 999_999_998, nowIso, nowIso);
+    insert.run("alive", repoDir, live.pid!, nowIso, nowIso);
+
+    try {
+      expect(reapOrphanProcs(ctx.db)).toBe(2);
+      const afterReap = ctx.db.db
+        .prepare("SELECT name, status FROM procs ORDER BY name")
+        .all() as Array<{ name: string; status: string }>;
+      expect(afterReap).toEqual([
+        { name: "alive", status: "running" },
+        { name: "dead-one", status: "stopped" },
+        { name: "dead-two", status: "stopped" },
+      ]);
+
+      expect(stopAllRunningProcs(ctx.db)).toBe(1);
+      const afterStop = ctx.db.db
+        .prepare("SELECT status FROM procs WHERE name = 'alive'")
+        .get() as { status: string };
+      expect(afterStop.status).toBe("stopped");
+    } finally {
+      try {
+        process.kill(-live.pid!, "SIGKILL");
+      } catch {
+        // Already stopped by stopAllRunningProcs.
+      }
+      ctx.db.close();
+    }
+  });
+
+  it("handles proc list, missing names, missing commands, and missing rows", async () => {
+    const repoDir = await makeGitRepo("proc-tool");
+    const list = await invokeToolDefinition(
+      nyxProcTool,
+      { action: "list" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(list.isError).toBeFalsy();
+    expect((list.structuredContent as { procs: unknown[] }).procs).toEqual([]);
+
+    const noName = await invokeToolDefinition(
+      nyxProcTool,
+      { action: "logs" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((noName.structuredContent as { code: string }).code).toBe("ERR_INVALID_INPUT");
+    expect((noName.structuredContent as { message: string }).message).toContain("name is required");
+
+    const noCommand = await invokeToolDefinition(
+      nyxProcTool,
+      { action: "start", name: "no-command" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((noCommand.structuredContent as { code: string }).code).toBe("ERR_INVALID_INPUT");
+    expect((noCommand.structuredContent as { message: string }).message).toContain(
+      "command is required",
+    );
+
+    const missing = await invokeToolDefinition(
+      nyxProcTool,
+      { action: "logs", name: "absent" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((missing.structuredContent as { code: string }).code).toBe("ERR_INVALID_INPUT");
+    expect((missing.structuredContent as { message: string }).message).toContain(
+      'Process "absent" not found',
+    );
+  });
+
+  it("starts without a ready pattern, logs, and stops exited processes", async () => {
+    const repoDir = await makeGitRepo("proc-start");
+    const start = await invokeToolDefinition(
+      nyxProcTool,
+      {
+        action: "start",
+        name: "short-lived",
+        command: `${process.execPath} -e "console.log('hello')"`,
+        port: 34567,
+      },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(start.isError).toBeFalsy();
+    const startData = start.structuredContent as {
+      proc: { pid: number; port: number; status: string; logArtifactId: string };
+    };
+    expect(startData.proc.port).toBe(34567);
+    expect(startData.proc.pid).toBeGreaterThan(0);
+    expect(["running", "exited"]).toContain(startData.proc.status);
+
+    const logs = await invokeToolDefinition(
+      nyxProcTool,
+      { action: "logs", name: "short-lived" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(logs.isError).toBeFalsy();
+    expect((logs.structuredContent as { logs: string }).logs).toContain("hello");
+
+    const stop = await invokeToolDefinition(
+      nyxProcTool,
+      { action: "stop", name: "short-lived" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect((stop.structuredContent as { proc: { status: string } }).proc.status).toBe("stopped");
+  });
+
+  it("replaces an existing running process and times out readiness waits", async () => {
+    const repoDir = await makeGitRepo("proc-replace");
+    const longRunning = `${process.execPath} -e "setInterval(() => {}, 1000)"`;
+    const first = await invokeToolDefinition(
+      nyxProcTool,
+      { action: "start", name: "reused", command: longRunning },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(first.isError).toBeFalsy();
+
+    const second = await invokeToolDefinition(
+      nyxProcTool,
+      {
+        action: "start",
+        name: "reused",
+        command: longRunning,
+        readyPattern: "never-matches",
+        readyTimeoutMs: 100,
+      },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(second.isError).toBeFalsy();
+    expect((second.structuredContent as { proc: { status: string } }).proc.status).toBe(
+      "running",
+    );
+
+    await invokeToolDefinition(
+      nyxProcTool,
+      { action: "stop", name: "reused" },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+  });
+
+  it("parses JS, Python, and Go/Rust frames with in-repo code slices", async () => {
+    const repoDir = await makeGitRepo("debug");
+    fs.mkdirSync(path.join(repoDir, "src"), { recursive: true });
+    const filePath = path.join(repoDir, "src", "app.ts");
+    fs.writeFileSync(
+      filePath,
+      Array.from({ length: 40 }, (_unused, i) => `line ${i + 1}`).join("\n"),
+    );
+    fs.writeFileSync(path.join(repoDir, "src", "tiny.ts"), "first\nsecond\n");
+
+    const trace = [
+      `Error: boom`,
+      `    at handler (${filePath}:20:5)`,
+      `    at ${filePath}:20:5`,
+      `    at ${filePath}:39:5`,
+      `    at ${path.join(repoDir, "src", "tiny.ts")}:2:1`,
+      `    at file://${filePath}:21`,
+      `    at node:internal/process/task_queues:90:21`,
+      `    at /repo/node_modules/pkg/index.js:4:2`,
+      `  File "${path.join(repoDir, "src", "job.py")}", line 12, in run`,
+      `  File "${path.join(repoDir, "src", "job.py")}", line 13`,
+      `    --> src/main.rs:14:5`,
+      `    src/main.go:25`,
+      `    src/App.java:7:1`,
+      `    src/Program.cs:9`,
+      `    src/app.rb:3`,
+      `    src/index.php:2`,
+      `    at ${path.join(tmpRoot, "outside", "other.ts")}:5:1`,
+    ].join("\n");
+
+    const frames = parseStackFrames(trace, repoDir);
+    const inRepo = frames.filter((frame) => frame.inRepo);
+    expect(inRepo.some((frame) => frame.filePath === "src/app.ts" && frame.line === 20)).toBe(
+      true,
+    );
+    expect(inRepo.some((frame) => frame.filePath === "src/main.rs")).toBe(true);
+    expect(inRepo.some((frame) => frame.filePath === "src/main.go")).toBe(true);
+    expect(inRepo.some((frame) => frame.filePath === "src/App.java")).toBe(true);
+    expect(inRepo.some((frame) => frame.filePath === "src/Program.cs")).toBe(true);
+    expect(inRepo.some((frame) => frame.filePath === "src/app.rb")).toBe(true);
+    expect(inRepo.some((frame) => frame.filePath === "src/index.php")).toBe(true);
+    const slice = inRepo.find((frame) => frame.filePath === "src/app.ts");
+    expect(slice?.codeSlice).toContain(">> L20:");
+    const endSlice = inRepo.find(
+      (frame) => frame.filePath === "src/app.ts" && frame.line === 39,
+    );
+    expect(endSlice?.codeSlice).toContain(">> L39:");
+    expect(endSlice?.codeSlice).toContain("L40:");
+    const tinySlice = inRepo.find((frame) => frame.filePath === "src/tiny.ts");
+    expect(tinySlice?.codeSlice).toContain(">> L2:");
+    expect(tinySlice?.codeSlice).toContain("L1:");
+
+    // Duplicate file:line frames are de-duplicated.
+    expect(inRepo.filter((frame) => frame.filePath === "src/app.ts" && frame.line === 20)).toHaveLength(
+      1,
+    );
+    // node_modules frames are external and never sliced.
+    expect(
+      frames.some((frame) => !frame.inRepo && frame.filePath.includes("node_modules")),
+    ).toBe(true);
+    // Out-of-repo absolute paths stay absolute and unsliced.
+    const external = frames.find((frame) => frame.filePath.includes("outside"));
+    expect(external?.inRepo).toBe(false);
+    expect(external?.codeSlice).toBeUndefined();
+  });
+
+  it("caps in-repo debug frames at five and counts external frames", async () => {
+    const repoDir = await makeGitRepo("debug-cap");
+    fs.mkdirSync(path.join(repoDir, "src"), { recursive: true });
+    const lines: string[] = ["Error: many"];
+    for (let i = 0; i < 7; i++) {
+      const file = path.join(repoDir, "src", `f${i}.ts`);
+      fs.writeFileSync(file, "x\n");
+      lines.push(`    at fn${i} (${file}:1:1)`);
+    }
+    lines.push("    at /repo/node_modules/pkg/one.js:1:1");
+    lines.push("    at /repo/node_modules/pkg/two.js:2:2");
+
+    const res = await invokeToolDefinition(
+      nyxDebugIsolateTool,
+      { stackTraceOrError: lines.join("\n"), worktreePath: repoDir },
+      { defaultProjectPath: repoDir, nyxHome },
+    );
+    expect(res.isError).toBeFalsy();
+    const data = res.structuredContent as {
+      totalFrames: number;
+      inRepoFrames: Array<{ codeSlice?: string }>;
+      externalFramesCount: number;
+    };
+    expect(data.inRepoFrames).toHaveLength(5);
+    expect(data.externalFramesCount).toBe(2);
+    expect(data.totalFrames).toBe(9);
+    expect(data.inRepoFrames.every((frame) => typeof frame.codeSlice === "string")).toBe(true);
   });
 });

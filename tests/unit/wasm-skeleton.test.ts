@@ -1,9 +1,20 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { computeFileSkeleton } from "../../src/mcp/engines/bootstrap-navigator/skeleton.ts";
-import { extractWasmSkeleton } from "../../src/mcp/engines/bootstrap-navigator/wasm-extractor.ts";
+import {
+  computeFileSkeleton,
+  MAX_SKELETON_LINES,
+} from "../../src/mcp/engines/bootstrap-navigator/skeleton.ts";
+import {
+  __resetWasmCachesForTests,
+  extractWasmSkeleton,
+} from "../../src/mcp/engines/bootstrap-navigator/wasm-extractor.ts";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const grammarsDir = path.join(repoRoot, "data", "grammars");
 
 const PYTHON_SOURCE = [
   "import os",
@@ -384,6 +395,224 @@ describe("tree-sitter WASM skeleton extraction", () => {
       const legacyNames = new Map(legacy.symbols.map((symbol) => [symbol.name, symbol]));
       expect(legacyNames.get("inner")).toMatchObject({ kind: "function" });
       expect(legacyNames.has("Outer.inner")).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("tree-sitter WASM fail-closed error paths", () => {
+  function copyPythonGrammar(dir: string): void {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(
+      path.join(grammarsDir, "tree-sitter-python.wasm"),
+      path.join(dir, "tree-sitter-python.wasm"),
+    );
+  }
+
+  function manifestFor(bytes: Buffer): string {
+    return JSON.stringify({
+      version: 1,
+      files: {
+        "tree-sitter-python.wasm": {
+          sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+          bytes: bytes.length,
+        },
+      },
+    });
+  }
+
+  it("returns null for unsupported extensions and oversized sources", async () => {
+    expect(await extractWasmSkeleton("/virtual/file.txt", "def hello():\n    pass\n")).toBeNull();
+    expect(
+      await extractWasmSkeleton("/virtual/huge.py", "x".repeat(2_000_001)),
+    ).toBeNull();
+  });
+
+  it("rejects every malformed manifest shape and unverified grammar bytes", async () => {
+    const dir = withTempDir();
+    try {
+      copyPythonGrammar(dir);
+      process.env["NYXOWL_GRAMMARS_DIR"] = dir;
+      const manifestPath = path.join(dir, "manifest.json");
+      const grammarPath = path.join(dir, "tree-sitter-python.wasm");
+      const validBytes = fs.readFileSync(grammarPath);
+      const validSha = crypto.createHash("sha256").update(validBytes).digest("hex");
+
+      const manifests = [
+        "not json",
+        "null",
+        "[]",
+        JSON.stringify({ version: 2, files: {} }),
+        JSON.stringify({ version: 1, files: [] }),
+        JSON.stringify({ version: 1, files: {} }),
+        JSON.stringify({ version: 1, files: { "tree-sitter-python.wasm": "nope" } }),
+        JSON.stringify({
+          version: 1,
+          files: { "tree-sitter-python.wasm": { sha256: "xyz", bytes: validBytes.length } },
+        }),
+        JSON.stringify({
+          version: 1,
+          files: { "tree-sitter-python.wasm": { sha256: validSha, bytes: -1 } },
+        }),
+        JSON.stringify({
+          version: 1,
+          files: { "tree-sitter-python.wasm": { sha256: validSha, bytes: "10" } },
+        }),
+      ];
+
+      for (const manifest of manifests) {
+        fs.writeFileSync(manifestPath, manifest, "utf8");
+        __resetWasmCachesForTests();
+        await expect(
+          extractWasmSkeleton("/virtual/module.py", "def hello():\n    pass\n"),
+          manifest,
+        ).resolves.toBeNull();
+      }
+
+      fs.writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          version: 1,
+          files: {
+            "tree-sitter-python.wasm": {
+              sha256: validSha,
+              bytes: validBytes.length + 1,
+            },
+          },
+        }),
+        "utf8",
+      );
+      __resetWasmCachesForTests();
+      await expect(
+        extractWasmSkeleton("/virtual/module.py", "def hello():\n    pass\n"),
+      ).resolves.toBeNull();
+
+      const invalidWasm = Buffer.from("this is not a wasm grammar", "utf8");
+      fs.writeFileSync(grammarPath, invalidWasm);
+      fs.writeFileSync(manifestPath, manifestFor(invalidWasm), "utf8");
+      __resetWasmCachesForTests();
+      await expect(
+        extractWasmSkeleton("/virtual/module.py", "def hello():\n    pass\n"),
+      ).resolves.toBeNull();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects ASTs that exceed the node traversal budget", async () => {
+    __resetWasmCachesForTests();
+    const source = "x = 1\n".repeat(60_000);
+    await expect(extractWasmSkeleton("/virtual/budget.py", source)).resolves.toBeNull();
+  });
+
+  it("evicts the oldest language cache entry beyond 32 grammar paths", async () => {
+    const root = withTempDir();
+    try {
+      __resetWasmCachesForTests();
+      for (let i = 0; i < 33; i++) {
+        const dir = path.join(root, `grammars-${i}`);
+        copyPythonGrammar(dir);
+        fs.writeFileSync(
+          path.join(dir, "manifest.json"),
+          manifestFor(fs.readFileSync(path.join(dir, "tree-sitter-python.wasm"))),
+          "utf8",
+        );
+        process.env["NYXOWL_GRAMMARS_DIR"] = dir;
+        const symbols = await extractWasmSkeleton(
+          path.join(dir, "module.py"),
+          "def cached_symbol():\n    pass\n",
+        );
+        expect(symbols?.map((symbol) => symbol.name), `iteration ${i}`).toContain(
+          "cached_symbol",
+        );
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("normalizes pointer/generic/packaged Go receivers and Ruby visibility call forms", async () => {
+    const go = await extractWasmSkeleton(
+      "/virtual/receivers.go",
+      [
+        "package main",
+        "",
+        "type Server[T any] struct{}",
+        "",
+        "func (s *Server[T]) PointerGeneric() {}",
+        "",
+        "func (s Server[T]) ValueGeneric() {}",
+        "",
+        "func (s *pkg.Server) Packaged() {}",
+        "",
+      ].join("\n"),
+    );
+    expect(go).not.toBeNull();
+    const goNames = (go ?? []).map((symbol) => symbol.name).sort();
+    expect(goNames).toEqual([
+      "Server",
+      "Server.Packaged",
+      "Server.PointerGeneric",
+      "Server.ValueGeneric",
+    ]);
+
+    const ruby = await extractWasmSkeleton(
+      "/virtual/visibility.rb",
+      [
+        "class Thing",
+        "  private :hidden",
+        "  def hidden; end",
+        "",
+        "  public",
+        "  def shown; end",
+        "",
+        "  class << self",
+        "    def make; end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    expect(ruby).not.toBeNull();
+    const rubyByName = new Map((ruby ?? []).map((symbol) => [symbol.name, symbol]));
+    expect(rubyByName.get("Thing.hidden")).toMatchObject({ exported: false });
+    expect(rubyByName.get("Thing.shown")).toMatchObject({ exported: true });
+    expect(rubyByName.get("Thing.make")).toMatchObject({
+      kind: "method",
+      exported: true,
+    });
+  });
+});
+
+describe("skeleton file validation errors", () => {
+  it("rejects missing files and directories with ERR_INVALID_INPUT", async () => {
+    const dir = withTempDir();
+    try {
+      const missing = path.join(dir, "missing.ts");
+      await expect(computeFileSkeleton(missing)).rejects.toMatchObject({
+        code: "ERR_INVALID_INPUT",
+      });
+      await expect(computeFileSkeleton(dir)).rejects.toMatchObject({
+        code: "ERR_INVALID_INPUT",
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects files above the line cap with ERR_FILE_TOO_LARGE", async () => {
+    const dir = withTempDir();
+    try {
+      const file = path.join(dir, "many-lines.ts");
+      fs.writeFileSync(
+        file,
+        Array.from({ length: MAX_SKELETON_LINES + 1 }, () => "x").join("\n"),
+        "utf8",
+      );
+      await expect(computeFileSkeleton(file)).rejects.toMatchObject({
+        code: "ERR_FILE_TOO_LARGE",
+      });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

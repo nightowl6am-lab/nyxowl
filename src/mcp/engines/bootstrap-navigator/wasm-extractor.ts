@@ -5,13 +5,24 @@ import { fileURLToPath } from "node:url";
 import Parser from "web-tree-sitter";
 import type { SymbolSkeletonItem } from "./skeleton.ts";
 
-type SupportedLanguage = "python" | "go" | "rust";
+type SupportedLanguage =
+  | "python"
+  | "go"
+  | "rust"
+  | "java"
+  | "ruby"
+  | "php"
+  | "c_sharp";
 type SyntaxNode = Parser.SyntaxNode;
 
 const EXTENSION_LANGUAGE: Readonly<Record<string, SupportedLanguage>> = {
   ".py": "python",
   ".go": "go",
   ".rs": "rust",
+  ".java": "java",
+  ".rb": "ruby",
+  ".php": "php",
+  ".cs": "c_sharp",
 };
 
 /** Hard cap on source characters handed to the tree-sitter parser. */
@@ -439,10 +450,356 @@ function extractRust(root: SyntaxNode, sourceText: string): SymbolSkeletonItem[]
   return symbols;
 }
 
+function hasTextModifier(node: SyntaxNode, type: string): boolean {
+  return node.children.some(
+    (child) => child.type === type && /\b(?:public|protected)\b/.test(child.text),
+  );
+}
+
+function javaExportState(node: SyntaxNode): boolean {
+  const modifiers = node.children.find((child) => child.type === "modifiers");
+  return modifiers ? /\b(?:public|protected)\b/.test(modifiers.text) : false;
+}
+
+function csharpExportState(node: SyntaxNode): boolean {
+  return hasTextModifier(node, "modifier");
+}
+
+function phpExportState(node: SyntaxNode): boolean {
+  const visibility = node.children.find(
+    (child) => child.type === "visibility_modifier",
+  );
+  if (!visibility) return true;
+  return !/\b(?:private|protected)\b/.test(visibility.text);
+}
+
+function javaTypeKind(type: string): SymbolSkeletonItem["kind"] | null {
+  switch (type) {
+    case "class_declaration":
+      return "class";
+    case "interface_declaration":
+      return "interface";
+    case "enum_declaration":
+      return "enum";
+    case "record_declaration":
+      return "class";
+    default:
+      return null;
+  }
+}
+
+function extractJava(root: SyntaxNode, sourceText: string): SymbolSkeletonItem[] {
+  const symbols: SymbolSkeletonItem[] = [];
+
+  const visit = (
+    node: SyntaxNode,
+    owner: string | null,
+    ownerIsInterface: boolean,
+  ): void => {
+    const kind = javaTypeKind(node.type);
+    if (kind) {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) return;
+      const simpleName = nameNode.text;
+      const name = owner ? `${owner}.${simpleName}` : simpleName;
+      const parameters = node.childForFieldName("parameters");
+      const signature =
+        node.type === "record_declaration"
+          ? compactSignature(`record ${simpleName}${parameters?.text ?? ""}`)
+          : sourceSignature(sourceText, node, bodyStart(node));
+
+      symbols.push({
+        name,
+        kind,
+        signature,
+        ...lineRange(node),
+        exported: javaExportState(node),
+      });
+
+      const body = node.childForFieldName("body");
+      if (body) {
+        for (const child of body.namedChildren) {
+          visit(child, name, kind === "interface");
+        }
+      }
+      return;
+    }
+
+    if (
+      node.type === "method_declaration" ||
+      node.type === "constructor_declaration"
+    ) {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) return;
+      const simpleName = nameNode.text;
+      symbols.push({
+        name: owner ? `${owner}.${simpleName}` : simpleName,
+        kind: owner ? "method" : "function",
+        signature: sourceSignature(sourceText, node, bodyStart(node)),
+        ...lineRange(node),
+        // Java interface methods are implicitly public even without a modifier.
+        exported: ownerIsInterface || javaExportState(node),
+      });
+      return;
+    }
+
+    for (const child of node.namedChildren) visit(child, owner, ownerIsInterface);
+  };
+
+  for (const child of root.namedChildren) visit(child, null, false);
+  return symbols;
+}
+
 /**
- * Extracts a symbol skeleton for Python, Go, and Rust using tree-sitter WASM
- * grammars. Returns null when the grammar is unavailable or parsing fails;
- * callers are expected to fall back to the legacy regex outline.
+ * Ruby's bare `private` / `protected` / `public` lines parse as `identifier`
+ * nodes, while `private :name` parses as a `call`. Both forms toggle the
+ * visibility of the methods that follow in the same body scope.
+ */
+function rubyVisibilityToggle(node: SyntaxNode): "public" | "private" | null {
+  if (node.type === "identifier") {
+    if (node.text === "private" || node.text === "protected") return "private";
+    if (node.text === "public") return "public";
+    return null;
+  }
+  if (node.type === "call") {
+    const method = node.children.find((child) => child.type === "identifier");
+    const name = method?.text ?? node.text.split(/\s+/, 1)[0];
+    if (name === "private" || name === "protected") return "private";
+    if (name === "public") return "public";
+  }
+  return null;
+}
+
+function extractRuby(root: SyntaxNode, sourceText: string): SymbolSkeletonItem[] {
+  const symbols: SymbolSkeletonItem[] = [];
+
+  const visitBody = (body: SyntaxNode, owner: string | null): void => {
+    let exported = true;
+
+    for (const child of body.namedChildren) {
+      const toggle = rubyVisibilityToggle(child);
+      if (toggle === "private") {
+        exported = false;
+        continue;
+      }
+      if (toggle === "public") {
+        exported = true;
+        continue;
+      }
+
+      if (child.type === "module" || child.type === "class") {
+        const nameNode = child.childForFieldName("name");
+        if (!nameNode) continue;
+        const simpleName = nameNode.text;
+        const name = owner ? `${owner}.${simpleName}` : simpleName;
+        symbols.push({
+          name,
+          kind: "class",
+          signature: compactSignature(
+            `${child.type === "module" ? "module" : "class"} ${simpleName}`,
+          ),
+          ...lineRange(child),
+          exported: true,
+        });
+        const nestedBody = child.childForFieldName("body");
+        if (nestedBody) visitBody(nestedBody, name);
+        continue;
+      }
+
+      if (child.type === "method" || child.type === "singleton_method") {
+        const nameNode = child.childForFieldName("name");
+        if (!nameNode) continue;
+        const simpleName = nameNode.text;
+        symbols.push({
+          name: owner ? `${owner}.${simpleName}` : simpleName,
+          kind: owner ? "method" : "function",
+          signature: sourceSignature(sourceText, child, bodyStart(child)),
+          ...lineRange(child),
+          exported,
+        });
+        continue;
+      }
+
+      if (child.type === "singleton_class") {
+        const nestedBody =
+          child.childForFieldName("body") ??
+          child.namedChildren.find((grandchild) => grandchild.type === "body_statement");
+        if (nestedBody) visitBody(nestedBody, owner);
+      }
+    }
+  };
+
+  visitBody(root, null);
+  return symbols;
+}
+
+function phpTypeKind(type: string): SymbolSkeletonItem["kind"] | null {
+  switch (type) {
+    case "class_declaration":
+      return "class";
+    case "interface_declaration":
+    case "trait_declaration":
+      return "interface";
+    case "enum_declaration":
+      return "enum";
+    default:
+      return null;
+  }
+}
+
+function extractPhp(root: SyntaxNode, sourceText: string): SymbolSkeletonItem[] {
+  const symbols: SymbolSkeletonItem[] = [];
+
+  const visit = (node: SyntaxNode, owner: string | null): void => {
+    const kind = phpTypeKind(node.type);
+    if (kind) {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) return;
+      const simpleName = nameNode.text;
+      const name = owner ? `${owner}.${simpleName}` : simpleName;
+      symbols.push({
+        name,
+        kind,
+        signature: sourceSignature(sourceText, node, bodyStart(node)),
+        ...lineRange(node),
+        exported: phpExportState(node),
+      });
+      const body = node.childForFieldName("body");
+      if (body) {
+        for (const child of body.namedChildren) visit(child, name);
+      }
+      return;
+    }
+
+    if (node.type === "method_declaration") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) return;
+      const simpleName = nameNode.text;
+      symbols.push({
+        name: owner ? `${owner}.${simpleName}` : simpleName,
+        kind: owner ? "method" : "function",
+        signature: sourceSignature(sourceText, node, bodyStart(node)),
+        ...lineRange(node),
+        exported: phpExportState(node),
+      });
+      return;
+    }
+
+    if (node.type === "function_definition") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) return;
+      symbols.push({
+        name: nameNode.text,
+        kind: "function",
+        signature: sourceSignature(sourceText, node, bodyStart(node)),
+        ...lineRange(node),
+        exported: true,
+      });
+      return;
+    }
+
+    for (const child of node.namedChildren) visit(child, owner);
+  };
+
+  for (const child of root.namedChildren) visit(child, null);
+  return symbols;
+}
+
+function csharpTypeKind(type: string): SymbolSkeletonItem["kind"] | null {
+  switch (type) {
+    case "class_declaration":
+    case "record_declaration":
+      return "class";
+    case "struct_declaration":
+      return "struct";
+    case "interface_declaration":
+      return "interface";
+    case "enum_declaration":
+      return "enum";
+    default:
+      return null;
+  }
+}
+
+function extractCSharp(root: SyntaxNode, sourceText: string): SymbolSkeletonItem[] {
+  const symbols: SymbolSkeletonItem[] = [];
+
+  const visit = (
+    node: SyntaxNode,
+    owner: string | null,
+    ownerIsInterface: boolean,
+  ): void => {
+    if (node.type === "namespace_declaration") {
+      const body = node.childForFieldName("body");
+      if (body) {
+        for (const child of body.namedChildren) {
+          visit(child, owner, ownerIsInterface);
+        }
+      } else {
+        for (const child of node.namedChildren) visit(child, owner, ownerIsInterface);
+      }
+      return;
+    }
+
+    const kind = csharpTypeKind(node.type);
+    if (kind) {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) return;
+      const simpleName = nameNode.text;
+      const name = owner ? `${owner}.${simpleName}` : simpleName;
+      symbols.push({
+        name,
+        kind,
+        signature: sourceSignature(sourceText, node, bodyStart(node)),
+        ...lineRange(node),
+        exported: csharpExportState(node),
+      });
+      const body = node.childForFieldName("body");
+      if (body) {
+        for (const child of body.namedChildren) {
+          visit(child, name, kind === "interface");
+        }
+      }
+      return;
+    }
+
+    if (
+      node.type === "method_declaration" ||
+      node.type === "constructor_declaration"
+    ) {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) return;
+      const simpleName = nameNode.text;
+      symbols.push({
+        name: owner ? `${owner}.${simpleName}` : simpleName,
+        kind: owner ? "method" : "function",
+        signature: sourceSignature(sourceText, node, bodyStart(node)),
+        ...lineRange(node),
+        // C# interface members are implicitly public even without a modifier.
+        exported: ownerIsInterface || csharpExportState(node),
+      });
+      return;
+    }
+
+    if (
+      node.type === "property_declaration" ||
+      node.type === "field_declaration"
+    ) {
+      return;
+    }
+
+    for (const child of node.namedChildren) visit(child, owner, ownerIsInterface);
+  };
+
+  for (const child of root.namedChildren) visit(child, null, false);
+  return symbols;
+}
+
+/**
+ * Extracts a symbol skeleton for Python, Go, Rust, Java, Ruby, PHP, and C#
+ * using tree-sitter WASM grammars. Returns null when the grammar is
+ * unavailable or parsing fails; callers are expected to fall back to the
+ * legacy regex outline.
  */
 export async function extractWasmSkeleton(
   filePath: string,
@@ -472,9 +829,24 @@ export async function extractWasmSkeleton(
     if (!tree) return null;
     if (exceedsTraversalBudget(tree.rootNode)) return null;
 
-    if (language === "python") return extractPython(tree.rootNode, sourceText);
-    if (language === "go") return extractGo(tree.rootNode, sourceText);
-    return extractRust(tree.rootNode, sourceText);
+    switch (language) {
+      case "python":
+        return extractPython(tree.rootNode, sourceText);
+      case "go":
+        return extractGo(tree.rootNode, sourceText);
+      case "rust":
+        return extractRust(tree.rootNode, sourceText);
+      case "java":
+        return extractJava(tree.rootNode, sourceText);
+      case "ruby":
+        return extractRuby(tree.rootNode, sourceText);
+      case "php":
+        return extractPhp(tree.rootNode, sourceText);
+      case "c_sharp":
+        return extractCSharp(tree.rootNode, sourceText);
+      default:
+        return null;
+    }
   } catch {
     return null;
   } finally {

@@ -504,7 +504,7 @@ export function extractApiEndpoints(
       }
 
       const pyRouteRe =
-        /@([A-Za-z_$][\w$]*)\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["'][^)]{0,400}\)[\s\S]{0,400}?return\s+\{([^}]*)\}/gi;
+        /@([A-Za-z_$][\w$]*)\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["'][^)]{0,400}\)(?:(?!\n\s*@[A-Za-z_$][\w$]*\.(?:get|post|put|patch|delete)\s*\()[\s\S]){0,400}?return\s+\{([^}]*)\}/gi;
       let m: RegExpExecArray | null;
       while ((m = pyRouteRe.exec(text)) !== null) {
         const variable = m[1];

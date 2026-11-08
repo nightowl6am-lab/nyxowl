@@ -81,6 +81,87 @@ export function classifySymbolOccurrence(
     return "call";
   }
 
+  if (ext === ".java") {
+    const modifiers =
+      "(?:public|protected|private|static|final|abstract|sealed|non-sealed|strictfp|default|synchronized|native|transient|volatile)";
+    if (
+      new RegExp(
+        `^(?:${modifiers}\\s+){0,12}(?:class|interface|enum|record)\\s+${escaped}\\b`,
+      ).test(trimmed)
+    ) {
+      return "definition";
+    }
+    // `new Symbol(` is construction, never a declaration.
+    if (new RegExp(`\\bnew\\s+${escaped}\\s*\\(`).test(trimmed)) {
+      return "call";
+    }
+    if (
+      new RegExp(
+        `^(?!(?:return|new|throw|else|case|await|yield)\\b)(?:${modifiers}\\s+){0,12}(?:[A-Za-z_$][\\w$<>\\[\\].?,]*\\s+){0,12}${escaped}\\s*\\(`,
+      ).test(trimmed)
+    ) {
+      return "definition";
+    }
+    if (new RegExp(`^import\\b.*\\b${escaped}\\b`).test(trimmed)) {
+      return "import";
+    }
+    return "call";
+  }
+
+  if (ext === ".rb") {
+    if (
+      new RegExp(`^(?:class|module)\\s+(?:::)?${escaped}\\b`).test(trimmed) ||
+      new RegExp(`^def\\s+(?:self\\.)?${escaped}\\b`).test(trimmed)
+    ) {
+      return "definition";
+    }
+    if (new RegExp(`^require(?:_relative)?\\b.*\\b${escaped}\\b`).test(trimmed)) {
+      return "import";
+    }
+    return "call";
+  }
+
+  if (ext === ".php") {
+    if (
+      new RegExp(
+        `^(?:(?:abstract|final|readonly)\\s+)*(?:class|interface|trait|enum)\\s+${escaped}\\b`,
+      ).test(trimmed) ||
+      new RegExp(`\\bfunction\\s+${escaped}\\b`).test(trimmed)
+    ) {
+      return "definition";
+    }
+    if (new RegExp(`^use\\b.*\\b${escaped}\\b`).test(trimmed)) {
+      return "import";
+    }
+    return "call";
+  }
+
+  if (ext === ".cs") {
+    const modifiers =
+      "(?:public|private|protected|internal|static|sealed|abstract|partial|readonly|virtual|override|async|extern|unsafe|volatile)";
+    if (
+      new RegExp(
+        `^(?:${modifiers}\\s+){0,12}(?:class|interface|struct|enum|record)\\s+${escaped}\\b`,
+      ).test(trimmed)
+    ) {
+      return "definition";
+    }
+    if (new RegExp(`\\bnew\\s+${escaped}\\s*\\(`).test(trimmed)) {
+      return "call";
+    }
+    if (
+      new RegExp(
+        `^(?!(?:return|new|throw|else|case|await|yield|using)\\b)(?:${modifiers}\\s+){0,12}(?:[A-Za-z_$][\\w$<>\\[\\].?,]*\\s+){0,12}${escaped}\\s*\\(`,
+      ).test(trimmed)
+    ) {
+      return "definition";
+    }
+    if (new RegExp(`^using\\b.*\\b${escaped}\\b`).test(trimmed)) {
+      return "import";
+    }
+    return "call";
+  }
+
   // TypeScript/JavaScript and unknown extensions keep the original heuristic,
   // but an import line must actually mention the traced symbol.
   if (

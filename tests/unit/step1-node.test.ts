@@ -272,8 +272,7 @@ describe("Step 1 — Core & State Layer", () => {
     }
   });
 
-  it("sqlite: supports concurrent two-process writers in WAL mode without SQLITE_BUSY failure", async () => {
-    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-db-conc-"));
+  it("sqlite: supports concurrent two-process writers in WAL mode without SQLITE_BUSY failure", async () => {    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-db-conc-"));
     try {
       const db = StateDb.openForRepo("demo-12345678", tmpHome);
       const dbPath = db.dbPath;
@@ -318,5 +317,213 @@ describe("Step 1 — Core & State Layer", () => {
     } finally {
       fs.rmSync(tmpHome, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Config validation and JSONC parsing", () => {
+  function withConfigDirs(): { tmpHome: string; tmpRepo: string; cleanup: () => void } {
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-cfg-validate-home-"));
+    const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-cfg-validate-repo-"));
+    fs.mkdirSync(path.join(tmpRepo, ".nyxowl"), { recursive: true });
+    return {
+      tmpHome,
+      tmpRepo,
+      cleanup: () => {
+        fs.rmSync(tmpHome, { recursive: true, force: true });
+        fs.rmSync(tmpRepo, { recursive: true, force: true });
+      },
+    };
+  }
+
+  function writeRepoConfig(tmpRepo: string, value: unknown): void {
+    fs.writeFileSync(
+      path.join(tmpRepo, ".nyxowl", "config.json"),
+      JSON.stringify(value),
+      "utf8",
+    );
+  }
+
+  function expectInvalid(tmpRepo: string, tmpHome: string, value: unknown): void {
+    writeRepoConfig(tmpRepo, value);
+    assert.throws(
+      () => loadConfig({ projectPath: tmpRepo, nyxHome: tmpHome }),
+      (err: unknown) => err instanceof NyxError && err.code === "ERR_CONFIG_INVALID",
+    );
+  }
+
+  it("rejects every invalid config field with ERR_CONFIG_INVALID", () => {
+    const { tmpHome, tmpRepo, cleanup } = withConfigDirs();
+    try {
+      const invalidConfigs: unknown[] = [
+        { version: 2 },
+        { preferredHost: "vscode" },
+        { preferredHost: 42 },
+        { baseBranch: "" },
+        { baseBranch: 7 },
+        { protectedBranches: "main" },
+        { protectedBranches: ["main", 1] },
+        { worktreeRoot: "somewhere" },
+        { commands: null },
+        { commands: [] },
+        { commands: { typecheck: 42 } },
+        { provision: null },
+        { provision: { install: "yes" } },
+        { provision: { linkEnv: "yes" } },
+        { gates: null },
+        { gates: { verify: "maybe" } },
+        { slop: null },
+        { slop: { scope: "all" } },
+        { slop: { disable: "SLOP_TODO" } },
+        { slop: { advisoryAsBlocking: "yes" } },
+        { github: null },
+        { github: { mode: "ssh" } },
+        { github: { attribution: "team" } },
+        { github: { appId: 123 } },
+        { budgets: null },
+        { budgets: { maxToolOutputTokens: 5 } },
+        { budgets: { subagentSummaryTokens: 1.5 } },
+        { budgets: { handoffTokens: "400" } },
+        { network: null },
+        { network: { depGuard: "open" } },
+        { network: { webFetchAllow: "docs.example.com" } },
+        { network: { webFetchDeny: ["ok", 1] } },
+        { network: { maxQueryChars: 5 } },
+        { deps: null },
+        { deps: { allow: "zod" } },
+        { deps: { deny: [1] } },
+        { probe: null },
+        { probe: { allowedHosts: "localhost" } },
+        { unknownKey: true },
+      ];
+
+      for (const config of invalidConfigs) {
+        expectInvalid(tmpRepo, tmpHome, config);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("merges valid overrides, ignores $schema/undefined, and keeps defaults for omitted fields", () => {
+    const { tmpHome, tmpRepo, cleanup } = withConfigDirs();
+    try {
+      fs.writeFileSync(
+        path.join(tmpHome, "config.json"),
+        `{
+          // global layer
+          "preferredHost": "opencode",
+          "budgets": { "maxToolOutputTokens": 1200 },
+        }`,
+        "utf8",
+      );
+      writeRepoConfig(tmpRepo, {
+        $schema: "https://example.com/schema.json",
+        version: 1,
+        preferredHost: null,
+        baseBranch: "  develop  ",
+        protectedBranches: ["main", "release"],
+        worktreeRoot: "in-repo",
+        commands: { typecheck: "tsc --noEmit", lint: null },
+        provision: { install: "off", linkEnv: false },
+        gates: { verify: "auto", seam: "off", slop: "required", exploit: "auto" },
+        slop: { scope: "full", disable: ["SLOP_TODO"], advisoryAsBlocking: true },
+        github: { mode: "local", attribution: "none", appId: null },
+        budgets: {
+          maxToolOutputTokens: 1400,
+          subagentSummaryTokens: 240,
+          handoffTokens: 380,
+          agentPromptTokens: 1150,
+          maxToolCallsPerTask: 300,
+        },
+        network: {
+          depGuard: "warn",
+          webFetchAllow: ["docs.example.com"],
+          webFetchDeny: ["evil.example.com"],
+          maxQueryChars: 128,
+        },
+        deps: { allow: ["zod"], deny: ["left-pad"] },
+        probe: { allowedHosts: ["127.0.0.1"] },
+        ignoredUndefined: undefined,
+      });
+
+      const cfg = loadConfig({
+        projectRoot: tmpRepo,
+        nyxowlHome: tmpHome,
+        cliOverrides: { baseBranch: "main", commands: { build: "npm run build" } },
+      });
+      assert.equal(cfg.preferredHost, null);
+      assert.equal(cfg.baseBranch, "main");
+      assert.deepEqual(cfg.protectedBranches, ["main", "release"]);
+      assert.equal(cfg.worktreeRoot, "in-repo");
+      assert.deepEqual(cfg.commands, {
+        typecheck: "tsc --noEmit",
+        lint: null,
+        test: null,
+        build: "npm run build",
+      });
+      assert.deepEqual(cfg.provision, { install: "off", linkEnv: false });
+      assert.deepEqual(cfg.gates, {
+        verify: "auto",
+        seam: "off",
+        slop: "required",
+        exploit: "auto",
+      });
+      assert.deepEqual(cfg.slop, {
+        scope: "full",
+        disable: ["SLOP_TODO"],
+        advisoryAsBlocking: true,
+      });
+      assert.deepEqual(cfg.github, { mode: "local", attribution: "none", appId: null });
+      assert.equal(cfg.budgets.maxToolOutputTokens, 1400);
+      assert.equal(cfg.network.depGuard, "warn");
+      assert.deepEqual(cfg.deps, { allow: ["zod"], deny: ["left-pad"] });
+      assert.deepEqual(cfg.probe.allowedHosts, ["127.0.0.1"]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("throws ERR_CONFIG_INVALID for malformed JSONC in global and repo layers", () => {
+    const { tmpHome, tmpRepo, cleanup } = withConfigDirs();
+    try {
+      fs.writeFileSync(path.join(tmpHome, "config.json"), "{ not json", "utf8");
+      assert.throws(
+        () => loadConfig({ projectPath: tmpRepo, nyxHome: tmpHome }),
+        (err: unknown) => err instanceof NyxError && err.code === "ERR_CONFIG_INVALID",
+      );
+
+      fs.writeFileSync(path.join(tmpHome, "config.json"), '{"version": 1}', "utf8");
+      fs.writeFileSync(
+        path.join(tmpRepo, ".nyxowl", "config.json"),
+        '{"version": 1, "gates": }',
+        "utf8",
+      );
+      assert.throws(
+        () => loadConfig({ projectPath: tmpRepo, nyxHome: tmpHome }),
+        (err: unknown) => err instanceof NyxError && err.code === "ERR_CONFIG_INVALID",
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("parses comments/trailing commas while preserving comment markers inside strings and escaping", () => {
+    assert.deepEqual(
+      parseJsonc<Record<string, unknown>>(
+        '{"url": "https://example.com/a//b", "escaped": "a\\"b", /* block */ "n": 1,}',
+      ),
+      { url: "https://example.com/a//b", escaped: 'a"b', n: 1 },
+    );
+    assert.deepEqual(parseJsonc<Record<string, unknown>>('{"a": 1} /* unterminated'), {
+      a: 1,
+    });
+    assert.deepEqual(parseJsonc<number[]>('[1, 2, 3,]'), [1, 2, 3]);
+    assert.throws(
+      () => parseJsonc("{bad", "inline-test"),
+      (err: unknown) =>
+        err instanceof NyxError &&
+        err.code === "ERR_CONFIG_INVALID" &&
+        err.message.includes("inline-test"),
+    );
   });
 });
