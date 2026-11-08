@@ -50,9 +50,10 @@ verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
 
 ## Current status
 
-- M0 through M6 are complete in source. The live OpenCode host-isolation
-  transcript for M6 passed on attempt 2 per `qa/EVIDENCE-M6.md`. M7-lite (the
-  eval matrix and real-use dogfood) is present; full M7 is not started.
+- M0 through M7 are complete in source. The live OpenCode host-isolation
+  transcript for M6 passed on attempt 2 per `qa/EVIDENCE-M6.md`. M7-lite landed
+  in PR A; full M7 (23-case matrix, red-team proofs, and the real-repository
+  dogfood) landed in PR D.
 - The runtime runs gates 1-6: lint, the vulnerable snapshot, the patched
   snapshot, flake re-runs, the hidden variants, and AST mutation scoring.
 - Every terminal run now writes `test.py`, a canonical `proof.json`, an
@@ -68,7 +69,8 @@ verdict wording. Flakiness is a reason code (`FLAKY`), not a flag.
   The live OpenCode host-isolation transcript passed on attempt 2 per
   `qa/EVIDENCE-M6.md`.
 - M7-lite adds seven eval cases, a model-free eval runner, and a real-use
-  dogfood runner; its evidence is `qa/EVIDENCE-M7.md`. It does not claim full M7.
+  dogfood runner. Full M7 adds the 23-case matrix, eight red-team proofs, and
+  the real-repository dogfood. Evidence is `qa/EVIDENCE-M7.md`.
 - M1 through M6 changed no dependencies, no receipt kind, and no TypeScript
   surface.
 
@@ -279,6 +281,36 @@ any expected-`PROVEN` miss, or any failed `tw-recheck`. The dogfood runner drive
 the real stdio MCP server against a temporary Git repository, runs the real
 `npm run test` script, and verifies four receipts at the local PR gate. Missing
 `dist`, bubblewrap, or the runtime venv skips with exit `2`.
+
+### Full M7 acceptance
+
+These commands are rootless and offline. They use temporary roots only. The
+matrix is model-free; `model_tokens` is a hard zero.
+
+```bash
+TW_VENV_PYTHON="$HOME/.nyxowl/test-writer/venv/bin/python" \
+  python3 test-writer/qa/m7_full_eval.py --rounds 3 \
+  --out /tmp/opencode/m7-full-eval
+node test-writer/qa/m7_real_dogfood.mjs
+```
+
+Expected final lines:
+
+```
+M7_FULL_EVAL: PASS
+SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)
+```
+
+The full matrix covers 10 expected `PROVEN` cases, 5 negatives with the exact
+expected `(verdict, reason)` (`n1`/`n3` `UNPROVEN`/`NO_DETECTOR_HIT_ON_VULN`;
+`n2`/`n4`/`n5` `REFUTED`/`PATCHED_STILL_LEAKS`), and 8 red-team proofs that must
+stay non-`PROVEN`. It fails closed on any false `PROVEN`, any negative
+verdict/reason mismatch, any expected-`PROVEN` miss, or any failed `tw-recheck`.
+The real-repository dogfood clones a tracked-only `real-estate-os`, commits a
+real Vitest smoke test in an external worktree, runs the repo's real
+`pnpm run test` from DNA, and requires GREEN verify/seam/slop/exploit receipts
+plus a four-receipt local PR. It never reads `.env`, never installs, and never
+uses `commandsOverride`.
 
 ### Recheck contract
 

@@ -252,8 +252,11 @@ M3 through M6 are complete. The `nyx-testwriter` agent and its seven
 model-free three-run fixture matrix, a parent stdio MCP end-to-end test, and
 deny-by-default OpenCode permissions for the subagent. The live OpenCode
 host-isolation transcript passed on attempt 2 per `qa/EVIDENCE-M6.md`, so M6 is
-complete. M7-lite adds the seven-case eval matrix and the real-use dogfood
-runner (`qa/m7_lite_eval.py`, `qa/m7_dogfood.mjs`); full M7 remains not started.
+complete. M7-lite added the seven-case eval matrix and the real-use dogfood
+runner (`qa/m7_lite_eval.py`, `qa/m7_dogfood.mjs`). Full M7 is complete: the
+23-case matrix and red-team corpus are in `qa/m7_cases_full/`,
+`qa/m7_redteam/`, and `qa/m7_full_eval.py`, and the real-repository dogfood is
+`qa/m7_real_dogfood.mjs`; evidence is `qa/EVIDENCE-M7.md`.
 
 M6 keeps the owner-only runtime overrides (`TW_INSTALL_ROOT`, `TW_STORE_ROOT`,
 `TW_TMP_ROOT`, `TW_WORKSPACE_ROOT`, `TW_VENV_PYTHON`) on the wrappers a brokered
