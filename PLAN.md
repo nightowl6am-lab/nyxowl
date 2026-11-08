@@ -3,7 +3,7 @@
 This document is the committed master specification for Nyxowl v1. It records
 the product contract, the runtime boundaries, the state model, and the gates a
 change must satisfy. It is descriptive of the shipped code and does not claim
-work that has not landed. In particular, it does **not** claim full M7.
+work that has not landed.
 
 ## 1. Purpose
 
@@ -144,17 +144,27 @@ Status:
   MCP dogfood are recorded in
   [`test-writer/qa/EVIDENCE-M7.md`](./test-writer/qa/EVIDENCE-M7.md), with
   zero false `PROVEN` verdicts.
-- **Full M7: deferred to PR D** and not claimed here.
+- **Full M7: complete** (PR D). The 23-case matrix (10 positives, 5 negatives,
+  8 red-team proofs), the three-run worst-of-3 matrix, and the real-repository
+  `real-estate-os` dogfood passed. Measured: recall 1.0, false_reject 0,
+  false_proven 0, negatives 15/15 exact, red-team 24/24 non-`PROVEN`,
+  `model_tokens` 0. Evidence:
+  [`test-writer/qa/EVIDENCE-M7.md`](./test-writer/qa/EVIDENCE-M7.md).
 
 Key evidence paths:
 
 - `test-writer/qa/EVIDENCE-M6.md` — advisory finish, three-run matrix, parent
   E2E, and the attempt-2 live isolation result.
-- `test-writer/qa/EVIDENCE-M7.md` — M7-lite matrix and dogfood.
+- `test-writer/qa/EVIDENCE-M7.md` — M7-lite matrix and dogfood; full-M7
+  23-case matrix, red-team proofs, three-run metrics, and real-repository
+  dogfood.
 - `test-writer/qa/m6_threerun.py`, `test-writer/qa/m6_parent_e2e.mjs` — M6
   model-free matrices.
 - `test-writer/qa/m7_lite_eval.py`, `test-writer/qa/m7_dogfood.mjs` — M7-lite
   matrix and dogfood.
+- `test-writer/qa/m7_full_eval.py`, `test-writer/qa/m7_cases_full/`,
+  `test-writer/qa/m7_redteam/`, `test-writer/qa/m7_real_dogfood.mjs` — full-M7
+  matrix, red-team corpus, and real-repository dogfood.
 - `test-writer/selftests/run_all.py` — rootless M0–M6 self-tests.
 - `test-writer/PLAN_STATUS.md` — milestone tracker.
 
@@ -204,7 +214,6 @@ A release is publishable when:
 - Native Windows or macOS support.
 - A root or privileged Test-Writer install; `/opt`, `/var/lib`, sudo, and a
   separate grader OS user are out of scope.
-- Full M7 in this change set; it is deferred to PR D.
 - Network calls at runtime that are not explicitly bounded, loopback-only, or
   opt-in (for example `nyx_web_fetch`, OSV lookups, and loopback probes).
 - New MCP engines, new `nyx_*` tool names, or new dependencies outside the

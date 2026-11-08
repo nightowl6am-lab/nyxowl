@@ -8,7 +8,9 @@ release that fails any gate below.
 
 - [ ] The work is merged to `main` and the working tree is clean.
 - [ ] `CHANGELOG.md` has honest entries for every user-visible change.
-- [ ] Full M7 is not claimed anywhere unless PR D has landed.
+- [x] Full M7 evidence is present: `test-writer/qa/EVIDENCE-M7.md` records
+      `M7_FULL_EVAL: PASS` with recall 1.0, false_reject 0, and false_proven 0,
+      plus `SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)`.
 - [ ] The version in `package.json` is the intended release version.
 - [ ] `docs/updating.md` and `README.md` describe the current CLI behavior.
 
@@ -39,6 +41,9 @@ npm pack --dry-run
 python3 -m compileall -q test-writer
 python3 test-writer/fixtures/build_fixtures.py --verify
 python3 test-writer/selftests/run_all.py
+TW_VENV_PYTHON="$HOME/.nyxowl/test-writer/venv/bin/python" \
+  python3 test-writer/qa/m7_full_eval.py --rounds 3
+node test-writer/qa/m7_real_dogfood.mjs
 ```
 
 Use an existing Test-Writer venv via `TW_VENV_PYTHON` when the self-tests need
@@ -56,6 +61,9 @@ Expected highlights:
   `FIXTURES_VERIFY: PASS`.
 - The rootless self-tests print `M0_SELFTESTS: PASS` and
   `M1M3_SELFTESTS: PASS`.
+- The full-M7 matrix prints `M7_FULL_EVAL: PASS` with recall 1.0 and
+  false_proven 0; the real-repository dogfood prints
+  `SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)`.
 
 ## 4. CI gates
 

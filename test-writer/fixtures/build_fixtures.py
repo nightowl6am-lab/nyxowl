@@ -56,6 +56,20 @@ STATE_PARENTS: dict[str, str | None] = {
     "m7p4": None,
     "m7v5": None,
     "m7p5": None,
+    # The full-M7 eval states are independent roots appended after the M7-lite
+    # states so no earlier state hash can move.
+    "m7v6": None,
+    "m7p6": None,
+    "m7v7": None,
+    "m7p7": None,
+    "m7v8": None,
+    "m7p8": None,
+    "m7v9": None,
+    "m7p9": None,
+    "m7v10": None,
+    "m7p10": None,
+    "m7x4": None,
+    "m7p5i": None,
 }
 STATE_MESSAGES = {
     "a": "state a: vulnerable decode",
@@ -73,6 +87,18 @@ STATE_MESSAGES = {
     "m7p4": "state m7p4: single decode plus containment",
     "m7v5": "state m7v5: backslash normalise",
     "m7p5": "state m7p5: normalise plus containment",
+    "m7v6": "state m7v6: normpath join without containment",
+    "m7p6": "state m7p6: realpath commonpath containment",
+    "m7v7": "state m7v7: realpath prefix check on joined name",
+    "m7p7": "state m7p7: realpath prefix check with separator",
+    "m7v8": "state m7v8: literal dotdot check before NFKC",
+    "m7p8": "state m7p8: NFKC then realpath containment",
+    "m7v9": "state m7v9: naive join follows symlinks",
+    "m7p9": "state m7p9: realpath containment blocks symlinks",
+    "m7v10": "state m7v10: leading dotdot block allows absolute paths",
+    "m7p10": "state m7p10: dotdot and absolute block plus containment",
+    "m7x4": "state m7x4: m7v4 codec plus unrelated note",
+    "m7p5i": "state m7p5i: incomplete backslash fix",
 }
 STATE_ORDER = (
     "a",
@@ -90,6 +116,18 @@ STATE_ORDER = (
     "m7p4",
     "m7v5",
     "m7p5",
+    "m7v6",
+    "m7p6",
+    "m7v7",
+    "m7p7",
+    "m7v8",
+    "m7p8",
+    "m7v9",
+    "m7p9",
+    "m7v10",
+    "m7p10",
+    "m7x4",
+    "m7p5i",
 )
 VARIANT_REF_KEYS = ("still_vulnerable_ref", "fixed_differently_ref")
 REQUIRED_FILES = ("pkg/__init__.py", "pkg/codec.py", "data/greeting.txt")

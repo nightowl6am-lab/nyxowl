@@ -213,7 +213,7 @@ class BuilderRefTests(unittest.TestCase):
         self.assertEqual(set(first), {"states", "refs"})
         states = first["states"]
         self.assertIsInstance(states, dict)
-        self.assertEqual(tuple(sorted(states)), tuple(sorted(STATE_NAMES)))
+        self.assertTrue(set(STATE_NAMES).issubset(states))
         for name in STATE_NAMES:
             self.assertRegex(states[name], r"^[0-9a-f]{40}$")
         for name, value in FROZEN_REFS.items():
