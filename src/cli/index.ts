@@ -16,6 +16,7 @@ import { runPreCompactCli } from "./hooks/pre-compact.ts";
 import { buildHydrateDigestForHook, runSessionStartCli } from "./hooks/session-start.ts";
 import { launchNyxowlSession } from "./launcher.ts";
 import { uninstallFromManifest, upsertManagedBlockFile } from "./manifest.ts";
+import { runMcpSmoke } from "./mcp-smoke.ts";
 import { ensureFirstRunSetup, NYXOWL_VERSION } from "./setup.ts";
 import {
   ensureTestWriterRuntime,
@@ -167,6 +168,10 @@ export async function runCli(
       ...(options?.testWriterSourceDir ? { testWriterSourceDir: options.testWriterSourceDir } : {}),
       installTestWriter,
     });
+    const smoke = await runMcpSmoke();
+    const smokeLine = smoke.ok
+      ? `MCP Smoke Test: OK (${smoke.message})`
+      : `MCP Smoke Test: FAIL (${smoke.message})`;
     const lines = [
       ...setupRes.summaryLines,
       "OpenCode Status:",
@@ -178,9 +183,13 @@ export async function runCli(
               : "not found"
           }${h.versionDriftWarning ? ` [WARN: ${h.versionDriftWarning}]` : ""}`,
       ),
-      "MCP Smoke Test: OK (38 tools registered)",
+      smokeLine,
     ];
-    return { exitCode: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };
+    return {
+      exitCode: smoke.ok ? 0 : 1,
+      stdout: `${lines.join("\n")}\n`,
+      stderr: smoke.ok ? "" : `${smoke.message}\n`,
+    };
   }
 
   // 4. nyxowl status [path]

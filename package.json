@@ -28,7 +28,8 @@
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
     "CHANGELOG.md",
-    "README.md"
+    "README.md",
+    "PLAN.md"
   ],
   "scripts": {
     "build": "tsup",
