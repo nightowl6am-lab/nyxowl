@@ -29,7 +29,7 @@ nyxowl doctor
 nyxowl /path/to/project
 ```
 
-`nyxowl doctor` checks runtimes, reports OpenCode status, reports the 11 per-agent skill slots, reports Test-Writer runtime status, and reports the registered MCP tool count. Your existing state and the OpenCode package are reused or regenerated as described below.
+`nyxowl doctor` checks runtimes, reports OpenCode status, reports the 11 per-agent skill slots, reports Test-Writer runtime status, and performs a live MCP `ListTools` round-trip against the in-process server (it reports the number of tools actually listed, not a hardcoded count). Your existing state and the OpenCode package are reused or regenerated as described below.
 
 If `nyxowl doctor` or the first run after an upgrade reports that the Test-Writer runtime is missing, install it as your normal user (no root or sudo):
 
@@ -83,7 +83,7 @@ Nyxowl does not modify repository files during an upgrade. Optional files writte
 2. `nyxowl doctor` — confirm OpenCode status, the 11 skill slots, and runtimes.
 3. Relaunch OpenCode so it loads the regenerated package.
 4. `nyxowl status [path]` — confirm worktrees, slices, locks, and receipts are intact.
-5. If a repository moved, run `nyxowl relink <old-path> <new-path>`.
+5. If a repository moved, run `nyxowl relink <old-path> <new-path>`. The old path must still exist when you run the command (relink resolves the old repo id from it), so copy the repository to the new location first, run relink, and only then remove the old path.
 
 ## Rollback
 
@@ -104,6 +104,7 @@ Local SQLite schema migrations are forward-only (`PRAGMA user_version`; only mig
 | `nyxowl doctor` reports OpenCode version drift | Update the OpenCode binary, or treat the warning as advisory until the adapter is verified against the new major version. |
 | OpenCode configuration looks stale | Relaunch OpenCode; `nyxowl doctor` also regenerates the package when the install-manifest version differs. |
 | Stale worktrees | `nyxowl worktree list` inspects recorded worktrees; `prune` is currently an alias of `list` and does not delete anything. `nyxowl worktree remove <slug>` only marks the database record removed; delete any leftover directory manually. |
+| Repository moved, state missing | Copy the repository to the new path first, run `nyxowl relink <old-path> <new-path>` while the old path still exists, then remove the old path. Relink cannot resolve the old repo id once the old path is gone. |
 | Full reset | Back up `~/.nyxowl` first (see Rollback); `nyxowl uninstall [--purge] [--yes]` restores user configs and removes Nyxowl files. |
 | Source installer | Build and run from the checkout instead of npm; source installers do not use the published package. |
 

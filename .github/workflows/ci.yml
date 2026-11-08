@@ -46,3 +46,62 @@ jobs:
           npm install --prefix /tmp/nyxowl-smoke --ignore-scripts "./$TARBALL"
           /tmp/nyxowl-smoke/node_modules/.bin/nyxowl --version
           /tmp/nyxowl-smoke/node_modules/.bin/nyxowl doctor
+
+      - name: Fresh-HOME lifecycle matrix
+        if: matrix.node-version == '22.13.1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          NYX_BIN=/tmp/nyxowl-smoke/node_modules/.bin/nyxowl
+          WORK="$(mktemp -d)"
+          export HOME="$WORK/home"
+          export NYXOWL_HOME="$WORK/nyxowl-home"
+          export NYXOWL_TESTWRITER_INSTALL=0
+          export GIT_AUTHOR_NAME="Nyxowl CI"
+          export GIT_AUTHOR_EMAIL="ci@example.com"
+          export GIT_COMMITTER_NAME="Nyxowl CI"
+          export GIT_COMMITTER_EMAIL="ci@example.com"
+          mkdir -p "$HOME" "$WORK/repo"
+
+          DOCTOR_OUT="$("$NYX_BIN" doctor)"
+          printf '%s\n' "$DOCTOR_OUT"
+          grep -Fq "MCP Smoke Test: OK (38 tools listed)" <<<"$DOCTOR_OUT"
+          grep -Fq "Skill slots: 11" <<<"$DOCTOR_OUT"
+          test "$(stat -c '%a' "$NYXOWL_HOME")" = "700"
+          test "$(stat -c '%a' "$NYXOWL_HOME/secrets/receipt.key")" = "600"
+
+          cd "$WORK/repo"
+          git init -q -b main
+          printf '# lifecycle\n' > README.md
+          git add -A
+          git commit -qm "fixture"
+          "$NYX_BIN" init --project
+          test -f .nyxowl/config.json
+          grep -Fq "<!-- nyxowl:begin -->" AGENTS.md
+
+          OLD_ID="$("$NYX_BIN" status "$PWD" | sed -n 's/.*repo-id=\([^)]*\).*/\1/p')"
+          test -n "$OLD_ID"
+          mkdir -p "$NYXOWL_HOME/projects/$OLD_ID"
+          printf 'old-state\n' > "$NYXOWL_HOME/projects/$OLD_ID/marker.txt"
+
+          OLD_REPO="$PWD"
+          NEW_REPO="$WORK/repo-copy"
+          cp -a "$OLD_REPO" "$NEW_REPO"
+          test -d "$OLD_REPO"
+          "$NYX_BIN" relink "$OLD_REPO" "$NEW_REPO"
+          NEW_ID="$("$NYX_BIN" status "$NEW_REPO" | sed -n 's/.*repo-id=\([^)]*\).*/\1/p')"
+          test -n "$NEW_ID"
+          test "$OLD_ID" != "$NEW_ID"
+          grep -Fq "old-state" "$NYXOWL_HOME/projects/$NEW_ID/marker.txt"
+          test ! -d "$NYXOWL_HOME/projects/$OLD_ID"
+
+          "$NYX_BIN" uninstall --yes | tee "$WORK/uninstall.out"
+          grep -Fq "Purged ~/.nyxowl: no" "$WORK/uninstall.out"
+          if [ -f AGENTS.md ]; then
+            ! grep -Fq "<!-- nyxowl:begin -->" AGENTS.md
+          fi
+          test -d "$NYXOWL_HOME"
+
+          "$NYX_BIN" uninstall --purge --yes | tee "$WORK/purge.out"
+          grep -Fq "Purged ~/.nyxowl: yes" "$WORK/purge.out"
+          test ! -d "$NYXOWL_HOME"

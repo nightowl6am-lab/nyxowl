@@ -31,12 +31,41 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: Verify tag matches package version
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          EXPECTED="v${PKG_VERSION}"
+          if [ "$TAG" != "$EXPECTED" ]; then
+            echo "Release tag '$TAG' does not match package.json version '$EXPECTED'." >&2
+            exit 1
+          fi
+          echo "Release tag $EXPECTED matches package.json."
+
       - name: Verify
         run: |
           npm run typecheck
           npm run lint
-          npm test
+          npm run test:coverage
           npm run build
+
+      - name: Pack dry run
+        run: npm pack --dry-run
+
+      - name: Packed artifact install smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARBALL=$(npm pack --ignore-scripts)
+          SMOKE_DIR=$(mktemp -d)
+          npm install --prefix "$SMOKE_DIR" --ignore-scripts "./$TARBALL"
+          export NYXOWL_HOME="$(mktemp -d)/nyxowl-home"
+          export NYXOWL_TESTWRITER_INSTALL=0
+          "$SMOKE_DIR/node_modules/.bin/nyxowl" --version
+          "$SMOKE_DIR/node_modules/.bin/nyxowl" doctor
 
       - name: Publish with provenance
         run: npm publish --provenance --access public --ignore-scripts
