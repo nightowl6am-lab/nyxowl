@@ -15,7 +15,7 @@ import {
   INLINE_SKILL_IDS,
   NATIVE_SKILL_IDS,
   agentSkillPath,
-  getSkillSlotReport,
+  getSkillPackageReport,
   loadAgentSkillPackage,
   loadInlineSkill,
   stripFrontmatter,
@@ -33,20 +33,20 @@ describe("Step 8 — Canonical Agents, Commands & Native/Inline Skill Packages",
     expect([...INLINE_SKILL_IDS]).toEqual(["nyx-testwriter"]);
     expect(AGENT_SKILL_MODES["nyx-testwriter"]).toBe("inline");
 
-    const report = getSkillSlotReport();
+    const report = getSkillPackageReport();
     expect(report.length).toBe(11);
-    for (const slot of report) {
-      expect(slot.loaded, `${slot.agentId} loaded`).toBe(true);
-      expect(slot.licensePresent, `${slot.agentId} license`).toBe(true);
-      expect(slot.references, `${slot.agentId} references`).toBeGreaterThan(0);
-      expect(fs.statSync(slot.path).size, `${slot.agentId} SKILL.md size`).toBeGreaterThan(0);
-      expect(slot.path.endsWith(path.join(slot.agentId, "SKILL.md"))).toBe(true);
-      const pkg = loadAgentSkillPackage(slot.agentId);
+    for (const skillPackage of report) {
+      expect(skillPackage.loaded, `${skillPackage.agentId} loaded`).toBe(true);
+      expect(skillPackage.licensePresent, `${skillPackage.agentId} license`).toBe(true);
+      expect(skillPackage.references, `${skillPackage.agentId} references`).toBeGreaterThan(0);
+      expect(fs.statSync(skillPackage.path).size, `${skillPackage.agentId} SKILL.md size`).toBeGreaterThan(0);
+      expect(skillPackage.path.endsWith(path.join(skillPackage.agentId, "SKILL.md"))).toBe(true);
+      const pkg = loadAgentSkillPackage(skillPackage.agentId);
       expect(pkg.skillContent).toBeTruthy();
       expect(pkg.skillContent).toContain("Trust boundary.");
     }
-    expect(report.filter((slot) => slot.mode === "native")).toHaveLength(10);
-    expect(report.filter((slot) => slot.mode === "inline")).toHaveLength(1);
+    expect(report.filter((pkg) => pkg.mode === "native")).toHaveLength(10);
+    expect(report.filter((pkg) => pkg.mode === "inline")).toHaveLength(1);
 
     expect(fs.existsSync(path.join(repoRoot, "skills-vendor"))).toBe(false);
     expect(fs.existsSync(path.join(repoRoot, "agents", "skills", "registry.json"))).toBe(false);
@@ -123,12 +123,12 @@ describe("Step 8 — Canonical Agents, Commands & Native/Inline Skill Packages",
     let pkgRoot: string;
 
     function seedPackage(): void {
-      tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-skill-slot-"));
+      tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-skill-package-"));
       pkgRoot = path.join(tmpRoot, "pkg");
       fs.mkdirSync(pkgRoot, { recursive: true });
       fs.writeFileSync(
         path.join(pkgRoot, "package.json"),
-        JSON.stringify({ name: "nyx-skill-slot-fixture", version: "1.0.0" }),
+        JSON.stringify({ name: "nyx-skill-package-fixture", version: "1.0.0" }),
       );
       fs.cpSync(path.join(repoRoot, "agents"), path.join(pkgRoot, "agents"), {
         recursive: true,

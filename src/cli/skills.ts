@@ -61,7 +61,7 @@ export interface AgentSkillPackage {
   loaded: boolean;
 }
 
-export interface AgentSkillSlotReport {
+export interface AgentSkillPackageReport {
   agentId: AgentSkillId;
   path: string;
   loaded: boolean;
@@ -130,7 +130,7 @@ function listFilesRecursive(dir: string, base = dir): string[] {
   return out;
 }
 
-export function listSkillFiles(agentId: string, pkgRoot = resolvePackageRoot()): string[] {
+function listSkillFiles(agentId: string, pkgRoot = resolvePackageRoot()): string[] {
   return listFilesRecursive(agentSkillDir(agentId, pkgRoot));
 }
 
@@ -178,7 +178,7 @@ export function loadInlineSkill(agentId: string, pkgRoot = resolvePackageRoot())
   return parts.join("\n\n");
 }
 
-export function getSkillSlotReport(pkgRoot = resolvePackageRoot()): AgentSkillSlotReport[] {
+export function getSkillPackageReport(pkgRoot = resolvePackageRoot()): AgentSkillPackageReport[] {
   return AGENT_SKILL_IDS.map((agentId) => {
     const pkg = loadAgentSkillPackage(agentId, pkgRoot);
     return {

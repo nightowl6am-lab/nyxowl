@@ -13,7 +13,7 @@ import {
   selectHostToLaunch,
 } from "./detect-hosts.ts";
 import { loadInstallManifest, saveInstallManifest } from "./manifest.ts";
-import { getSkillSlotReport, type AgentSkillSlotReport } from "./skills.ts";
+import { getSkillPackageReport, type AgentSkillPackageReport } from "./skills.ts";
 import { ensureTestWriterRuntime, type TestWriterInstallStatus } from "./testwriter.ts";
 
 export { NYXOWL_VERSION };
@@ -25,7 +25,7 @@ export interface SetupResult {
   gitVersion: string;
   detectedHosts: DetectedHost[];
   defaultHost: DetectedHost | null;
-  skillSlots: AgentSkillSlotReport[];
+  skillPackages: AgentSkillPackageReport[];
   testWriter: { status: TestWriterInstallStatus; root: string; message: string };
   summaryLines: string[];
 }
@@ -108,7 +108,7 @@ export async function ensureFirstRunSetup(options?: {
     manifest.nyxowlVersion === NYXOWL_VERSION &&
     fs.existsSync(globalPaths.hostsDir);
 
-  const skillSlots = getSkillSlotReport();
+  const skillPackages = getSkillPackageReport();
 
   const detectedHosts = await detectInstalledHosts({
     ...(options?.envPath ? { envPath: options.envPath } : {}),
@@ -143,11 +143,11 @@ export async function ensureFirstRunSetup(options?: {
     .map((h) => `${h.displayName} (Tier ${h.tier})`)
     .join(", ");
 
-  const filledSlots = skillSlots.filter((slot) => slot.loaded).length;
-  const nativeSlots = skillSlots.filter((slot) => slot.mode === "native").length;
-  const inlineSlots = skillSlots.filter((slot) => slot.mode === "inline").length;
-  const totalReferences = skillSlots.reduce((total, slot) => total + slot.references, 0);
-  const licensedSlots = skillSlots.filter((slot) => slot.licensePresent).length;
+  const filledPackages = skillPackages.filter((pkg) => pkg.loaded).length;
+  const nativePackages = skillPackages.filter((pkg) => pkg.mode === "native").length;
+  const inlinePackages = skillPackages.filter((pkg) => pkg.mode === "inline").length;
+  const totalReferences = skillPackages.reduce((total, pkg) => total + pkg.references, 0);
+  const licensedPackages = skillPackages.filter((pkg) => pkg.licensePresent).length;
   const testWriterLine =
     testWriter.status === "installed" || testWriter.status === "already-installed"
       ? `Test-Writer: ready at ${testWriter.root}`
@@ -159,7 +159,7 @@ export async function ensureFirstRunSetup(options?: {
   const summaryLines = [
     `Nyxowl v${NYXOWL_VERSION} initialized at ${resolveGlobalNyxowlPaths(options?.nyxowlHome).homeDir} (0700)`,
     `Runtimes verified: Node v${nodeVersion}, git v${gitVersion}`,
-    `Skill packages: ${filledSlots}/${skillSlots.length} loaded (${nativeSlots} native, ${inlineSlots} inline); references: ${totalReferences}; licenses: ${licensedSlots}/${skillSlots.length}`,
+    `Skill packages: ${filledPackages}/${skillPackages.length} loaded (${nativePackages} native, ${inlinePackages} inline); references: ${totalReferences}; licenses: ${licensedPackages}/${skillPackages.length}`,
     `Detected host: ${installedNames || "none on PATH"}`,
     `OpenCode: ${defaultHost ? `${defaultHost.displayName} (Tier ${defaultHost.tier})` : "none"}`,
     testWriterLine,
@@ -172,7 +172,7 @@ export async function ensureFirstRunSetup(options?: {
     gitVersion,
     detectedHosts,
     defaultHost,
-    skillSlots,
+    skillPackages,
     testWriter: {
       status: testWriter.status,
       root: testWriter.root,

@@ -219,7 +219,7 @@ export const ROLE_ALLOWED_NYX_TOOLS: Record<string, readonly string[]> = {
   ],
 };
 
-export const agentContractSchema = z.object({
+const agentContractSchema = z.object({
   id: z.string().regex(/^nyx(owl|-[a-z]+)$/),
   title: z.string().min(3).max(100),
   mode: z.enum(["primary", "subagent"]),

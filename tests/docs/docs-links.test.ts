@@ -101,6 +101,13 @@ describe("package publishing manifest", () => {
     expect(files).not.toContain(".github/");
     expect(files.filter((entry) => entry === ".github" || entry.startsWith(".github/"))).toEqual([]);
   });
+
+  it("keeps the skills vendor script out of the published package", () => {
+    const files = readPublishedFiles();
+    expect(files.filter((entry) => entry === "scripts/skills" || entry.startsWith("scripts/skills/"))).toEqual(
+      [],
+    );
+  });
 });
 
 describe("local readiness tracker", () => {

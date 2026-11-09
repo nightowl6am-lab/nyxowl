@@ -640,7 +640,11 @@ function buildLock() {
       });
     }
     const additionalLicenses = spec.files
-      .filter((file) => file.transform === "license" && file.local !== "LICENSE")
+      .filter(
+        (file) =>
+          file.transform === "license" &&
+          (!primaryLicense || file.local !== primaryLicense.local),
+      )
       .map((file) => ({
         file: file.local,
         spdx: REPOS[file.repo].spdx,

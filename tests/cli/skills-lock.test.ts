@@ -102,6 +102,21 @@ describe("skill lock and offline verification", () => {
     }
   });
 
+  it("does not list any skill's primary license as an additional license", () => {
+    const lock = JSON.parse(fs.readFileSync(lockPath, "utf8")) as Lock;
+    for (const agentId of AGENT_SKILL_IDS) {
+      const entry = lock.skills[agentId];
+      expect(entry, agentId).toBeDefined();
+      if (!entry) continue;
+      for (const additional of entry.additionalLicenses) {
+        expect(
+          additional.file,
+          `${agentId} additional license duplicates primary ${entry.license.file}`,
+        ).not.toBe(entry.license.file);
+      }
+    }
+  });
+
   it("passes offline verification on the committed tree", () => {
     const result = runVerify(repoRoot);
     expect(result.status, result.stderr).toBe(0);

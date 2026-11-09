@@ -4,6 +4,9 @@ Nyxowl proves the all-agent contract and security boundary in five layers:
 four deterministic layers that run on every CI node, and one local-only live
 layer that talks to a real OpenCode host.
 
+See [`known-limitations.md`](known-limitations.md) for the OpenCode headless
+cold-start bug, the supported TUI launch path, and the deterministic CI gate.
+
 ## 1. Contract matrix
 
 `tests/agent-readiness/matrix.test.ts` compiles the real `agents/` tree through

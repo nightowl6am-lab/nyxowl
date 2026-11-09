@@ -39,7 +39,7 @@ const TOOL_MAP = new Map<string, ToolDefinition>(
   ].map((tool) => [tool.name, tool]),
 );
 
-const SLOT_FILES: Record<string, string> = {
+const AGENT_FIXTURE_FILES: Record<string, string> = {
   "nyx-architect": "src/applyPatch.ts",
   "nyx-designer": "src/component.tsx",
   "nyx-api": "src/routes.ts",
@@ -93,7 +93,7 @@ function argsFor(agentId: string, toolName: string): Record<string, unknown> {
     case "blackboard_read":
       return { category: "product", repoPath: repoDir };
     case "symbol_skeleton":
-      return { filePath: path.join(repoDir, SLOT_FILES[agentId] ?? "src/applyPatch.ts"), repoPath: repoDir };
+      return { filePath: path.join(repoDir, AGENT_FIXTURE_FILES[agentId] ?? "src/applyPatch.ts"), repoPath: repoDir };
     case "trace_symbol":
       return { symbolName: TRACE_SYMBOLS[agentId] ?? "router", repoPath: repoDir };
     case "seam_check":
