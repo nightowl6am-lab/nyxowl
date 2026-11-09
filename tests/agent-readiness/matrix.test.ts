@@ -176,6 +176,37 @@ describe("agent readiness: contract matrix", () => {
     }
   });
 
+  it("enforces output-contract and dispatch-contract wording in every prompt", () => {
+    const subagents = EXPECTED_AGENTS.filter((expected) => expected.mode === "subagent");
+    expect(subagents).toHaveLength(10);
+
+    for (const expected of subagents) {
+      const actual = agentById.get(expected.id);
+      expect(actual, `missing agent ${expected.id}`).toBeDefined();
+      if (!actual) continue;
+      expect(actual.bodyMarkdown, `${expected.id} receipt shape`).toContain(
+        "`receipts` is an array of `{id, status}`",
+      );
+      expect(actual.bodyMarkdown, `${expected.id} contracts shape`).toContain(
+        "`contractsPublished` is an array of strings",
+      );
+    }
+
+    const architect = agentById.get("nyx-architect")?.bodyMarkdown ?? "";
+    expect(architect).toContain("Never set `promote: true`");
+    expect(architect).toMatch(/`slices`/);
+    expect(architect).toMatch(/`endpoints`/);
+
+    const product = agentById.get("nyx-product")?.bodyMarkdown ?? "";
+    expect(product).toMatch(/do not fetch the web/);
+    expect(product).toMatch(/local repository|docs-only/);
+
+    const nyxowl = agentById.get("nyxowl")?.bodyMarkdown ?? "";
+    expect(nyxowl).toMatch(/malformed/);
+    expect(nyxowl).toMatch(/re-dispatch/);
+    expect(nyxowl).toMatch(/docs-only/);
+  });
+
   it("keeps every skill package loaded with a mode, references, and license", () => {
     expect(AGENT_SKILL_IDS).toHaveLength(11);
     let native = 0;

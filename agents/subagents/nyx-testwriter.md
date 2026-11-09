@@ -52,4 +52,4 @@ Act as the Security Fix Test-Writer: write exactly one pytest proof file for an 
 - Notes are honest about attempted coverage and uncertainty, and every safety flag is recorded.
 
 ## Output Format
-Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys; the primary reads the verdict from the Test-Writer status tool.
+Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys; the primary reads the verdict from the Test-Writer status tool. `receipts` is an array of `{id, status}` objects only (tool metadata is not a receipt); `contractsPublished` is an array of strings. Never duplicate keys.

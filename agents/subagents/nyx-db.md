@@ -64,4 +64,4 @@ Implement schemas, zero-downtime migrations, ORM models, Postgres RLS policies, 
 - Any contract change has a real `nyx_blackboard_publish` receipt, and all locks are released.
 
 ## Output Format
-Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys.
+Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys. `receipts` is an array of `{id, status}` objects only (tool metadata is not a receipt); `contractsPublished` is an array of strings. Never duplicate keys.
