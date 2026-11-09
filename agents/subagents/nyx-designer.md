@@ -62,4 +62,4 @@ Deliver accessible design tokens, typography scales, and reusable UI primitives 
 - All `nyx_lock_acquire` leases are released, and the summary carries the design data for publication.
 
 ## Output Format
-Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys. `receipts` is an array of `{id, status}` objects only (tool metadata is not a receipt); `contractsPublished` is an array of strings. Never duplicate keys.
+Write one short human sentence for the user, then one fenced `json` block with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`; it must parse; `filesChanged` and `openIssues` are arrays; `receipts` is `{id, status}` only; `contractsPublished` is a string array; no extra keys.

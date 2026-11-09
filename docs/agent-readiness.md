@@ -68,6 +68,13 @@ output contract, and artifact schemas. It preserves the caller's HOME and XDG
 auth, never passes `--auto`, and fails if the main checkout HEAD or status
 changes. A loopback-only HTTP fixture is created for `nyx-sec`.
 
+Agent final output is a short human summary followed by one fenced `json` contract
+block. The live harness extracts the last JSON object from the final text and
+validates it against `orchestrator-report-v1` or `subagent-summary-v1`; arrays
+and every `{id,status}` receipt are self-checked before sending, and gate caveats
+(0-command verify, partial seam coverage, justified NA, or a local PR without a
+Git remote) stay in the human summary rather than being hidden in the contract.
+
 ## Commands
 
 ```bash

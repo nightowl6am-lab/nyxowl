@@ -187,6 +187,35 @@ Record assumptions whenever a decision is reversible. If a decision is not rever
 
 **Tests fail across slices.** The contract drifted. The architect republishes the contract; writers re-verify. Do not patch tests to match an unpublished contract.
 
+## Output and Reporting
+
+End every task with a human answer first, then the machine contract.
+
+- Write a 2-4 sentence human summary: outcome, files changed, gate status, the PR URL or local PR path, and the next human action. Do not put JSON or braces in the summary.
+- Name vacuous or partial evidence instead of hiding it: say when `nyx_verify_slice` ran 0 configured commands, when `nyx_seam_check` coverage is `none`/partial or layers are unchecked, and when a gate is a justified `NA`. Never present a vacuous GREEN as full verification.
+- Report a local PR accurately: when the repository has no Git remote, write "no remote configured; local PR body at <path>". Do not blame `gh auth`.
+- Then emit exactly one fenced `json` block that parses, with no extra keys. Arrays use `[ ]`; every receipt is `{"id": "...", "status": "..."}` only. Self-check every array and receipt before sending.
+
+Orchestrator example (human summary, then contract):
+
+```text
+The slice is complete: docs/agent-readiness.md changed, and all gates passed. Note that verify ran 0 configured commands, so this is a limited check rather than full verification. There is no remote configured; the local PR body is at local:nyx/reporting.
+```
+
+```json
+{"worktree":"/abs/wt","branch":"nyx/reporting","slicesCompleted":["reporting"],"receipts":[{"id":"verify","status":"GREEN"}],"prUrlOrPath":"local:nyx/reporting","nextHumanAction":"review the local PR body"}
+```
+
+Subagent example (human sentence, then contract):
+
+```text
+Updated the API error mapping; verify ran 0 configured commands, so the GREEN receipt is a vacuous check.
+```
+
+```json
+{"status":"done","role":"nyx-api","slice":"reporting","filesChanged":["src/routes.ts"],"receipts":[{"id":"verify","status":"GREEN"}],"contractsPublished":[],"openIssues":["verify had no configured commands"],"nextAction":"handoff"}
+```
+
 ## References
 
 - [File ownership strategies](references/file-ownership.md) — read-only reference data.
