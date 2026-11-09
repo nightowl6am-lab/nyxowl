@@ -119,6 +119,63 @@ describe("agent readiness: contract matrix", () => {
     }
   });
 
+  it("keeps every prompt body to the six-section professional contract", () => {
+    const delegated = new Set([
+      "nyx_verify_slice",
+      "nyx_slop_check",
+      "nyx_seam_check",
+      "nyx_exploit_probe",
+      "nyx_lock_acquire",
+      "nyx_lock_release",
+    ]);
+
+    for (const expected of EXPECTED_AGENTS) {
+      const actual = agentById.get(expected.id);
+      expect(actual, `missing agent ${expected.id}`).toBeDefined();
+      if (!actual) continue;
+      const body = actual.bodyMarkdown;
+      const headings = [...body.matchAll(/^##\s+(.+)$/gm)].map((match) => match[1]?.trim());
+      expect(headings, `${expected.id} headings`).toEqual([...REQUIRED_AGENT_SECTIONS]);
+
+      const section = (name: string): string => {
+        const start = body.indexOf(`## ${name}`);
+        expect(start, `${expected.id} ${name}`).toBeGreaterThanOrEqual(0);
+        const next = body.indexOf("\n## ", start + 1);
+        return body.slice(start, next === -1 ? undefined : next);
+      };
+
+      expect(section("Mission"), `${expected.id} non-goals`).toMatch(/Non-goals:/);
+
+      const steps = [...section("Procedure").matchAll(/^\d+\.\s+(.+)$/gm)].map(
+        (match) => match[1] ?? "",
+      );
+      expect(steps.length, `${expected.id} procedure steps`).toBeGreaterThan(0);
+      expect(steps.length, `${expected.id} procedure steps`).toBeLessThanOrEqual(7);
+      const allowed = new Set(
+        (ROLE_ALLOWED_NYX_TOOLS[expected.id] ?? []).map((tool) =>
+          tool.startsWith("nyx_") ? tool : `nyx_${tool}`,
+        ),
+      );
+      for (const step of steps) {
+        const refs = [...step.matchAll(/`(nyx_[a-z0-9_]+)`/g)].map((match) => match[1] ?? "");
+        expect(refs.length, `${expected.id} step must name a tool`).toBeGreaterThan(0);
+        for (const ref of refs) {
+          const permitted = allowed.has(ref) || (expected.id === "nyxowl" && delegated.has(ref));
+          expect(permitted, `${expected.id} step references ${ref}`).toBe(true);
+        }
+      }
+
+      const hardRules = section("Hard Rules");
+      expect(hardRules, `${expected.id} no questions`).toContain("Do not ask questions");
+      expect(hardRules, `${expected.id} blocked decision`).toMatch(/BLOCKED|SPEC_INSUFFICIENT/);
+      expect(hardRules, `${expected.id} untrusted inputs`).toMatch(/untrusted/i);
+      expect(hardRules, `${expected.id} test integrity`).toMatch(/weaken, skip, or delete tests/);
+      expect(section("Done Criteria"), `${expected.id} evidence bound`).toMatch(
+        /GREEN|receipt|grader/i,
+      );
+    }
+  });
+
   it("keeps every skill package loaded with a mode, references, and license", () => {
     expect(AGENT_SKILL_IDS).toHaveLength(11);
     let native = 0;

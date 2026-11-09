@@ -593,15 +593,7 @@
         "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
         "upstreamPath": "LICENSE"
       },
-      "additionalLicenses": [
-        {
-          "file": "LICENSE-CC-BY-SA-4.0",
-          "spdx": "CC-BY-SA-4.0",
-          "repo": "https://github.com/trailofbits/skills.git",
-          "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
-          "upstreamPath": "LICENSE"
-        }
-      ],
+      "additionalLicenses": [],
       "files": [
         {
           "local": "SKILL.md",

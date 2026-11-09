@@ -27,6 +27,17 @@ test "v${PKG_VERSION}" = "vX.Y.Z"   # replace with the actual tag
 The release workflow performs the same check before publishing. A mismatched
 tag aborts the release.
 
+After the release commit is on `main` and the gates below are green, create and
+push the annotated tag from that commit:
+
+```bash
+git tag -a v<version> -m "nyxowl v<version>"
+git push origin v<version>
+```
+
+Tagging and publishing are separate: do not tag or publish a commit that has
+not passed every gate.
+
 ## 3. Local gates
 
 Run every gate from the repository root:
