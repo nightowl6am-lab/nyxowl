@@ -4,7 +4,7 @@
   "skills": {
     "nyxowl": {
       "mode": "native",
-      "adaptations": "Adapted from parallel-feature-development. Replaced branch management with NyxOwl worktrees and Blackboard handoffs; added architect-owned contract files, one owner per barrel/index file, staging stubs, lock handoffs, BLOCKED_REDLINE escalation, and the trust-boundary header. References are read-only data with a warning header.",
+      "adaptations": "Adapted from parallel-feature-development. Replaced branch management with NyxOwl worktrees and Blackboard handoffs; added architect-owned contract files, one owner per barrel/index file, staging stubs, lock handoffs, BLOCKED_REDLINE escalation, and the trust-boundary header. Added greenfield bootstrap from an empty folder, gate-ownership and dispatch-economy guidance, anti-hallucination evidence rules, and token-discipline guidance. References are read-only data with a warning header.",
       "license": {
         "file": "LICENSE",
         "spdx": "MIT",
@@ -23,7 +23,7 @@
           "upstreamPath": "plugins/agent-teams/skills/parallel-feature-development/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "09cdf55ad98b29d6619c2f5a7f4a07ab0da472b70dc6b3a2d734328f292390c1",
+          "localSha256": "c7832a40c15afab5dbf2e64f3a1534ad25686499b43736f208d20a5cf75573a7",
           "upstreamSha256": "9d39b7d0f3011a8e0f468d000987758f6ac493edc6e6fe73227fa3e75e209458",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },

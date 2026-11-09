@@ -205,6 +205,55 @@ describe("agent readiness: contract matrix", () => {
     expect(nyxowl).toMatch(/malformed/);
     expect(nyxowl).toMatch(/re-dispatch/);
     expect(nyxowl).toMatch(/docs-only/);
+    expect(nyxowl).toContain("`nyx_worktree_pr` requires all four receipts");
+    expect(nyxowl).toContain("Do not call gate tools yourself");
+
+    const outputStart = nyxowl.indexOf("## Output Format");
+    expect(outputStart, "nyxowl output section").toBeGreaterThanOrEqual(0);
+    const outputFormat = nyxowl.slice(outputStart);
+    expect(outputFormat).toContain('"slicesCompleted":["');
+    expect(outputFormat).toContain('"receipts":[{"id');
+    expect(outputFormat).toContain("never null");
+
+    for (const gateOwner of [
+      "nyx-architect",
+      "nyx-api",
+      "nyx-db",
+      "nyx-ui",
+      "nyx-designer",
+      "nyx-sec",
+      "nyx-probe",
+    ]) {
+      const body = agentById.get(gateOwner)?.bodyMarkdown ?? "";
+      expect(body, `${gateOwner} gate-only dispatch`).toContain("If dispatched only for the");
+    }
+
+    expect(nyxowl).toContain("empty folder");
+    expect(nyxowl).toContain("`nyx_project_bootstrap`");
+    expect(nyxowl).toContain("createInitialWorktree");
+    expect(nyxowl).toContain("Dispatch a subagent only when");
+    expect(nyxowl).toContain("Never invent");
+    expect(nyxowl).toContain("Run independent, disjoint work in parallel");
+    expect(nyxowl.toLowerCase()).toContain("skip");
+
+    const doneStart = nyxowl.indexOf("## Done Criteria");
+    expect(doneStart, "nyxowl done criteria section").toBeGreaterThanOrEqual(0);
+    const doneCriteria = nyxowl.slice(doneStart, nyxowl.indexOf("## Output Format"));
+    expect(doneCriteria).toContain("GREEN or justified NA");
+
+    const nyxowlSkill = loadAgentSkillPackage("nyxowl").skillContent ?? "";
+    expect(nyxowlSkill).toContain("Starting from an Empty Folder");
+    expect(nyxowlSkill).toContain("Gate Ownership and Dispatch Economy");
+    expect(nyxowlSkill).toContain("Focus, Evidence, and Token Discipline");
+    expect(nyxowlSkill).toContain("## Parallel Dispatch");
+    expect(nyxowlSkill).toContain("Dispatch decision");
+
+    for (const expected of subagents) {
+      const body = agentById.get(expected.id)?.bodyMarkdown ?? "";
+      expect(body, `${expected.id} anti-hallucination`).toContain(
+        "Use only tool results as facts",
+      );
+    }
   });
 
   it("keeps every skill package loaded with a mode, references, and license", () => {
