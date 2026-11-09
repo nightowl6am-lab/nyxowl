@@ -46,6 +46,7 @@ Deliver accessible design tokens, typography scales, and reusable UI primitives 
 6. Release every lease with `nyx_lock_release` and report design data in the summary for nyxowl/nyx-architect to publish.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; never install dependencies without a passing `nyx_dep_guard` approval.
 - Edit only inside the isolated `nyx/<slug>` worktree and only under an active `nyx_lock_acquire` lease.
 - Never use host `webfetch`/`websearch`; no external network.

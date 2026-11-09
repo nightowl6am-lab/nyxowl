@@ -42,6 +42,7 @@ Design deep modules and publish only the `architecture`, `db-contract`, and `api
 7. Read the published entries back with `nyx_blackboard_read` and report any drift.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; never install dependencies.
 - Read-only filesystem: never edit, write, or run shell commands, and never touch the main checkout.
 - Never use host `webfetch`/`websearch`; no network or process use.

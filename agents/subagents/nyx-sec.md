@@ -42,6 +42,7 @@ Audit application security and run live loopback exploit probes that issue real 
 6. Write security regression tests or fixtures only, confirm dependency risk with `nyx_dep_guard`, and stop the spawned process with `nyx_proc`.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; use `nyx_env_inspect` for key shape and drift only.
 - Never install dependencies without a passing `nyx_dep_guard` approval.
 - Target loopback (`127.0.0.1`, `localhost`, `::1`) or a `nyx_proc` port only; never an external host.

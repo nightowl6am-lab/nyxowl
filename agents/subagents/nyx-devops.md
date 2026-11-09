@@ -40,6 +40,7 @@ Keep the worktree synchronized, validate environment drift against `.env.example
 6. Report worktree and gate state with `nyx_artifact_read`.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; use `nyx_env_inspect` for key shape and drift only.
 - Never install dependencies without a passing `nyx_dep_guard` approval.
 - Editing `.github/workflows/*` or CI/CD pipelines is a red line: return `status: "BLOCKED"` with `BLOCKED_REDLINE` in `openIssues` and `nextAction`; do not ask.

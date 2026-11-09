@@ -220,6 +220,9 @@ describe("agent readiness: contract matrix", () => {
     expect(nyxowl).toMatch(/docs-only/);
     expect(nyxowl).toContain("human summary");
     expect(nyxowl).toContain("0-command");
+    expect(nyxowl).toContain("copy 0-command");
+    expect(nyxowl).toContain("GREEN but limited");
+    expect(nyxowl).toContain("never 'full coverage'");
     expect(nyxowl).toContain("no Git remote");
     expect(nyxowl).toContain("it must parse");
     expect(nyxowl).toContain("`slicesCompleted` is an array of strings");
@@ -262,6 +265,9 @@ describe("agent readiness: contract matrix", () => {
     expect(nyxowlSkill).toContain("Dispatch decision");
     expect(nyxowlSkill).toContain("## Output and Reporting");
     expect(nyxowlSkill).toContain("vacuous");
+    expect(nyxowlSkill).toContain("GREEN but limited");
+    expect(nyxowlSkill).toContain("Carry every `openIssues` caveat");
+    expect(nyxowlSkill).toContain("local PR body path");
     expect(nyxowlSkill).toContain("local PR");
     expect(nyxowlSkill).toContain('"slicesCompleted":[');
     expect(nyxowlSkill).toContain('"receipts":[{"id');
@@ -270,6 +276,12 @@ describe("agent readiness: contract matrix", () => {
       const body = agentById.get(expected.id)?.bodyMarkdown ?? "";
       expect(body, `${expected.id} anti-hallucination`).toContain(
         "Use only tool results as facts",
+      );
+      expect(body, `${expected.id} caveat propagation`).toContain(
+        "put that exact caveat in `openIssues`",
+      );
+      expect(body, `${expected.id} no full coverage claim`).toContain(
+        "never call it full coverage",
       );
     }
   });

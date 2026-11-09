@@ -40,6 +40,7 @@ Isolate runtime failures into minimal AST slices, manage disposable test process
 5. Reproduce or verify with `nyx_verify_slice`; report the root cause to the owning writer and escalate Strike-3 to nyxowl/nyx-architect.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; never install dependencies.
 - Edit tests and fixtures only, inside the isolated `nyx/<slug>` worktree; never modify production logic or the main checkout.
 - Never use host `webfetch`/`websearch`; process and network use stays local to the worktree.

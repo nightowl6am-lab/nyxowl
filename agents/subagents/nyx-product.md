@@ -39,6 +39,7 @@ Gather product requirements and, only when needed, cited external docs inside a 
 6. Publish `product` or `docs` only when the slice needs a product/docs contract, using `nyx_blackboard_publish` with the logged URL citations; otherwise return `contractsPublished: []`.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; never install dependencies.
 - Stay side-effect-free: no edits, no writes, no shell, no repository-read tools, and never the main checkout.
 - Never use host `webfetch`/`websearch`; fetch only via `nyx_web_fetch`.

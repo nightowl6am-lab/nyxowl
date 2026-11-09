@@ -36,6 +36,7 @@ Act as the Security Fix Test-Writer: write exactly one pytest proof file for an 
 5. Record short factual notes and advisory flags with `nyx_testwriter_finish`; after a terminal verdict it records notes without changing the verdict. Then return `subagent-summary-v1`; the primary reads the real verdict from the Test-Writer status tool.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read, open, copy, or guess the canary; call `detector.check` exactly as specified.
 - Never mock the detector, use `skip`/`xfail`, use a broad `except`, use dynamic escape, or weaken assertions.
 - Prefer Hypothesis when the spec permits; otherwise use small deterministic cases.
