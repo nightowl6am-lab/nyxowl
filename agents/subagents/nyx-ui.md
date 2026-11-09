@@ -60,4 +60,4 @@ Implement production frontend views, state, and typed data hooks wired to verifi
 - Every `nyx_lock_acquire` lease is released, and no undocumented route or mock production data remains.
 
 ## Output Format
-Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys.
+Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys. `receipts` is an array of `{id, status}` objects only (tool metadata is not a receipt); `contractsPublished` is an array of strings. Never duplicate keys.
