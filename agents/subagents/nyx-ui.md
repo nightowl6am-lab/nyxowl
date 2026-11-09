@@ -46,6 +46,7 @@ Implement production frontend views, state, and typed data hooks wired to verifi
 6. Release every lease with `nyx_lock_release`.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; never install dependencies without a passing `nyx_dep_guard` approval.
 - Edit only inside the isolated `nyx/<slug>` worktree and only under an active `nyx_lock_acquire` lease.
 - Never use host `webfetch`/`websearch`; keep process and network use local to the worktree.

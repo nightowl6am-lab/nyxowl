@@ -49,6 +49,7 @@ Implement schemas, zero-downtime migrations, ORM models, Postgres RLS policies, 
 6. Publish any contract change with `nyx_blackboard_publish`, then release all leases with `nyx_lock_release`.
 
 ## Hard Rules
+- If a gate ran 0 commands, coverage is `none`/partial, or is `NA`, put that exact caveat in `openIssues` and the human sentence; never call it full coverage.
 - Never read `.env*` or secrets; use `nyx_env_inspect` for key shape and drift only.
 - Never install dependencies without a passing `nyx_dep_guard` approval.
 - Never run destructive migrations or resets against production or any non-disposable database.

@@ -193,17 +193,20 @@ End every task with a human answer first, then the machine contract.
 
 - Write a 2-4 sentence human summary: outcome, files changed, gate status, the PR URL or local PR path, and the next human action. Do not put JSON or braces in the summary.
 - Name vacuous or partial evidence instead of hiding it: say when `nyx_verify_slice` ran 0 configured commands, when `nyx_seam_check` coverage is `none`/partial or layers are unchecked, and when a gate is a justified `NA`. Never present a vacuous GREEN as full verification.
+- Use 'GREEN but limited' for a 0-command verify or coverage `none`/partial; never upgrade it to 'full coverage'.
+- Carry every `openIssues` caveat from a subagent summary into the human summary.
+- `prUrlOrPath` may be the remote PR URL, `local:<branch>`, or the local PR body path; it is never null.
 - Report a local PR accurately: when the repository has no Git remote, write "no remote configured; local PR body at <path>". Do not blame `gh auth`.
 - Then emit exactly one fenced `json` block that parses, with no extra keys. Arrays use `[ ]`; every receipt is `{"id": "...", "status": "..."}` only. Self-check every array and receipt before sending.
 
 Orchestrator example (human summary, then contract):
 
 ```text
-The slice is complete: docs/agent-readiness.md changed, and all gates passed. Note that verify ran 0 configured commands, so this is a limited check rather than full verification. There is no remote configured; the local PR body is at local:nyx/reporting.
+The slice is complete: docs/agent-readiness.md changed, and gate status is GREEN but limited because verify ran 0 configured commands. There is no remote configured; the local PR body is at /home/ocagent/nyxowl-demo/prs/reporting.md.
 ```
 
 ```json
-{"worktree":"/abs/wt","branch":"nyx/reporting","slicesCompleted":["reporting"],"receipts":[{"id":"verify","status":"GREEN"}],"prUrlOrPath":"local:nyx/reporting","nextHumanAction":"review the local PR body"}
+{"worktree":"/abs/wt","branch":"nyx/reporting","slicesCompleted":["reporting"],"receipts":[{"id":"verify","status":"GREEN"}],"prUrlOrPath":"/home/ocagent/nyxowl-demo/prs/reporting.md","nextHumanAction":"review the local PR body"}
 ```
 
 Subagent example (human sentence, then contract):
