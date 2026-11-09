@@ -184,12 +184,25 @@ describe("agent readiness: contract matrix", () => {
       const actual = agentById.get(expected.id);
       expect(actual, `missing agent ${expected.id}`).toBeDefined();
       if (!actual) continue;
-      expect(actual.bodyMarkdown, `${expected.id} receipt shape`).toContain(
-        "`receipts` is an array of `{id, status}`",
+      expect(actual.bodyMarkdown, `${expected.id} parse contract`).toContain(
+        "it must parse",
+      );
+      expect(actual.bodyMarkdown, `${expected.id} receipts shape`).toContain(
+        "`receipts` is `{id, status}` only",
+      );
+      expect(actual.bodyMarkdown, `${expected.id} array fields`).toContain(
+        "`filesChanged` and `openIssues` are arrays",
       );
       expect(actual.bodyMarkdown, `${expected.id} contracts shape`).toContain(
-        "`contractsPublished` is an array of strings",
+        "`contractsPublished` is a string array",
       );
+      expect(actual.bodyMarkdown, `${expected.id} human sentence`).toContain(
+        "one short human sentence",
+      );
+    }
+
+    for (const agent of bundle.agents) {
+      expect(agent.bodyMarkdown, `${agent.contract.id} lean prompt`).not.toContain("Self-check");
     }
 
     const architect = agentById.get("nyx-architect")?.bodyMarkdown ?? "";
@@ -205,15 +218,15 @@ describe("agent readiness: contract matrix", () => {
     expect(nyxowl).toMatch(/malformed/);
     expect(nyxowl).toMatch(/re-dispatch/);
     expect(nyxowl).toMatch(/docs-only/);
+    expect(nyxowl).toContain("human summary");
+    expect(nyxowl).toContain("0-command");
+    expect(nyxowl).toContain("no Git remote");
+    expect(nyxowl).toContain("it must parse");
+    expect(nyxowl).toContain("`slicesCompleted` is an array of strings");
+    expect(nyxowl).toContain("`receipts` is an array of `{id, status}` objects only");
+    expect(nyxowl).toContain("`prUrlOrPath` is never null");
     expect(nyxowl).toContain("`nyx_worktree_pr` requires all four receipts");
     expect(nyxowl).toContain("Do not call gate tools yourself");
-
-    const outputStart = nyxowl.indexOf("## Output Format");
-    expect(outputStart, "nyxowl output section").toBeGreaterThanOrEqual(0);
-    const outputFormat = nyxowl.slice(outputStart);
-    expect(outputFormat).toContain('"slicesCompleted":["');
-    expect(outputFormat).toContain('"receipts":[{"id');
-    expect(outputFormat).toContain("never null");
 
     for (const gateOwner of [
       "nyx-architect",
@@ -247,6 +260,11 @@ describe("agent readiness: contract matrix", () => {
     expect(nyxowlSkill).toContain("Focus, Evidence, and Token Discipline");
     expect(nyxowlSkill).toContain("## Parallel Dispatch");
     expect(nyxowlSkill).toContain("Dispatch decision");
+    expect(nyxowlSkill).toContain("## Output and Reporting");
+    expect(nyxowlSkill).toContain("vacuous");
+    expect(nyxowlSkill).toContain("local PR");
+    expect(nyxowlSkill).toContain('"slicesCompleted":[');
+    expect(nyxowlSkill).toContain('"receipts":[{"id');
 
     for (const expected of subagents) {
       const body = agentById.get(expected.id)?.bodyMarkdown ?? "";

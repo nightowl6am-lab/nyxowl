@@ -56,4 +56,4 @@ Isolate runtime failures into minimal AST slices, manage disposable test process
 - Every spawned `nyx_proc` process is stopped and the result is reported to the owning writer.
 
 ## Output Format
-Return only `subagent-summary-v1` JSON with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`. No prose or extra keys. `receipts` is an array of `{id, status}` objects only (tool metadata is not a receipt); `contractsPublished` is an array of strings. Never duplicate keys.
+Write one short human sentence for the user, then one fenced `json` block with exactly `status`, `role`, `slice`, `filesChanged`, `receipts`, `contractsPublished`, `openIssues`, `nextAction`; it must parse; `filesChanged` and `openIssues` are arrays; `receipts` is `{id, status}` only; `contractsPublished` is a string array; no extra keys.
