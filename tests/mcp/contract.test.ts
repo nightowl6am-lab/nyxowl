@@ -44,10 +44,10 @@ describe("Step 2 — MCP Server Contract & Engines 5 (Blackboard/Locks) and 7 (C
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it("registers all 38 nyx_* tools with valid schemas, annotations, <=200 char descriptions, and tools/list <= 4000 tokens", async () => {
+  it("registers all 39 nyx_* tools with valid schemas, annotations, <=200 char descriptions, and tools/list <= 4200 tokens", async () => {
     const listRes = await client.listTools();
-    expect(listRes.tools.length).toBe(38);
-    expect(ALL_NYX_TOOLS.length).toBe(38);
+    expect(listRes.tools.length).toBe(39);
+    expect(ALL_NYX_TOOLS.length).toBe(39);
 
     for (const tool of listRes.tools) {
       expect(tool.name).toMatch(/^nyx_/);
@@ -63,8 +63,14 @@ describe("Step 2 — MCP Server Contract & Engines 5 (Blackboard/Locks) and 7 (C
       description: t.description,
       inputSchema: t.inputSchema,
     }));
+    // Compact tools/list budget: a hard absolute cap so unbounded schema
+    // growth always fails. Pinned at 4,000 for the 38-tool inventory and
+    // recalibrated to 4,200 for the intentional 39th tool (nyx_model_preflight,
+    // measured list = 4,124 tokens); the original 4,000 was already exceeded by
+    // the 38-tool list (4,011) after engine schema growth, and that overflow was
+    // masked by the tool-count assertion above.
     const listTokens = estimateTokens(JSON.stringify(compactToolsList));
-    expect(listTokens).toBeLessThanOrEqual(4000);
+    expect(listTokens).toBeLessThanOrEqual(4200);
   });
 
   it("enforces atomic file locks, conflict detection, and __verify__ mutex semantics", async () => {

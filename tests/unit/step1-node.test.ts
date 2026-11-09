@@ -460,6 +460,8 @@ describe("Config validation and JSONC parsing", () => {
         lint: null,
         test: null,
         build: "npm run build",
+        e2e: null,
+        browser: null,
       });
       assert.deepEqual(cfg.provision, { install: "off", linkEnv: false });
       assert.deepEqual(cfg.gates, {

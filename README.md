@@ -55,7 +55,7 @@ See [`docs/host-matrix.md`](./docs/host-matrix.md) for the full capability detai
 
 ---
 
-## The 8 Heavy Runtime MCP Engines (38 Tools)
+## The 8 Heavy Runtime MCP Engines (39 Tools)
 
 - **Engine 1 (`shield/`):** `nyx_env_inspect`, `nyx_web_fetch`, `nyx_sanitize_untrusted`, `nyx_dep_guard` + Exact-Value & Entropy Output Redactor.
 - **Engine 2 (`bootstrap-navigator/`):** `nyx_env_doctor`, `nyx_project_bootstrap`, `nyx_dna_extract`, `nyx_dna_get`, `nyx_symbol_skeleton`, `nyx_trace_symbol`.

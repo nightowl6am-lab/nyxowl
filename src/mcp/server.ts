@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { nyxModelPreflightTool } from "../core/model-preflight.ts";
 import { computeRepoId } from "../core/git.ts";
 import { createLogger } from "../core/logger.ts";
 import { ensureProjectLayout } from "../core/paths.ts";
@@ -31,6 +32,7 @@ import {
 const logger = createLogger("mcp-server");
 
 export const ALL_NYX_TOOLS: ToolDefinition[] = [
+  nyxModelPreflightTool,
   ...shieldEngineTools,
   ...bootstrapNavigatorEngineTools,
   ...seamEngineTools,

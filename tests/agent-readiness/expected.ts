@@ -146,8 +146,9 @@ export const EXPECTED_COMMANDS: readonly string[] = [
   "nyx-status",
 ];
 
-/** The full canonical MCP tool inventory: 38 names, stable order. */
+/** The full canonical MCP tool inventory: 39 names, stable order (server.ts order). */
 export const EXPECTED_NYX_TOOL_NAMES: readonly string[] = [
+  "model_preflight",
   "context_hydrate",
   "task_handoff",
   "task_dispatch",

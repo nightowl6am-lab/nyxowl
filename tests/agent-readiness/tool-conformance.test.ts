@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { invokeToolDefinition, type ToolDefinition } from "../../src/mcp/tool.ts";
+import { nyxModelPreflightTool } from "../../src/core/model-preflight.ts";
 import { bootstrapNavigatorEngineTools } from "../../src/mcp/engines/bootstrap-navigator/index.ts";
 import { blackboardEngineTools } from "../../src/mcp/engines/blackboard/index.ts";
 import { contextEngineTools } from "../../src/mcp/engines/context/index.ts";
@@ -28,6 +29,7 @@ interface Fixture {
 
 const TOOL_MAP = new Map<string, ToolDefinition>(
   [
+    nyxModelPreflightTool,
     ...bootstrapNavigatorEngineTools,
     ...blackboardEngineTools,
     ...contextEngineTools,
@@ -167,8 +169,8 @@ describe("agent readiness: in-process tool conformance", () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it("schema-verifies all 38 tools without executing them", () => {
-    expect(TOOL_MAP.size).toBe(38);
+  it("schema-verifies all 39 tools without executing them", () => {
+    expect(TOOL_MAP.size).toBe(39);
     const names = [...TOOL_MAP.keys()].map((name) =>
       name.startsWith("nyx_") ? name.slice("nyx_".length) : name,
     );

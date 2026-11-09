@@ -20,7 +20,7 @@ cold-start bug, the supported TUI launch path, and the deterministic CI gate.
 - 11 loaded skill packages with mode, references, and license, plus a matching
   `agents/skills.lock.json`;
 - the six canonical commands and the 300-token `AGENTS.md` block;
-- the full 38-tool MCP inventory: exact names, unique entries, non-empty
+- the full 39-tool MCP inventory: exact names, unique entries, non-empty
   descriptions <=200 characters, and JSON-object input/output schemas for every
   tool (schema-verified, not executed);
 - every referenced `nyx_*` tool exists in the MCP server.
@@ -49,9 +49,9 @@ Python Test-Writer lint gate.
 `tests/agent-readiness/tool-conformance.test.ts` invokes the real MCP tool
 definitions through `invokeToolDefinition` with the fixture prompt shapes. It
 runs against a temporary git copy of the base fixture and a temporary
-`NYXOWL_HOME`, never the host runtime. The matrix schema-verifies all 38 tools;
+`NYXOWL_HOME`, never the host runtime. The matrix schema-verifies all 39 tools;
 this suite executes the 13 fixture-expected tools and separately checks that all
-38 expose callable handlers and JSON-object input schemas without executing
+39 expose callable handlers and JSON-object input schemas without executing
 them. Every executed tool must return a structured success; only
 `nyx_testwriter_job` with the bogus readiness id may return a structured error.
 Execution covers context hydration, DNA, sanitize, Blackboard,
@@ -94,7 +94,7 @@ retried exactly once; the round passes only if every recorded attempt passes.
 ## Live host status
 
 OpenCode v2.2.5's headless `opencode run --standalone` path has a cold-start
-bug: MCP servers can log `mcp connected server=nyxowl tools=38` while the first
+bug: MCP servers can log `mcp connected server=nyxowl tools=39` while the first
 model request still sees only host tools. This is a host bug, not a repository
 launch requirement. NyxOwl's product path is the normal OpenCode TUI using the
 generated `opencode.json`; OpenCode manages its own service and MCP connections.

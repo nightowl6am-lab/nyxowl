@@ -63,6 +63,18 @@ export function buildHydrateDigestForHook(
   }
 }
 
+/**
+ * Shared invocation gate for session hooks (session-start, pre-compact).
+ */
+export function isHookPayloadActive(payload: HookInputPayload): boolean {
+  // The hook payload is the only trusted activation source for session hooks:
+  // hydrate text must not be emitted for an empty or unknown-agent stdin just
+  // because the parent process happens to carry a NYXOWL_SESSION marker.
+  const envWithoutSessionMarker: NodeJS.ProcessEnv = { ...process.env };
+  delete envWithoutSessionMarker["NYXOWL_SESSION"];
+  return isNyxowlSessionActive(payload, envWithoutSessionMarker);
+}
+
 export async function runSessionStartCli(stdinText?: string): Promise<{
   exitCode: number;
   stdout: string;
@@ -70,7 +82,11 @@ export async function runSessionStartCli(stdinText?: string): Promise<{
   try {
     const raw = stdinText !== undefined ? stdinText : fs.readFileSync(0, "utf8");
     const payload = raw.trim() ? (JSON.parse(raw) as HookInputPayload) : {};
-    if (!isNyxowlSessionActive(payload)) {
+    // Hydration activates on hook-payload identity only. The NYXOWL_SESSION env
+    // value is a process-scope marker for host-spawned MCP servers, not a hook
+    // trigger: an inherited marker (e.g. from a parent CLI process) must not
+    // turn an empty or unknown-agent payload into hydrate output.
+    if (!isHookPayloadActive(payload)) {
       return { exitCode: 0, stdout: "" };
     }
     const projectPath =

@@ -9,6 +9,9 @@ import {
   getHeadTreeHash,
 } from "../../../core/git.ts";
 import {
+  classifyCoverageNote,
+  classifySurfaceExercise,
+  decodeOptionalNoteList,
   ensureReceiptKey,
   verifyReceipt,
   type ReceiptKind,
@@ -68,11 +71,169 @@ export const worktreePrOutputSchema = z.object({
       kind: z.enum(["verify", "seam", "slop", "exploit"]),
       status: z.enum(["GREEN", "NA"]),
       coverage: z.string().optional(),
+      coverageNotes: z.array(z.string()).optional(),
+      limitations: z.array(z.string()).optional(),
     }),
   ),
   suppressions: z.array(z.string()),
   prBody: z.string(),
 });
+
+/**
+ * A receipt as it is rendered in the PR body and returned by the tool.
+ *
+ * `coverage` is the coverage value the gate itself reported. It is NEVER
+ * defaulted to "full": a receipt that did not report coverage renders as
+ * "not reported", so the PR body can never overstate the evidence.
+ */
+export interface VerifiedReceiptView {
+  id: string;
+  kind: ReceiptKind;
+  status: "GREEN" | "NA";
+  coverage?: string;
+  coverageNotes?: string[];
+  limitations?: string[];
+}
+
+/**
+ * Renders a coverage value for the receipts table.
+ *
+ * "full" is printed ONLY when the receipt itself reported "full". Every other
+ * value is printed as reported, and an absent value prints "not reported"
+ * (never "full").
+ */
+export function formatCoverageCell(coverage: string | null | undefined): string {
+  if (coverage === "full") return "full";
+  if (coverage === "partial") return "partial";
+  if (coverage === "none") return "none";
+  return "not reported";
+}
+
+/**
+ * Aggregated surface-exercise state across every receipt of the PR.
+ *
+ * The vocabulary is exactly the one of `classifySurfaceExercise`, so the PR
+ * body and the signed evidence always use the same words.
+ */
+export type PrSurfaceState = "exercised" | "not-exercised" | "not-reported";
+
+/**
+ * Determines the PR-level surface state from the coverage notes of all
+ * receipts. An explicit "not exercised" always wins (conservative), so a
+ * single gate that could not exercise the running surface can never be
+ * hidden by another gate that did.
+ */
+export function summarizeSurfaceExercise(receipts: VerifiedReceiptView[]): PrSurfaceState {
+  const allNotes = receipts.flatMap((receipt) => receipt.coverageNotes ?? []);
+  return classifySurfaceExercise(allNotes);
+}
+
+/**
+ * Renders the "Coverage & Limitations" PR body section.
+ *
+ * Every coverage note and limitation is rendered VERBATIM (the note text is
+ * never rewritten, summarized, or reworded). `classifyCoverageNote` and
+ * `classifySurfaceExercise` are used to state explicitly whether the running
+ * surface was exercised; when it was not exercised (or was not reported), a
+ * caveat is added and the PR is never described as fully verified.
+ */
+export function renderCoverageAndLimitationsSection(
+  receipts: VerifiedReceiptView[],
+): string[] {
+  const lines: string[] = ["## Coverage & Limitations", ""];
+  const caveatReasons: string[] = [];
+
+  for (const receipt of receipts) {
+    const coverageCell = formatCoverageCell(receipt.coverage);
+    const notes = receipt.coverageNotes ?? [];
+    const limitations = receipt.limitations ?? [];
+
+    lines.push(
+      `### \`${receipt.kind}\` — receipt \`${receipt.id}\` — ${receipt.status} — coverage: ${coverageCell}`,
+    );
+    lines.push("");
+
+    lines.push("**Coverage notes (verbatim):**");
+    if (notes.length === 0) {
+      lines.push("- _none recorded_");
+    } else {
+      for (const note of notes) {
+        lines.push(`- ${note}`);
+      }
+    }
+    lines.push("");
+
+    lines.push("**Limitations (verbatim):**");
+    if (limitations.length === 0) {
+      lines.push("- _none recorded_");
+    } else {
+      for (const limitation of limitations) {
+        lines.push(`- ${limitation}`);
+      }
+    }
+    lines.push("");
+
+    const surfaceNotes = notes.filter((note) => classifyCoverageNote(note) === "surface");
+    const stepNotes = notes.filter((note) => classifyCoverageNote(note) !== "surface");
+    const surfaceState = classifySurfaceExercise(notes);
+    const counts = `${surfaceNotes.length} surface note(s), ${stepNotes.length} configured-step note(s)`;
+    if (notes.length === 0) {
+      lines.push(
+        "**Surface coverage:** not reported — this gate recorded no coverage notes, so it makes no claim about the running surface.",
+      );
+    } else if (surfaceState === "exercised") {
+      lines.push(
+        `**Surface coverage:** exercised — the coverage notes record that the running surface WAS exercised (${counts}).`,
+      );
+    } else if (surfaceState === "not-exercised") {
+      lines.push(
+        `**Surface coverage:** not exercised — the coverage notes record that the running surface was NOT exercised (${counts}).`,
+      );
+    } else {
+      lines.push(
+        `**Surface coverage:** not reported — no coverage note states whether the running surface was exercised (${counts}).`,
+      );
+    }
+    lines.push("");
+
+    if (receipt.coverage === "none") {
+      caveatReasons.push(
+        `\`${receipt.kind}\`: coverage recorded as \`none\` — this gate exercised no coverage at all.`,
+      );
+    } else if (receipt.coverage === "partial") {
+      caveatReasons.push(
+        `\`${receipt.kind}\`: coverage recorded as \`partial\` — only part of the configured work was exercised.`,
+      );
+    }
+  }
+
+  const prSurfaceState = summarizeSurfaceExercise(receipts);
+
+  if (prSurfaceState === "not-exercised") {
+    caveatReasons.unshift(
+      "the receipt coverage notes record that the running surface was NOT exercised.",
+    );
+  } else if (prSurfaceState === "not-reported") {
+    caveatReasons.unshift(
+      "no receipt coverage note states whether the running surface was exercised.",
+    );
+  }
+
+  lines.push(`**PR-level surface coverage:** ${prSurfaceState}.`);
+  lines.push("");
+
+  if (caveatReasons.length > 0) {
+    lines.push(
+      "> **Coverage caveat — this PR is not fully verified.** The receipts above do not establish that the running application was exercised; passing configured code steps are not evidence that the running surface works.",
+    );
+    for (const reason of caveatReasons) {
+      lines.push(`> - ${reason}`);
+    }
+    lines.push("");
+  }
+
+  return lines;
+}
 
 export const nyxWorktreePrTool = defineTool({
   name: "nyx_worktree_pr",
@@ -158,8 +319,8 @@ export const nyxWorktreePrTool = defineTool({
     const key = ensureReceiptKey(ctx.nyxHome);
     const receiptRows = ctx.db.db
       .prepare(
-        `SELECT id, kind, status, coverage, worktree, branch, tree_hash, base_sha,
-                commands_hash, evidence_artifact_id, na_justification, created_at, hmac
+        `SELECT id, kind, status, coverage, coverage_notes, limitations, worktree, branch, tree_hash,
+                base_sha, commands_hash, evidence_artifact_id, na_justification, created_at, hmac
          FROM receipts
          WHERE worktree = ? OR branch = ?
          ORDER BY created_at DESC`,
@@ -169,6 +330,8 @@ export const nyxWorktreePrTool = defineTool({
       kind: ReceiptKind;
       status: "GREEN" | "RED" | "NA";
       coverage: "full" | "partial" | "none" | null;
+      coverage_notes: string | null;
+      limitations: string | null;
       worktree: string;
       branch: string;
       tree_hash: string;
@@ -180,12 +343,7 @@ export const nyxWorktreePrTool = defineTool({
       hmac: string;
     }>;
 
-    const verifiedReceipts: Array<{
-      id: string;
-      kind: ReceiptKind;
-      status: "GREEN" | "NA";
-      coverage?: string;
-    }> = [];
+    const verifiedReceipts: VerifiedReceiptView[] = [];
 
     for (const reqKind of requiredKinds) {
       const candidates = receiptRows.filter((r) => r.kind === reqKind);
@@ -198,11 +356,19 @@ export const nyxWorktreePrTool = defineTool({
 
       // Check latest receipt of this kind
       const latest = candidates[0]!;
+      // The optional evidence fields are part of the signed payload. They are
+      // included ONLY when the stored column decodes to a list, so a legacy
+      // receipt (NULL columns) canonicalizes to exactly the same JSON — and
+      // therefore to exactly the same HMAC — as when it was signed.
+      const coverageNotes = decodeOptionalNoteList(latest.coverage_notes);
+      const limitations = decodeOptionalNoteList(latest.limitations);
       const signedObj: SignedReceipt = {
         id: latest.id,
         kind: latest.kind,
         status: latest.status,
         ...(latest.coverage ? { coverage: latest.coverage } : {}),
+        ...(coverageNotes !== undefined ? { coverageNotes } : {}),
+        ...(limitations !== undefined ? { limitations } : {}),
         worktree: latest.worktree,
         branch: latest.branch,
         treeHash: latest.tree_hash,
@@ -235,6 +401,8 @@ export const nyxWorktreePrTool = defineTool({
         kind: latest.kind,
         status: latest.status as "GREEN" | "NA",
         ...(latest.coverage ? { coverage: latest.coverage } : {}),
+        ...(coverageNotes !== undefined ? { coverageNotes } : {}),
+        ...(limitations !== undefined ? { limitations } : {}),
       });
     }
 
@@ -273,10 +441,10 @@ export const nyxWorktreePrTool = defineTool({
     });
     const suppressions = extractAllowSuppressionsFromDiff(fullDiffRes.stdout);
 
-    // Step 5: Build PR Body with Receipts Table, Coverage, Suppressions, and Nyxowl Footer
+    // Step 5: Build PR Body with Receipts Table, Coverage & Limitations, Suppressions, and Nyxowl Footer
     const receiptTableRows = verifiedReceipts.map(
       (r) =>
-        `| \`${r.kind}\` | **${r.status}** | \`${r.id}\` | \`${headTreeHash.slice(0, 12)}\` | ${r.coverage ?? "full"} |`,
+        `| \`${r.kind}\` | **${r.status}** | \`${r.id}\` | \`${headTreeHash.slice(0, 12)}\` | ${formatCoverageCell(r.coverage)} |`,
     );
 
     const prBodyLines = [
@@ -287,6 +455,8 @@ export const nyxWorktreePrTool = defineTool({
       `| Gate | Status | Receipt ID | Tree Hash | Coverage |`,
       `| :--- | :--- | :--- | :--- | :--- |`,
       ...receiptTableRows,
+      ``,
+      ...renderCoverageAndLimitationsSection(verifiedReceipts),
     ];
 
     if (disabledGates.length > 0) {

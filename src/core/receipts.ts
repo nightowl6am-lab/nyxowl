@@ -13,6 +13,18 @@ export interface ReceiptPayload {
   kind: ReceiptKind;
   status: ReceiptStatus;
   coverage?: SeamCoverage;
+  /**
+   * Free-form, human-readable statements about WHAT the receipt actually covered.
+   * Notes are signed with the receipt and rendered verbatim in the PR body so a
+   * reader can see the difference between "configured steps ran" and "the
+   * surface was exercised".
+   */
+  coverageNotes?: string[];
+  /**
+   * Known gaps, open issues, and reasons the evidence is weaker than it looks.
+   * Limitations are signed with the receipt and rendered verbatim in the PR body.
+   */
+  limitations?: string[];
   worktree: string;
   branch: string;
   treeHash: string;
@@ -108,10 +120,132 @@ export function extractReceiptPayload(receipt: ReceiptPayload | SignedReceipt): 
   if (receipt.coverage !== undefined) {
     payload.coverage = receipt.coverage;
   }
+  // The optional evidence fields are included ONLY when defined. A receipt that
+  // predates them therefore canonicalizes to exactly the same JSON — and
+  // therefore to exactly the same HMAC — as before this change.
+  if (receipt.coverageNotes !== undefined) {
+    payload.coverageNotes = [...receipt.coverageNotes];
+  }
+  if (receipt.limitations !== undefined) {
+    payload.limitations = [...receipt.limitations];
+  }
   if (receipt.naJustification !== undefined) {
     payload.naJustification = receipt.naJustification;
   }
   return payload;
+}
+
+/**
+ * Encodes an optional list of receipt notes for storage in a TEXT column.
+ * `undefined` maps to SQL NULL so an absent list is distinguishable from an
+ * empty one.
+ */
+export function encodeOptionalNoteList(
+  values: readonly string[] | undefined,
+): string | null {
+  if (values === undefined) {
+    return null;
+  }
+  return JSON.stringify([...values]);
+}
+
+/**
+ * Decodes a TEXT column produced by {@link encodeOptionalNoteList}.
+ * Returns `undefined` for NULL, empty, or unparsable content so a corrupted
+ * row can never fabricate evidence.
+ */
+export function decodeOptionalNoteList(
+  raw: string | null | undefined,
+): string[] | undefined {
+  if (raw === null || raw === undefined) {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed.filter((entry): entry is string => typeof entry === "string");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Coverage a receipt note talks about.
+ *
+ * - `configured-step`: the configured verification steps (typecheck, lint, test,
+ *   build, seam layers, ...) that the gate actually ran.
+ * - `surface`: the running surface (browser, HTTP runtime, ...) that was or was
+ *   not exercised.
+ */
+export type ReceiptNoteScope = "configured-step" | "surface";
+
+/** Prefix marking a coverage note as being about the running surface. */
+export const SURFACE_NOTE_PREFIX = "surface:";
+
+/** Prefix marking a coverage note as being about the configured steps. */
+export const CONFIGURED_STEP_NOTE_PREFIX = "configured-step:";
+
+/** Prefix marking a coverage note as recording that the surface WAS exercised. */
+export const SURFACE_EXERCISED_NOTE_PREFIX = "surface:exercised:";
+
+/** Prefix marking a coverage note as recording that the surface was NOT exercised. */
+export const SURFACE_NOT_EXERCISED_NOTE_PREFIX = "surface:not-exercised:";
+
+/**
+ * Classifies a coverage note by its optional scope prefix.
+ *
+ * A note that starts with `surface:` describes the running surface (browser /
+ * HTTP runtime). A note that starts with `configured-step:` describes the
+ * configured verification steps. Any other note is a configured-step note,
+ * because that is what a gate's coverage note is about by default.
+ *
+ * The note itself is never modified: callers render the original string so the
+ * evidence stays verbatim.
+ */
+export function classifyCoverageNote(note: string): ReceiptNoteScope {
+  const trimmed = note.trimStart().toLowerCase();
+  if (trimmed.startsWith(SURFACE_NOTE_PREFIX)) {
+    return "surface";
+  }
+  if (trimmed.startsWith(CONFIGURED_STEP_NOTE_PREFIX)) {
+    return "configured-step";
+  }
+  return "configured-step";
+}
+
+/**
+ * Whether the running surface was exercised, according to the coverage notes.
+ *
+ * - `exercised`: a note explicitly records that the surface was exercised.
+ * - `not-exercised`: a note explicitly records that it was not.
+ * - `not-reported`: no note says either way.
+ *
+ * Conservative by design: an explicit "not exercised" always wins, so a gate
+ * can never make the PR body claim surface coverage that was not recorded.
+ */
+export function classifySurfaceExercise(
+  notes: readonly string[] | undefined,
+): "exercised" | "not-exercised" | "not-reported" {
+  if (!notes || notes.length === 0) {
+    return "not-reported";
+  }
+  let sawExercised = false;
+  for (const note of notes) {
+    const trimmed = note.trimStart().toLowerCase();
+    if (trimmed.startsWith(SURFACE_NOT_EXERCISED_NOTE_PREFIX)) {
+      return "not-exercised";
+    }
+    if (trimmed.startsWith(SURFACE_EXERCISED_NOTE_PREFIX)) {
+      sawExercised = true;
+    }
+  }
+  return sawExercised ? "exercised" : "not-reported";
 }
 
 export function computeReceiptHmac(payload: ReceiptPayload, key: Buffer): string {

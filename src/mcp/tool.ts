@@ -51,6 +51,26 @@ export interface McpToolCallResponse {
   isError?: boolean;
 }
 
+/**
+ * Budget precedence (BUG: per-role/tool budgets):
+ * tool override > caller-role override > global default.
+ */
+export function resolveToolOutputBudget(
+  budgets: NyxConfig["budgets"],
+  toolName: string,
+  callerRole: string,
+): number {
+  const toolOverride = budgets.toolOutputOverrides[toolName];
+  if (toolOverride !== undefined) {
+    return toolOverride;
+  }
+  const roleOverride = budgets.roleOutputOverrides[callerRole];
+  if (roleOverride !== undefined) {
+    return roleOverride;
+  }
+  return budgets.maxToolOutputTokens;
+}
+
 export function defineTool<TInput extends z.ZodTypeAny, TOutput extends z.ZodTypeAny>(
   def: ToolDefinition<TInput, TOutput>,
 ): ToolDefinition<TInput, TOutput> {
@@ -185,24 +205,18 @@ export async function invokeToolDefinition(
     const redactedOutput = ctx.redactor.redactObject(validatedOutput) as Record<string, unknown>;
 
     const serialized = JSON.stringify(redactedOutput, null, 2);
-    const budgeted = enforceTokenBudget(serialized, ctx.config.budgets.maxToolOutputTokens);
+    const budget = resolveToolOutputBudget(ctx.config.budgets, tool.name, ctx.callerRole);
+    const budgeted = enforceTokenBudget(serialized, budget);
 
     let finalText = budgeted.text;
-    let finalStructured: Record<string, unknown> = redactedOutput;
+    // structuredContent must stay exactly schema-shaped: no _truncated/_overflowArtifactId
+    // keys are ever added, so it always validates against the advertised outputSchema.
+    const finalStructured: Record<string, unknown> = redactedOutput;
 
     if (budgeted.truncated && budgeted.overflowText) {
-      const artifactId = storeOverflowArtifact(
-        ctx.db,
-        ctx.projectLayout,
-        tool.name,
-        budgeted.overflowText,
-      );
-      finalText = `${budgeted.text}\n... [TRUNCATED to ${ctx.config.budgets.maxToolOutputTokens} tokens. Full output stored in artifactId="${artifactId}". Use nyx_artifact_read to page.]`;
-      finalStructured = {
-        ...redactedOutput,
-        _truncated: true,
-        _overflowArtifactId: artifactId,
-      };
+      // Store the FULL original serialized output (not the truncated preview).
+      const artifactId = storeOverflowArtifact(ctx.db, ctx.projectLayout, tool.name, serialized);
+      finalText = `${budgeted.text}\n... [TRUNCATED: output for "${tool.name}" exceeded its ${budget}-token budget. Full original output is stored under artifactId="${artifactId}". Call nyx_artifact_read with this artifactId to page the missing portion.]`;
     }
 
     ctx.db.recordAudit({

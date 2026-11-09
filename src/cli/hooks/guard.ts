@@ -28,6 +28,35 @@ const ALLOWED_ENV_EXAMPLES = new Set([
   ".env.template",
 ]);
 
+const KNOWN_PRIVATE_KEY_FILENAMES = new Set([
+  "server.key",
+  "private.key",
+  "privkey.key",
+  "tls.key",
+  "ssl.key",
+  "host.key",
+  "client.key",
+  "signing.key",
+  "ca.key",
+  "root.key",
+]);
+
+/**
+ * A `.key` token is only a private key when it plausibly names a file. Member expressions such
+ * as `e.key` and `item.key` are identifiers, not paths, and must not trip the secret guard.
+ */
+function isPlausiblePrivateKeyPath(
+  trimmed: string,
+  normalized: string,
+  lowerBase: string,
+): boolean {
+  if (!lowerBase.endsWith(".key")) return false;
+  if (KNOWN_PRIVATE_KEY_FILENAMES.has(lowerBase)) return true;
+  if (normalized.includes("/")) return true;
+  if (trimmed.startsWith(".") || trimmed.startsWith("~")) return true;
+  return false;
+}
+
 export function isNyxowlSessionActive(
   payload: HookInputPayload,
   env: NodeJS.ProcessEnv = process.env,
@@ -67,7 +96,7 @@ export function isSecretFilePath(rawPath: string, nyxowlHome?: string): boolean 
   // Certificates / private keys / credentials
   if (
     lowerBase.endsWith(".pem") ||
-    lowerBase.endsWith(".key") ||
+    isPlausiblePrivateKeyPath(trimmed, normalized, lowerBase) ||
     lowerBase.endsWith(".p12") ||
     lowerBase.endsWith(".pfx") ||
     (lowerBase.includes("credentials") && lowerBase.endsWith(".json")) ||
@@ -124,6 +153,94 @@ function extractEmbeddedSubstitutions(cmd: string): string[] {
     if (m[1]) subs.push(m[1]);
   }
   return subs;
+}
+
+const HEREDOC_START = /<<-?\s*(['"]?)([A-Za-z0-9_]+)\1/g;
+
+/**
+ * Conservative allowlist of commands that treat stdin as inert data. A heredoc is only stripped
+ * for these receivers; every other command (interpreters, `bash -c`, unknown binaries) keeps its
+ * body in the scanned text so secret paths inside executable input are still blocked.
+ */
+const HEREDOC_DATA_SINKS = new Set(["cat", "tee", "printf", "echo", "logger"]);
+
+function heredocReceiverIsDataSink(line: string, heredocIndex: number): boolean {
+  const prefix = line.slice(0, heredocIndex);
+  // Ambiguous command chains are never stripped.
+  if (/(?:^|[^\\])(?:;|&&|\|\||\||&)/.test(prefix)) return false;
+
+  let entries: ParseEntry[];
+  try {
+    entries = parseShellQuote(prefix, (varName) => `__VAR_${varName}__`);
+  } catch {
+    return false;
+  }
+
+  const tokens: string[] = [];
+  for (const entry of entries) {
+    if (typeof entry === "string") {
+      tokens.push(entry);
+    } else if (entry !== null && typeof entry === "object" && "op" in entry) {
+      const op = entry.op;
+      const isRedirection = op === "<" || op === ">" || op === ">>";
+      if (!isRedirection) return false;
+    }
+  }
+
+  let index = 0;
+  while (index < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index]!)) {
+    index++;
+  }
+  const receiver = (tokens[index] ?? "").replace(/\\/g, "/");
+  const bin = path.posix.basename(receiver).toLowerCase();
+  return HEREDOC_DATA_SINKS.has(bin);
+}
+
+/**
+ * Removes heredoc bodies only when the receiving command is an inert data sink, so a body line
+ * like `e.key` is not tokenized as a shell argument. Bodies fed to interpreters or unknown
+ * commands are preserved and scanned for secret paths.
+ */
+export function stripHeredocBodies(commandStr: string): string {
+  const lines = commandStr.split("\n");
+  const output: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index]!;
+    output.push(line);
+    index++;
+
+    const delimiters: Array<{ token: string; allowIndent: boolean }> = [];
+    let stripsBody = true;
+    HEREDOC_START.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = HEREDOC_START.exec(line)) !== null) {
+      const token = match[2];
+      if (!token) continue;
+      const introducer = line.slice(match.index, match.index + 3);
+      delimiters.push({ token, allowIndent: introducer.includes("-") });
+      if (!heredocReceiverIsDataSink(line, match.index)) {
+        stripsBody = false;
+      }
+    }
+
+    // Conservative: if any heredoc on this line is not a data-sink feed, keep every body.
+    if (!stripsBody) continue;
+
+    for (const delimiter of delimiters) {
+      while (index < lines.length) {
+        const bodyLine = lines[index]!;
+        index++;
+        const candidate = delimiter.allowIndent
+          ? bodyLine.replace(/^\t+/, "")
+          : bodyLine;
+        if (candidate === delimiter.token) break;
+      }
+    }
+  }
+
+  return output.join("\n");
 }
 
 /**
@@ -255,7 +372,8 @@ export function evaluateShellCommandGuard(
     };
   }
 
-  const { commands, hasPipeToShell } = splitShellCommandsRecursive(raw);
+  // Heredoc bodies are data, not shell arguments: strip them before tokenization and path checks.
+  const { commands, hasPipeToShell } = splitShellCommandsRecursive(stripHeredocBodies(raw));
   if (hasPipeToShell) {
     return {
       decision: "deny",

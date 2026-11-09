@@ -106,7 +106,7 @@ describe("OpenCode native skill registration", () => {
     expect(NATIVE_SKILL_IDS).toHaveLength(10);
   });
 
-  it("denies all 38 MCP tools by exact name and never emits a nyxowl_* wildcard", () => {
+  it("denies all 39 MCP tools by exact name and never emits a nyxowl_* wildcard", () => {
     const expectedDenies = NYX_MCP_TOOL_BASENAMES.map((tool) => `nyxowl_nyx_${tool}`).sort();
     for (const agentId of AGENT_SKILL_IDS) {
       const agent = config.agents[agentId];

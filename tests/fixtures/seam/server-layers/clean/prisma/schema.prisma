@@ -1,0 +1,7 @@
+model User {
+  id          Int      @id @default(autoincrement())
+  display_name String  @map("display_name")
+  created_at  DateTime @map("created_at")
+
+  @@map("users")
+}

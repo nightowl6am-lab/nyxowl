@@ -8,8 +8,8 @@ describe("MCP tool deny-list synchronization", () => {
       tool.name.startsWith("nyx_") ? tool.name.slice("nyx_".length) : tool.name,
     ).sort();
 
-    expect(registered).toHaveLength(38);
-    expect(new Set(registered).size).toBe(38);
+    expect(registered).toHaveLength(39);
+    expect(new Set(registered).size).toBe(39);
     expect([...NYX_MCP_TOOL_BASENAMES].sort()).toEqual(registered);
   });
 

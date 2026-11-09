@@ -35,8 +35,8 @@ describe("runMcpSmoke", () => {
     const result = await runMcpSmoke();
     expect(result).toEqual({
       ok: true,
-      toolCount: 38,
-      message: "38 tools listed",
+      toolCount: 39,
+      message: "39 tools listed",
     });
   });
 });
@@ -65,7 +65,7 @@ describe("doctor MCP smoke line", () => {
     });
 
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain("MCP Smoke Test: OK (38 tools listed)");
+    expect(res.stdout).toContain("MCP Smoke Test: OK (39 tools listed)");
     expect(res.stdout).not.toContain("registered");
   });
 });
