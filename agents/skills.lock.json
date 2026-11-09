@@ -1,0 +1,839 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/skills/vendor.mjs",
+  "skills": {
+    "nyxowl": {
+      "mode": "native",
+      "adaptations": "Adapted from parallel-feature-development. Replaced branch management with NyxOwl worktrees and Blackboard handoffs; added architect-owned contract files, one owner per barrel/index file, staging stubs, lock handoffs, BLOCKED_REDLINE escalation, and the trust-boundary header. References are read-only data with a warning header.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/wshobson/agents.git",
+        "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/agent-teams/skills/parallel-feature-development/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "09cdf55ad98b29d6619c2f5a7f4a07ab0da472b70dc6b3a2d734328f292390c1",
+          "upstreamSha256": "9d39b7d0f3011a8e0f468d000987758f6ac493edc6e6fe73227fa3e75e209458",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/file-ownership.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/agent-teams/skills/parallel-feature-development/references/file-ownership.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "a277c38ab71a9ddca91f76b6cc4935b81564890d50ce3e58e853b6564c930795",
+          "upstreamSha256": "cf4fb139ad4284c6432527a5ec51b38037d06ca84c5cfba3ab7b88a47301fd24",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/merge-strategies.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/agent-teams/skills/parallel-feature-development/references/merge-strategies.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "091890e20e303d654d1c6e0a4a4b0042cae866b35b137fc572eeca825b8ff07c",
+          "upstreamSha256": "39129b4947d1f50d85698000dfa464bd5cc42d73a214333fd36888b9a38d78b8",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "upstreamSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-product": {
+      "mode": "native",
+      "adaptations": "Adapted from write-spec and competitive-brief. Removed ask-user, connectors, browser, and web tools; required nyx_web_fetch URL citations, nyx_sanitize_untrusted for every fetched page, nyx_docs_ground, and Blackboard publication. Added the trust-boundary header.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "Apache-2.0",
+        "marker": "Apache License",
+        "repo": "https://github.com/anthropics/knowledge-work-plugins.git",
+        "commit": "e050c2ec856373787143d7057663a6ebd1277df3",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/anthropics/knowledge-work-plugins.git",
+          "commit": "e050c2ec856373787143d7057663a6ebd1277df3",
+          "upstreamPath": "product-management/skills/write-spec/SKILL.md",
+          "license": "Apache-2.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "4cacf3362651221f7af7f9cadce5827936ac3ae9609e9ab03c0db907a9039741",
+          "upstreamSha256": "ca6670913878b4ac4582727562bfced5271492a5a800d934f68c9e7bc1cd4dcc",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/competitive-brief.md",
+          "origin": "upstream",
+          "repo": "https://github.com/anthropics/knowledge-work-plugins.git",
+          "commit": "e050c2ec856373787143d7057663a6ebd1277df3",
+          "upstreamPath": "product-management/skills/competitive-brief/SKILL.md",
+          "license": "Apache-2.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "be1450efb4eae8f9a10001952207f49772d4a40bb32f4bffec19ff0c97e0c0a9",
+          "upstreamSha256": "720916695f99a70e723be02d0123908c9c968ce56e1ffdeeb423014587017cd2",
+          "adaptation": "Upstream reference with a read-only warning; relative links outside references/ are replaced with plain text."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/anthropics/knowledge-work-plugins.git",
+          "commit": "e050c2ec856373787143d7057663a6ebd1277df3",
+          "upstreamPath": "LICENSE",
+          "license": "Apache-2.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "upstreamSha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-architect": {
+      "mode": "native",
+      "adaptations": "Adapted from api-and-interface-design. Removed test/shell commands; added the architect-only contract design checklist, Blackboard contract publication, architect-owned contract files, nyx_seam_check and nyx_pkg_verify evidence. Reference adapted from api-design-principles.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/addyosmani/agent-skills.git",
+        "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [
+        {
+          "file": "LICENSE-WSHOBSON",
+          "spdx": "MIT",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE"
+        }
+      ],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "skills/api-and-interface-design/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "2915e060d296806c0ef984505a3ac0c5f5b3c91249cb13bb29702cfb003d1bb9",
+          "upstreamSha256": "cc5e2166c484b2c297e8253f56e7525e5031f81d66101ca4e760ef378ea6bad0",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/api-design-principles.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/backend-development/skills/api-design-principles/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "e782217094f3717f4ad2398fac5a179764561c9f5f2cfa17b73605423d017285",
+          "upstreamSha256": "1f6166c23c0a0f32d703c19d84b3c30c2873daefb9e8732339a009934fa17013",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "upstreamSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "adaptation": "Verbatim upstream license text."
+        },
+        {
+          "local": "LICENSE-WSHOBSON",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "upstreamSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-designer": {
+      "mode": "native",
+      "adaptations": "Adapted from design-system. Removed connector and browser sections; required WCAG 2.2 AA checks, nyx_slop_check and nyx_verify_slice, no hardcoded values/dead CSS/TODOs. Reference adapted from wcag-audit-patterns.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "Apache-2.0",
+        "marker": "Apache License",
+        "repo": "https://github.com/anthropics/knowledge-work-plugins.git",
+        "commit": "e050c2ec856373787143d7057663a6ebd1277df3",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [
+        {
+          "file": "LICENSE-WSHOBSON",
+          "spdx": "MIT",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE"
+        }
+      ],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/anthropics/knowledge-work-plugins.git",
+          "commit": "e050c2ec856373787143d7057663a6ebd1277df3",
+          "upstreamPath": "design/skills/design-system/SKILL.md",
+          "license": "Apache-2.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "bc63710c746ad9e9ad58e49c7ed7c8a25379c339fe3c58c277459e0180d49df5",
+          "upstreamSha256": "fb31bd0144c43955106f01927126ae9fd2d4148be44c8d5887b3391f40c31445",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/wcag-2.2-audit.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/accessibility-compliance/skills/wcag-audit-patterns/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "1dd0aa8e7ec7df081bb6ee92c642c86436c9ee8cdabcb57f487b4c4289bb73bc",
+          "upstreamSha256": "db263a3405deb95a63175f33da4a9d82d8595599fbee4a81979059b35a7cec40",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/anthropics/knowledge-work-plugins.git",
+          "commit": "e050c2ec856373787143d7057663a6ebd1277df3",
+          "upstreamPath": "LICENSE",
+          "license": "Apache-2.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "upstreamSha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "adaptation": "Verbatim upstream license text."
+        },
+        {
+          "local": "LICENSE-WSHOBSON",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "upstreamSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-db": {
+      "mode": "native",
+      "adaptations": "Adapted from database-migrations. Replaced .env access with nyx_env_inspect; added non-disposable-DB execution ban, RLS enable/default-deny/per-operation/tenant tests, deterministic idempotent seeds, nyx_verify_slice and nyx_seam_check. Added four Supabase RLS/lock references.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/affaan-m/ECC.git",
+        "commit": "d2ef2680594f9a17526a6e1a2e18b3d242c5d17b",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [
+        {
+          "file": "LICENSE-SUPABASE",
+          "spdx": "MIT",
+          "repo": "https://github.com/supabase/agent-skills.git",
+          "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+          "upstreamPath": "LICENSE"
+        }
+      ],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/affaan-m/ECC.git",
+          "commit": "d2ef2680594f9a17526a6e1a2e18b3d242c5d17b",
+          "upstreamPath": "skills/database-migrations/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "30d0a7a8f1173da806b31487d234345991f61b4ab21f09684c7f24eedf62987e",
+          "upstreamSha256": "dad2f1964295eee14a96e06213ce3f60992bbcdc1f37a50c828bbc2e1abd79dd",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/rls-basics.md",
+          "origin": "upstream",
+          "repo": "https://github.com/supabase/agent-skills.git",
+          "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+          "upstreamPath": "skills/supabase-postgres-best-practices/references/security-rls-basics.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "ca7ea8fbb87d6c5f640c0ccc10ea75a48851cb3cbcdd4170e0caa5b89167da53",
+          "upstreamSha256": "e04dd1a3a382aafdaaa73fe9f7976352acdde6e90c2a2470d281b94d4f44b096",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/rls-performance.md",
+          "origin": "upstream",
+          "repo": "https://github.com/supabase/agent-skills.git",
+          "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+          "upstreamPath": "skills/supabase-postgres-best-practices/references/security-rls-performance.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "41d175a7b62f853df40ba61f8741ed83285bab5d12a2987c6958bc98997c92bb",
+          "upstreamSha256": "2e1faeca7d5746e246b1c78f9492fe2a9cfa41c4d7fa1e23c402d58fa18ea014",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/privileges.md",
+          "origin": "upstream",
+          "repo": "https://github.com/supabase/agent-skills.git",
+          "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+          "upstreamPath": "skills/supabase-postgres-best-practices/references/security-privileges.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "4e68fab4bccf250bdd5677033d1a755aaa106f46359770648a4794d5c221a800",
+          "upstreamSha256": "095909274a4fb43df785d7144cf674eeb40284d2d45628f14af4108737b93663",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/deadlock-prevention.md",
+          "origin": "upstream",
+          "repo": "https://github.com/supabase/agent-skills.git",
+          "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+          "upstreamPath": "skills/supabase-postgres-best-practices/references/lock-deadlock-prevention.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "af203d67f0e43f12b98bba2b83c8f764949bd254fa24c14c3ab54ed57b6ba28c",
+          "upstreamSha256": "09aee46f51d7178c8e55fe056cd5a94a64ba2c122fe418e6900cd99f297b2347",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/affaan-m/ECC.git",
+          "commit": "d2ef2680594f9a17526a6e1a2e18b3d242c5d17b",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "326146379f01bb137c0a5d3c54770c1aa31076705c8b88a7f6b26a460f6221b2",
+          "upstreamSha256": "326146379f01bb137c0a5d3c54770c1aa31076705c8b88a7f6b26a460f6221b2",
+          "adaptation": "Verbatim upstream license text."
+        },
+        {
+          "local": "LICENSE-SUPABASE",
+          "origin": "upstream",
+          "repo": "https://github.com/supabase/agent-skills.git",
+          "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "b65e575eb4f04a13c187d64e958321298e2ab84d67aa8428819f362056ba292c",
+          "upstreamSha256": "b65e575eb4f04a13c187d64e958321298e2ab84d67aa8428819f362056ba292c",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-api": {
+      "mode": "native",
+      "adaptations": "Adapted from test-driven-development. Added RED/GREEN/REFACTOR, prove-it, test pyramid, DAMP, real implementations, boundary validation, no swallowed errors, nyx_verify_slice/nyx_seam_check and nyx_dep_guard. References adapted from writing-good-tests, auth-implementation-patterns, and error-handling-patterns.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/obra/superpowers.git",
+        "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [
+        {
+          "file": "LICENSE-WSHOBSON",
+          "spdx": "MIT",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE"
+        }
+      ],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "skills/test-driven-development/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "11f1dcae06416274bce2931e292e42717efeac930e1d08b8d096c8ce38289f0f",
+          "upstreamSha256": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/writing-good-tests.md",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "skills/test-driven-development/writing-good-tests.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "d6b34067baa8f1d816c31e1ca460b849ff3a64b0802a69a84bc30814443e764f",
+          "upstreamSha256": "51471c853306ff92ca8bb41dcaea05f31c0e46b03651f8f3c99754b7172f4ae1",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/auth-implementation-patterns.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/developer-essentials/skills/auth-implementation-patterns/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "ef0199a4e9961702e6459322c4fe033ee2725cc0ad5dea669ee21ab87ff76cca",
+          "upstreamSha256": "1fc61d6074ace3d3db9d527ef92a7188118ff305b6ea98e0f9356545c6e15996",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/error-handling-patterns.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/developer-essentials/skills/error-handling-patterns/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "dfd1d07e639b544f3243fedb2b55103266b4c2714a10cc9c4f2e1591be62e5ab",
+          "upstreamSha256": "5fb7f4d995fc05386a8c04b045f96fd3cb652cbd31fd52d78966f86323b373b8",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "upstreamSha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "adaptation": "Verbatim upstream license text."
+        },
+        {
+          "local": "LICENSE-WSHOBSON",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "upstreamSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-ui": {
+      "mode": "native",
+      "adaptations": "Adapted from frontend-ui-engineering. Removed browser/devtools; required nyx_verify_slice and nyx_slop_check, WCAG AA, complete states, no any/mock production data/empty handlers/dead TODOs, and api-contract fidelity. Reference adapted from the Vercel web interface guidelines.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/addyosmani/agent-skills.git",
+        "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [
+        {
+          "file": "LICENSE-VERCEL",
+          "spdx": "MIT",
+          "repo": "https://github.com/vercel-labs/web-interface-guidelines.git",
+          "commit": "434b7f91364665f2f733b310ec54809bf8f37937",
+          "upstreamPath": "LICENSE"
+        }
+      ],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "skills/frontend-ui-engineering/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "33835a01c9af29126e0e2e767960b68f4730c08c07d4d90eaac84604147f7321",
+          "upstreamSha256": "93a0ebffbb6075340d85255ae50724bc5e5e19b0fcbf2ae5d5857b9c5ddf9498",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/web-interface-guidelines.md",
+          "origin": "upstream",
+          "repo": "https://github.com/vercel-labs/web-interface-guidelines.git",
+          "commit": "434b7f91364665f2f733b310ec54809bf8f37937",
+          "upstreamPath": "AGENTS.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "7e086101bf23471d87306320815715b5f312ae9531267140b2ee9c35d1b98ef1",
+          "upstreamSha256": "35411b4a2dcfa651fd33706a92cc860947364b521643107fbf3116abe3826d44",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "upstreamSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "adaptation": "Verbatim upstream license text."
+        },
+        {
+          "local": "LICENSE-VERCEL",
+          "origin": "upstream",
+          "repo": "https://github.com/vercel-labs/web-interface-guidelines.git",
+          "commit": "434b7f91364665f2f733b310ec54809bf8f37937",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "6cd1609c9c12233507cdd2ce0d32e9a721e3c27494951be06b90090deeeb7af2",
+          "upstreamSha256": "6cd1609c9c12233507cdd2ce0d32e9a721e3c27494951be06b90090deeeb7af2",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-sec": {
+      "mode": "native",
+      "adaptations": "Adapted from security-and-hardening. Added OWASP Top 10 review, loopback-only probing (127.0.0.1/localhost/::1, nyx_proc ports), evidence-backed findings with attack path/request-response/severity, security Blackboard publication, and a no-production-edit rule.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/addyosmani/agent-skills.git",
+        "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "skills/security-and-hardening/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "70acce31b32748122e3c0bba8e6e352a40fa89c0e9b77247fa0f268a592e359f",
+          "upstreamSha256": "358566859a3d791c474eb9fa36939b45875c7480d7d4650eaa092dceae2c1c37",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/hardening-patterns.md",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "skills/security-and-hardening/references/hardening-patterns.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "1ec39f7cfcb8e7f34c64a20bc9d1b93b1b19f63fc2767e87df87ddcfeb3fc66e",
+          "upstreamSha256": "18ff8d176eedaaa8ec1fba4cd7adacc8d81105b1b162b404b37c43b563a313c8",
+          "adaptation": "Upstream reference with a read-only warning; relative links outside references/ are replaced with plain text."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "upstreamSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-testwriter": {
+      "mode": "inline",
+      "adaptations": "Adapted from property-based-testing. Removed shell/repository access; restricted to the five nyx_testwriter_* tools; added SPEC_INSUFFICIENT and INJECTION_SUSPECTED outcomes, the trust-boundary header, inline section names, and the CC-BY-SA-4.0 attribution. References generating/reviewing/interpreting-failures are inlined.",
+      "license": {
+        "file": "LICENSE-CC-BY-SA-4.0",
+        "spdx": "CC-BY-SA-4.0",
+        "marker": "Attribution-ShareAlike 4.0 International",
+        "repo": "https://github.com/trailofbits/skills.git",
+        "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [
+        {
+          "file": "LICENSE-CC-BY-SA-4.0",
+          "spdx": "CC-BY-SA-4.0",
+          "repo": "https://github.com/trailofbits/skills.git",
+          "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
+          "upstreamPath": "LICENSE"
+        }
+      ],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/trailofbits/skills.git",
+          "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
+          "upstreamPath": "plugins/property-based-testing/skills/property-based-testing/SKILL.md",
+          "license": "CC-BY-SA-4.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "bb6bd5c637e40ec64d3a3f58e2cfc1423e16125fb21113ac46d60d7e791c24d9",
+          "upstreamSha256": "9448cacb65c6237a7c22dc59602667177ecae405524079ae9ff92240590b995a",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/generating.md",
+          "origin": "upstream",
+          "repo": "https://github.com/trailofbits/skills.git",
+          "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
+          "upstreamPath": "plugins/property-based-testing/skills/property-based-testing/references/generating.md",
+          "license": "CC-BY-SA-4.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "bd3fed456342e4e489572b584c0bdcf92e9986703f185685d6b764b0acbb7547",
+          "upstreamSha256": "c0e72dfc89babe3c32de718b81b94044362c85e776d7475e950dfeaab78bb58e",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/reviewing.md",
+          "origin": "upstream",
+          "repo": "https://github.com/trailofbits/skills.git",
+          "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
+          "upstreamPath": "plugins/property-based-testing/skills/property-based-testing/references/reviewing.md",
+          "license": "CC-BY-SA-4.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "68686331adff5521ee0298b213d08cea9d3e636652b6ec85cfda8825ddb5ff14",
+          "upstreamSha256": "110b08118a1e7b1a2566def6e9d2a0bf43fc2deefce857d2ce3b4382b07bc774",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/interpreting-failures.md",
+          "origin": "upstream",
+          "repo": "https://github.com/trailofbits/skills.git",
+          "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
+          "upstreamPath": "plugins/property-based-testing/skills/property-based-testing/references/interpreting-failures.md",
+          "license": "CC-BY-SA-4.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "0dd80b3fcaa76402413847e11dc48739d6edef3cac781d76a707282141128579",
+          "upstreamSha256": "dbae7db8773712ba03268a3d56ea5aa6720af0650a5189580bfd88aa2edc3f9a",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE-CC-BY-SA-4.0",
+          "origin": "upstream",
+          "repo": "https://github.com/trailofbits/skills.git",
+          "commit": "e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff",
+          "upstreamPath": "LICENSE",
+          "license": "CC-BY-SA-4.0",
+          "licenseFile": "LICENSE",
+          "localSha256": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297",
+          "upstreamSha256": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297",
+          "adaptation": "Verbatim upstream license text."
+        },
+        {
+          "local": "ATTRIBUTION.md",
+          "origin": "authored",
+          "repo": null,
+          "commit": null,
+          "upstreamPath": null,
+          "license": null,
+          "licenseFile": null,
+          "localSha256": "595d969792731b99a2b38b84c04e25b7e54e8e9c46d3b30b6cc69cfc89fec12d",
+          "upstreamSha256": null,
+          "adaptation": "Authored metadata for the adapted skill package."
+        }
+      ]
+    },
+    "nyx-probe": {
+      "mode": "native",
+      "adaptations": "Adapted from systematic-debugging. Added the four-phase root-cause/hypothesis/implementation sequence, failing-test-first, minimal fix, defense in depth, nyx_debug_isolate/nyx_verify_slice, nyx_proc cleanup, and slice checkpoints. Removed shell commands.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/obra/superpowers.git",
+        "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "skills/systematic-debugging/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "b509541b93db32a8dc3b99c0565d04af5a91dd753ec0d6a0fa2e68f016a96ff9",
+          "upstreamSha256": "51c6435d98c83c42c96ba7c35725a0b2c376cd487fb1a4e6bd0ddbe7e33ef202",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/root-cause-tracing.md",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "skills/systematic-debugging/root-cause-tracing.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "edfc88dc1970bfff9e1b156e6e6bbc4dfe2a5d03df4decc9ab8aca43be05d626",
+          "upstreamSha256": "75b933b6a8c40bdb2031b10f21654395b56ec6ab6bc7b018c18d3fe57aeb7fb8",
+          "adaptation": "Upstream reference with a read-only warning; the find-polluter.sh section is replaced with NyxOwl tools."
+        },
+        {
+          "local": "references/defense-in-depth.md",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "skills/systematic-debugging/defense-in-depth.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "25b854b0ea826b074e22a30deeda786a83786ca6255682cd8deef80c6383e597",
+          "upstreamSha256": "1e175fb86fc357e58c6aebf5441e481e1b7868b4380c0456b63a17eefbd18ba7",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/condition-based-waiting.md",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "skills/systematic-debugging/condition-based-waiting.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "a9be0bf5caa40c7c021ca74d99b3e45fed424408e733f10ce05514bbb05a165f",
+          "upstreamSha256": "e89fec8400d6cd50f43407cec9fab50976ba4d55d0ec2eb51c0bd68036b54c26",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "references/condition-based-waiting-example.ts",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "skills/systematic-debugging/condition-based-waiting-example.ts",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "e3c26bf2a99dcdb182450e2bc9575a03c680fad4810642a8fb0a664fc73aace4",
+          "upstreamSha256": "40ae5ebe497fdf310200e43fe986552546d0a22837c0d39e855db1cfd33eb88e",
+          "adaptation": "Untrusted upstream example with a read-only header."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/obra/superpowers.git",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "upstreamSha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    },
+    "nyx-devops": {
+      "mode": "native",
+      "adaptations": "Adapted from ci-cd-and-automation. Mapped gates to nyx_verify_slice, added worktree-sync re-verification, .env.example as the environment contract, nyx_env_inspect, secret redaction, and a BLOCKED_REDLINE rule for CI/workflow edits. Reference is the GitHub Actions template, not executable instructions.",
+      "license": {
+        "file": "LICENSE",
+        "spdx": "MIT",
+        "marker": "MIT License",
+        "repo": "https://github.com/addyosmani/agent-skills.git",
+        "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+        "upstreamPath": "LICENSE"
+      },
+      "additionalLicenses": [
+        {
+          "file": "LICENSE-WSHOBSON",
+          "spdx": "MIT",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE"
+        }
+      ],
+      "files": [
+        {
+          "local": "SKILL.md",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "skills/ci-cd-and-automation/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "451af06345aa9591d319d13b4ae69a1fbfb13e2e86c1180edfee10227c8e6c45",
+          "upstreamSha256": "5e0e55c059670a7838dc9d58dc20a3a645c0d43c974416490112af7de522df95",
+          "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
+        },
+        {
+          "local": "references/github-actions-templates.md",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "plugins/cicd-automation/skills/github-actions-templates/SKILL.md",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "8908d4413d57422ce1560f2ca052fe01e96a6163016cfd3f604d5b2c783d3153",
+          "upstreamSha256": "fc3c06ddb2423804be275defbb8a2c35f1564ba28aaeb07dcf01ec9c4cc8f023",
+          "adaptation": "Upstream reference data with a read-only warning header; otherwise unchanged."
+        },
+        {
+          "local": "LICENSE",
+          "origin": "upstream",
+          "repo": "https://github.com/addyosmani/agent-skills.git",
+          "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "upstreamSha256": "6f202f8bd568cd730dbb2b0d1f8e243bc74c2fa1f64dbce9b2c7ea08bd5c9fd7",
+          "adaptation": "Verbatim upstream license text."
+        },
+        {
+          "local": "LICENSE-WSHOBSON",
+          "origin": "upstream",
+          "repo": "https://github.com/wshobson/agents.git",
+          "commit": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
+          "upstreamPath": "LICENSE",
+          "license": "MIT",
+          "licenseFile": "LICENSE",
+          "localSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "upstreamSha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746",
+          "adaptation": "Verbatim upstream license text."
+        }
+      ]
+    }
+  }
+}

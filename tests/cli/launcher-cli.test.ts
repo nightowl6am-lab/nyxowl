@@ -191,7 +191,7 @@ describe("Step 9 — Launcher, Fake Host Binaries, Zero-Footprint & CLI Commands
       cwd: projectDir,
     });
     expect(docRes.exitCode).toBe(0);
-    expect(docRes.stdout).toContain("Skill slots: 11");
+    expect(docRes.stdout).toContain("Skill packages: 11/11 loaded (10 native, 1 inline)");
     expect(docRes.stdout).toContain("MCP Smoke Test: OK");
 
     // Seed a valid signed receipt in SQLite and verify `nyxowl receipts verify` passes, then tamper with it and assert rejection (§13 Scenario 9)

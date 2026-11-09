@@ -24,6 +24,7 @@
     "data",
     "docs",
     "test-writer",
+    "scripts/skills",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
@@ -39,6 +40,8 @@
     "test:coverage": "vitest run --coverage",
     "test:node": "node --test tests/unit/*.test.ts",
     "test:agents": "vitest run tests/agent-readiness",
+    "skills:vendor": "node scripts/skills/vendor.mjs vendor",
+    "skills:verify": "node scripts/skills/vendor.mjs verify",
     "agents:live": "node --experimental-strip-types scripts/agent-readiness/live.mjs"
   },
   "dependencies": {

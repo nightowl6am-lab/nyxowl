@@ -24,7 +24,6 @@ const BASE_DIR = path.join(REPO_ROOT, "tests", "agent-readiness", "base");
 const FIXTURES_DIR = path.join(REPO_ROOT, "tests", "agent-readiness", "fixtures");
 const CHECKS_DIR = path.join(REPO_ROOT, "tests", "agent-readiness", "checks");
 const MAIN_CHECKOUT = "/home/ocagent/work/nyxowl/nyxowl";
-const DEFAULT_MODEL = "opencode-go/deepseek-v4.1-flash";
 const DEFAULT_TIMEOUT_MS = 300000;
 const OPENCODE_BIN = process.env.OPENCODE_BIN ?? "opencode";
 const RUN_ROOT_PARENT = "/tmp/opencode/worktrees";
@@ -33,7 +32,7 @@ function parseArgs(argv) {
   const options = {
     agents: EXPECTED_AGENTS.map((agent) => agent.id),
     rounds: 2,
-    model: DEFAULT_MODEL,
+    model: "",
     evidenceDir: "",
     timeoutMs: DEFAULT_TIMEOUT_MS,
   };
@@ -621,6 +620,20 @@ function writeHostBlocker(evidenceDir, preflight) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (!options.model) {
+    const fromEnv = typeof process.env.NYXOWL_LIVE_MODEL === "string"
+      ? process.env.NYXOWL_LIVE_MODEL.trim()
+      : "";
+    if (!fromEnv) {
+      process.stderr.write(
+        "Missing model. Pass --model <provider/model> or set NYXOWL_LIVE_MODEL=<provider/model>. " +
+          "NyxOwl does not ship a default agent model.\n",
+      );
+      process.exitCode = 2;
+      return;
+    }
+    options.model = fromEnv;
+  }
   const allowedAgents = new Set(EXPECTED_AGENTS.map((agent) => agent.id));
   const unknownAgents = options.agents.filter((agentId) => !allowedAgents.has(agentId));
   if (unknownAgents.length > 0) {

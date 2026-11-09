@@ -18,7 +18,7 @@ nyx_tools:
   - blackboard_read
   - blackboard_publish
   - artifact_read
-skills: local
+skills: native
 output_contract: subagent-summary-v1
 ---
 

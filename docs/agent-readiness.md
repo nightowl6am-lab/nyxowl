@@ -11,8 +11,11 @@ layer that talks to a real OpenCode host.
 
 - exact mode, `output_contract`, and `host_tools`;
 - exact `nyx_tools` equal to `ROLE_ALLOWED_NYX_TOOLS` (no missing or extra tool);
-- all six required prompt sections and the 1200-token prompt budget;
-- empty skill slots (all 11 `SKILL.md` files are 0 bytes and unloaded);
+- all six required prompt sections; native prompts stay at or below 1200 tokens
+  with exactly one skill loader line and no skill body, while the inline
+  `nyx-testwriter` prompt stays at or below 6000 tokens;
+- 11 loaded skill packages with mode, references, and license, plus a matching
+  `agents/skills.lock.json`;
 - the six canonical commands and the 300-token `AGENTS.md` block;
 - the full 38-tool MCP inventory: exact names, unique entries, non-empty
   descriptions <=200 characters, and JSON-object input/output schemas for every
@@ -66,22 +69,32 @@ changes. A loopback-only HTTP fixture is created for `nyx-sec`.
 
 ```bash
 npm run test:agents   # deterministic; no model, network, install, or .env
-npm run agents:live   # local-only; requires an authenticated OpenCode v2.2.5
+npm run skills:verify # offline provenance, hash, link, license, and safety checks
+npm run agents:live   # local-only; requires an authenticated OpenCode v2.2.5 and an explicit model
 ```
 
-`agents:live` accepts `--agents`, `--rounds` (default 2), `--model`, `--evidence-dir`,
-and `--timeout-ms`. Evidence is written under
+`agents:live` accepts `--agents`, `--rounds` (default 2), `--model`,
+`--evidence-dir`, and `--timeout-ms`. It has no default model: pass `--model
+<provider/model>` or set `NYXOWL_LIVE_MODEL`; without one it prints a clear
+error and exits 2 before spawning the host. Evidence is written under
 `/tmp/opencode/agent-readiness-live/<utc-timestamp>/` by default and is never
 committed. A round that produces zero tool calls or dies before any event is
 retried exactly once; the round passes only if every recorded attempt passes.
 
 ## Live host status
 
-On the calibration host (OpenCode v2.2.5, `opencode-go/deepseek-v4.1-flash`),
-OpenCode logs `mcp connected server=nyxowl tools=38`, but the model tool surface
-exposes only host tools and no `nyxowl_nyx_*` tools. A minimal one-tool stdio MCP
-server reproduced the same behavior, so this is a host/provider limitation in
-headless `opencode run`, not agent behavior.
+OpenCode v2.2.5's headless `opencode run --standalone` path has a cold-start
+bug: MCP servers can log `mcp connected server=nyxowl tools=38` while the first
+model request still sees only host tools. This is a host bug, not a repository
+launch requirement. NyxOwl's product path is the normal OpenCode TUI using the
+generated `opencode.json`; OpenCode manages its own service and MCP connections.
+`agents:live` keeps the standalone harness and may report `BLOCKED_HOST`; do not
+claim a live PASS from that result. Verify the product manually in the normal
+TUI.
+
+The earlier stale v0.1.0 host package (setup skipped regeneration when the
+manifest version matched) remains fixed: setup and `nyxowl doctor` regenerate on
+every run.
 
 Before the role loop, `agents:live` runs a one-prompt preflight with
 `--print-logs` that asks the `nyxowl` agent to list its available tools. It

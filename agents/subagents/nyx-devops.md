@@ -19,7 +19,7 @@ nyx_tools:
   - proc
   - blackboard_read
   - artifact_read
-skills: local
+skills: native
 output_contract: subagent-summary-v1
 ---
 

@@ -234,7 +234,7 @@ describe("Test-Writer broker and tools", () => {
       "testwriter_gate",
       "testwriter_finish",
     ]);
-    expect(agent.skillLoaded).toBe(false);
+    expect(agent.skillLoaded).toBe(true);
     expect(agent.skillPath.endsWith(path.join("nyx-testwriter", "SKILL.md"))).toBe(true);
     expect(ROLE_ALLOWED_NYX_TOOLS["nyxowl"]).toContain("testwriter_prepare");
     expect(ROLE_ALLOWED_NYX_TOOLS["nyxowl"]).toContain("testwriter_status");
@@ -589,14 +589,19 @@ describe("Test-Writer broker and tools", () => {
     );
     expect(wildcardDeny, "no wildcard deny rule may be generated").toBe(-1);
 
-    const nyxowlDeny = permissions.findIndex(
-      (rule) => rule.action === "nyxowl_*" && rule.resource === "*" && rule.effect === "deny",
+    const nyxowlDenies = permissions.filter(
+      (rule) => rule.action.startsWith("nyxowl_") && rule.effect === "deny",
     );
     const firstAllow = permissions.findIndex(
       (rule) => rule.effect === "allow" && rule.action.startsWith("nyxowl_"),
     );
-    expect(nyxowlDeny).toBeGreaterThanOrEqual(0);
-    expect(firstAllow).toBeGreaterThan(nyxowlDeny);
+    expect(nyxowlDenies).toHaveLength(38);
+    expect(permissions.some((rule) => rule.action === "nyxowl_*")).toBe(false);
+    expect(firstAllow).toBeGreaterThan(
+      permissions.findIndex(
+        (rule) => rule.action === "nyxowl_nyx_testwriter_job" && rule.effect === "deny",
+      ),
+    );
 
     // Explicit host-action denies, in order, before the nyxowl_* deny.
     const hostDenyActions = [
@@ -619,11 +624,15 @@ describe("Test-Writer broker and tools", () => {
         (rule) => rule.action === action && rule.resource === "*" && rule.effect === "deny",
       ),
     );
+    const firstNyxowlDeny = permissions.findIndex(
+      (rule) => rule.action.startsWith("nyxowl_") && rule.effect === "deny",
+    );
     hostDenyIndexes.forEach((index, position) => {
       expect(index, `${hostDenyActions[position]} deny rule must exist`).toBeGreaterThanOrEqual(0);
-      expect(index, `${hostDenyActions[position]} deny must precede nyxowl_* deny`).toBeLessThan(
-        nyxowlDeny,
-      );
+      expect(
+        index,
+        `${hostDenyActions[position]} deny must precede the MCP denies`,
+      ).toBeLessThan(firstNyxowlDeny);
       if (position > 0) {
         expect(index, `${hostDenyActions[position]} deny must follow order`).toBeGreaterThan(
           hostDenyIndexes[position - 1]!,
