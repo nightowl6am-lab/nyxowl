@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   GENERATED_IGNORED_DIR_NAMES,
+  NON_SOURCE_SEGMENTS,
   isIgnoredSeamPath,
+  isNonSourceSeamPath,
   listSeamFiles,
   walkSeamFiles,
 } from "../../src/mcp/engines/seam/ignore.ts";
@@ -82,6 +84,43 @@ describe("pruning walker", () => {
     expect(rels).toContain(".env.example");
     expect(rels).toContain("src/app/page.tsx");
   });
+
+  it("keeps the generated-dir registry separate from the non-source registry", () => {
+    const required = ["tests", "test", "__tests__", "fixtures", "__fixtures__", "e2e"];
+    for (const name of required) {
+      expect(NON_SOURCE_SEGMENTS.has(name), `missing non-source segment: ${name}`).toBe(true);
+    }
+    // Non-source entries are not merely aliases of the generated registry.
+    for (const name of required) {
+      expect(GENERATED_IGNORED_DIR_NAMES.has(name)).toBe(false);
+    }
+    expect(NON_SOURCE_SEGMENTS.has("node_modules")).toBe(false);
+    expect(NON_SOURCE_SEGMENTS.has(".next")).toBe(false);
+
+    expect(isNonSourceSeamPath("tests/fixtures/db/schema.prisma")).toBe(true);
+    expect(isNonSourceSeamPath("packages/app/__tests__/a.spec.ts")).toBe(true);
+    expect(isNonSourceSeamPath("e2e/login.spec.ts")).toBe(true);
+    expect(isNonSourceSeamPath("src/lib/latest.ts")).toBe(false);
+    expect(isNonSourceSeamPath("testbench/fake.ts")).toBe(false); // exact segment only
+    expect(isNonSourceSeamPath("fixtures/shared/helper.ts")).toBe(true);
+  });
+
+  it("prunes non-source trees in the fallback walker", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-nonsrc-walk-"));
+    try {
+      fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
+      fs.mkdirSync(path.join(tmp, "tests", "fixtures", "db"), { recursive: true });
+      fs.mkdirSync(path.join(tmp, "e2e"), { recursive: true });
+      fs.writeFileSync(path.join(tmp, "src", "index.ts"), "export 0;\n");
+      fs.writeFileSync(path.join(tmp, "tests", "fixtures", "db", "schema.prisma"), "model Widget {}\n");
+      fs.writeFileSync(path.join(tmp, "e2e", "login.spec.ts"), "// e2e\n");
+
+      const rels = walkSeamFiles(tmp);
+      expect(rels).toEqual(["src/index.ts"]);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("worktree file enumeration", () => {
@@ -142,6 +181,29 @@ describe("worktree file enumeration", () => {
       expect(rels).toContain("src/index.ts"); // tracked+untracked, not ignored
       expect(rels).not.toContain("src/ignored-by-gitignore.ts");
       expect(rels.some((rel) => rel.includes(".turbo"))).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes non-source trees in the git-listing path too", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-nonsrc-git-"));
+    execGit(["init", "-q", "-b", "main"], tmp);
+    try {
+      fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
+      fs.mkdirSync(path.join(tmp, "__tests__", "__fixtures__"), { recursive: true });
+      fs.writeFileSync(path.join(tmp, "src", "index.ts"), "export 1;\n");
+      fs.writeFileSync(
+        path.join(tmp, "__tests__", "__fixtures__", "seed.ts"),
+        "export const users = [];\n",
+      );
+      execGit(["config", "user.email", "test@example.com"], tmp);
+      execGit(["config", "user.name", "Test"], tmp);
+      execGit(["add", "-A"], tmp);
+      execGit(["commit", "-q", "-m", "init"], tmp);
+
+      const files = await listSeamFiles(tmp);
+      expect(files).toEqual(["src/index.ts"]);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

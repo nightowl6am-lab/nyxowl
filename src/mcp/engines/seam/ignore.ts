@@ -70,6 +70,37 @@ export function isIgnoredSeamPath(relativePath: string): boolean {
   return normalized.split("/").some((segment) => GENERATED_IGNORED_DIR_NAMES.has(segment));
 }
 
+/**
+ * Test/fixture/e2e trees are not product source. Their bundled ORM models,
+ * migrations and agents' play campaigns previously contributed DB/API seams
+ * that overlaid unrelated findings onto real product tables, so they are
+ * enumerated out of the source-scope of a seam scan entirely. Kept separate
+ * from the generated-dir registry (BUG 2) because the exclusion reason differs
+ * (not product source vs toolchain cache), even though both prune listings.
+ */
+export const NON_SOURCE_SEGMENTS: ReadonlySet<string> = new Set([
+  "tests",
+  "test",
+  "__tests__",
+  "fixtures",
+  "__fixtures__",
+  "e2e",
+]);
+
+export function isNonSourceSeamPath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, "/");
+  return normalized.split("/").some((segment) => NON_SOURCE_SEGMENTS.has(segment));
+}
+
+/**
+ * Combined source-scope filter applied to every enumerated path: the file is
+ * scanned only when it is neither inside a generated/cache directory nor
+ * inside a non-source (test/fixture/e2e) tree.
+ */
+export function isOutsideSourceScope(relativePath: string): boolean {
+  return isIgnoredSeamPath(relativePath) || isNonSourceSeamPath(relativePath);
+}
+
 interface FsEntry {
   name: string;
   isDirectory: boolean;
@@ -93,12 +124,13 @@ function readEntries(dir: string): FsEntry[] {
 }
 
 /**
- * Deterministic pruning walker: enumerates source files under rootDir while
- * never descending into any directory in GENERATED_IGNORED_DIR_NAMES.
+ * Deterministic pruning walker: enumerates product source files under rootDir
+ * while never descending into generated/cache directories (bug-2 registry) or
+ * non-source test/fixture/e2e trees.
  */
 export function walkSeamFiles(rootDir: string, currentDir = rootDir, acc: string[] = []): string[] {
   for (const entry of readEntries(currentDir)) {
-    if (GENERATED_IGNORED_DIR_NAMES.has(entry.name)) continue;
+    if (GENERATED_IGNORED_DIR_NAMES.has(entry.name) || NON_SOURCE_SEGMENTS.has(entry.name)) continue;
     const full = path.join(currentDir, entry.name);
     if (entry.isDirectory) {
       walkSeamFiles(rootDir, full, acc);
@@ -140,7 +172,9 @@ export async function listSeamFiles(worktreePath: string): Promise<string[]> {
     const known: string[] = [];
     for (const rel of viaGit) {
       const normalized = rel.replace(/\\/g, "/");
-      if (isIgnoredSeamPath(normalized)) continue;
+      // Both registries apply to the git-listing path (the fixture exclusion
+      // is not a gitignore concern, so --exclude-standard will not cover it).
+      if (isOutsideSourceScope(normalized)) continue;
       const full = path.join(worktreePath, normalized);
       try {
         if (!fs.statSync(full).isFile()) continue;

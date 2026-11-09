@@ -66,6 +66,75 @@ function identifierToTable(identifier: string, varToTable: Map<string, string>):
 }
 
 /**
+ * SQL reserved words that raw-SQL table captures must drop: `INSERT ...
+ * ON CONFLICT(key) DO UPDATE SET ...` previously surfaced a fake table named
+ * "set". Exact-token matching only, so legitimate names that merely contain
+ * these words (e.g. "update_log", "settlement") are never dropped.
+ */
+export const SQL_RESERVED_WORDS: ReadonlySet<string> = new Set([
+  "set",
+  "values",
+  "where",
+  "select",
+  "update",
+  "insert",
+  "delete",
+  "on",
+  "conflict",
+  "do",
+  "nothing",
+  "returning",
+  "default",
+  "table",
+  "into",
+  "from",
+  "join",
+  "and",
+  "or",
+  "as",
+  "left",
+  "right",
+  "inner",
+  "outer",
+  "cross",
+  "using",
+  "union",
+  "order",
+  "group",
+  "having",
+  "limit",
+  "offset",
+  "distinct",
+  "excluded",
+  "primary",
+  "foreign",
+  "references",
+  "check",
+  "null",
+  "true",
+  "false",
+  "cascade",
+  "restrict",
+  "not",
+  "in",
+  "exists",
+  "between",
+  "like",
+  "case",
+  "when",
+  "then",
+  "else",
+  "end",
+  "with",
+  // English words that previously slipped in via string literals.
+  "the",
+  "this",
+  "those",
+  "here",
+  "them",
+]);
+
+/**
  * Parses routine (RPC/function) names from SQL migration files: both
  * `CREATE FUNCTION name` and `CREATE OR REPLACE FUNCTION name`, plus
  * `CREATE PROCEDURE name`. These are the stored procedures callable from the
@@ -190,12 +259,17 @@ export function extractDbQueries(worktreePath: string, relFiles: string[]): DbQu
         for (const m of line.matchAll(
           /\b(?:FROM|INTO|JOIN)\s+["'`]?([A-Za-z_][A-Za-z0-9_]+)/gi,
         )) {
-          if (m[1] && !/^(?:THE|THIS|THOSE|HERE|THEM)$/.test(m[1].toUpperCase())) {
-            rawsites.push({ kind: "table", ref: m[1], line: i + 1, driver: "sql" });
+          const candidate = m[1];
+          if (candidate && !SQL_RESERVED_WORDS.has(candidate.toLowerCase())) {
+            rawsites.push({ kind: "table", ref: candidate, line: i + 1, driver: "sql" });
           }
         }
-        for (const m of line.matchAll(/\bUPDATE\s+["'`]?([A-Za-z_][A-Za-z0-9_]+)/gi)) {
-          if (m[1]) rawsites.push({ kind: "table", ref: m[1], line: i + 1, driver: "sql" });
+        for (const m of line.matchAll(/\b(?:UPDATE|DELETE\s+FROM)\s+["'`]?([A-Za-z_][A-Za-z0-9_]+)/gi)) {
+          // `ON CONFLICT ... DO UPDATE SET` must not surface "set" as a table.
+          const candidate = m[1];
+          if (candidate && !SQL_RESERVED_WORDS.has(candidate.toLowerCase())) {
+            rawsites.push({ kind: "table", ref: candidate, line: i + 1, driver: "sql" });
+          }
         }
       }
 

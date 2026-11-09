@@ -10,6 +10,7 @@ import {
   type SeamMismatch,
 } from "../../src/mcp/engines/seam/graph.ts";
 import { extractDbAndOrmModels } from "../../src/mcp/engines/seam/extractors/index.ts";
+import { listSeamFiles } from "../../src/mcp/engines/seam/ignore.ts";
 import {
   detectUnsupportedDbLayers,
   extractDbQueries,
@@ -163,6 +164,53 @@ describe("db client query extractors", () => {
       expect(refs.has("table:user_account:drizzle")).toBe(true);
       expect(refs.has("table:user_account:prisma")).toBe(true);
       expect(refs.has("table:audit_line:sql")).toBe(true);
+      expect(refs.has("table:user:sql")).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("does not report reserved words like 'set' as tables in raw SQL upserts", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-sqlrw-"));
+    try {
+      fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmp, "src", "upsert.ts"),
+        [
+          "export async function upsert() {",
+          "  await db.query(",
+          "    'INSERT INTO users (email, display_name) VALUES ($1, $2) ' ||",
+          "    'ON CONFLICT (email) DO UPDATE SET display_name = $2 RETURNING id'",
+          "  );",
+          "}",
+        ].join("\n"),
+      );
+
+      const queries = extractDbQueries(tmp, ["src/upsert.ts"]);
+      const refs = new Set(queries.map((query) => `${query.kind}:${query.ref}:${query.driver}`));
+
+      // Regression: "set" (from DO UPDATE SET) and other clause keywords are
+      // never table captures, while the real upsert target survives.
+      expect(refs.has("table:set:sql")).toBe(false);
+      for (const reserved of [
+        "where",
+        "values",
+        "select",
+        "update",
+        "insert",
+        "delete",
+        "returning",
+        "conflict",
+        "do",
+        "nothing",
+        "default",
+        "table",
+        "join",
+        "and",
+        "as",
+      ]) {
+        expect(refs.has(`table:${reserved}:sql`), reserved).toBe(false);
+      }
       expect(refs.has("table:user:sql")).toBe(true);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -333,6 +381,151 @@ describe("nyx_seam_check end to end (server-side seams + build output)", () => {
     expect(out.mismatches).toEqual([]);
     expect(out.totalMismatches).toBe(0);
     expect(out.status).toBe("GREEN");
+  });
+});
+
+describe("source-scope regression (product vs test/fixture trees)", () => {
+  interface ProductSeamOut {
+    status: string;
+    coverage: string;
+    checkedLayers: string[];
+    uncheckedLayers: string[];
+    mismatches: Array<{ kind: string; message: string }>;
+  }
+
+  function buildFixtureRepo(
+    root: string,
+    name: string,
+    options: { fixtureTree?: boolean } = { fixtureTree: true },
+  ): string {
+    const repo = makeGitRepo(root, name);
+    fs.mkdirSync(path.join(repo, "db", "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, "db", "migrations", "001_users.sql"),
+      "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, display_name TEXT);\nCREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, user_id INTEGER);\n",
+    );
+
+    if (options.fixtureTree !== false) {
+      // ORM models + migrations that exist ONLY under tests/fixtures — they
+      // describe a different product and must not overlay product seams.
+      fs.mkdirSync(path.join(repo, "tests", "fixtures", "hr", "migrations"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repo, "tests", "fixtures", "hr", "schema.prisma"),
+        "model Widget {\n  id Int @id\n  name String\n}\n",
+      );
+      fs.writeFileSync(
+        path.join(repo, "tests", "fixtures", "hr", "migrations", "001.sql"),
+        "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT);\n",
+      );
+      fs.writeFileSync(
+        path.join(repo, "tests", "fixtures", "hr", "client.ts"),
+        "export const apiBase = '/api/fixtures';\n",
+      );
+    }
+    execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "pipe" });
+    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: repo, stdio: "pipe" });
+    return repo;
+  }
+
+  function asOut(res: {
+    isError?: boolean;
+    content?: unknown;
+    structuredContent?: Record<string, unknown>;
+  }): ProductSeamOut {
+    expect(res.isError, JSON.stringify(res.content)).toBeFalsy();
+    return res.structuredContent as unknown as ProductSeamOut;
+  }
+
+  it("does not emit db-orm-drift for product tables whose only ORM models/migrations live under tests/fixtures", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-srcscope-"));
+    try {
+      const repo = buildFixtureRepo(root, "productonly");
+
+      const files = await listSeamFiles(repo);
+      expect(files).toContain("db/migrations/001_users.sql");
+      expect(files.some((rel) => rel.includes("tests/"))).toBe(false);
+
+      const out = asOut(
+        await invokeToolDefinition(
+          nyxSeamCheckTool,
+          { worktreePath: repo },
+          { nyxHome: tmpHome, callerRole: "test-seam" },
+        ),
+      );
+
+      // Regression: the fixture ORM/migrations used to enter the db-orm seam
+      // and flag every product table below with db-orm-drift.
+      expect(out.mismatches.filter((m) => m.kind === "db-orm-drift")).toEqual([]);
+      expect(out.mismatches).toEqual([]);
+      expect(out.status).toBe("GREEN");
+      expect(out.checkedLayers).not.toContain("db-orm");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still detects a real product query-layer mismatch in src against product migrations", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-srcscope-"));
+    try {
+      const repo = buildFixtureRepo(root, "productdrift");
+      fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repo, "src", "queries.ts"),
+        "import { createClient } from '@supabase/supabase-js';\nconst supabase = createClient('', '');\nexport const rows = () => supabase.from('missing_table').select('id');\n",
+      );
+      execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "pipe" });
+      execFileSync("git", ["commit", "-q", "-m", "drift"], { cwd: repo, stdio: "pipe" });
+
+      const out = asOut(
+        await invokeToolDefinition(
+          nyxSeamCheckTool,
+          { worktreePath: repo },
+          { nyxHome: tmpHome, callerRole: "test-seam" },
+        ),
+      );
+
+      expect(out.status).toBe("RED");
+      expect(out.checkedLayers).toContain("db-query");
+      expect(
+        out.mismatches.some(
+          (m) => m.kind === "db-query-drift" && m.message.includes('table "missing_table"'),
+        ),
+      ).toBe(true);
+      // The product table gains no false db-orm finding from the fixture ORM.
+      expect(out.mismatches.some((m) => m.kind === "db-orm-drift")).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a clean product project GREEN with non-empty checkedLayers", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-seam-srcclean-"));
+    try {
+      const repo = buildFixtureRepo(root, "productclean", { fixtureTree: false });
+      fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(repo, "src", "queries.ts"),
+        "import { createClient } from '@supabase/supabase-js';\nconst supabase = createClient('', '');\nexport const rows = () => supabase.from('users').select('id');\n",
+      );
+      execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "pipe" });
+      execFileSync("git", ["commit", "-q", "-m", "clean"], { cwd: repo, stdio: "pipe" });
+
+      const out = asOut(
+        await invokeToolDefinition(
+          nyxSeamCheckTool,
+          { worktreePath: repo },
+          { nyxHome: tmpHome, callerRole: "test-seam" },
+        ),
+      );
+
+      expect(out.status).toBe("GREEN");
+      expect(out.coverage).not.toBe("none");
+      expect(out.checkedLayers.length).toBeGreaterThan(0);
+      expect(out.checkedLayers).toContain("db-query");
+      expect(out.mismatches).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
