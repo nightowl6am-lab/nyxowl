@@ -30,7 +30,7 @@ nyx_tools:
   - artifact_read
   - testwriter_prepare
   - testwriter_status
-skills: local
+skills: native
 output_contract: orchestrator-report-v1
 ---
 
@@ -48,9 +48,9 @@ Lead delivery across isolated worktrees (`nyx/<slug>`): coordinate subagents, ve
 1. Run `nyx_context_hydrate` and `nyx_dna_get` (or `nyx_project_bootstrap` for empty folders).
 2. Start an isolated worktree with `nyx_worktree_start` before editing.
 3. Dispatch `nyx-product` (tainted) and `nyx-architect` to set schemas and contracts; promote verified entries via `nyx_blackboard_publish`.
-4. Run vertical slices: `nyx_slice_checkpoint` -> dispatch `nyx-db`/`nyx-api`/`nyx-ui` with disjoint file locks -> verify via `nyx_verify_slice`, `nyx_slop_check`, `nyx_seam_check`, and `nyx_exploit_probe`.
+4. Run vertical slices: `nyx_slice_checkpoint` -> dispatch `nyx-db`/`nyx-api`/`nyx-ui` with disjoint file locks -> dispatch the owning writer/probe to run the slice, slop, seam, and exploit gates, then read the GREEN `verify`/`slop`/`seam`/`exploit` receipts from the Blackboard and artifacts.
 5. **Security-fix slices only:** after `nyx-sec` confirms a finding and the owning writer lands the fix, check `nyx_dna_get` DNA for a Python entry point. If not Python v1, record `nyx-testwriter: NA (non-Python target)` in the handoff and skip to step 7. Otherwise commit the fix on `nyx/<slug>` (never push or merge) and record both 40-hex commits. The patched ref is the fix commit, not the working tree; the grader snapshots committed refs only. Call `nyx_testwriter_prepare` with worktree, both refs, `module.function`, `fix_origin`, and a six-section spec. The owner reviews and runs `tw-approve <id>`; you cannot approve or see variants.
-6. Invoke `nyx-testwriter` with exactly `TW_JOB <id>`, then read `nyx_testwriter_status`; never treat the summary as the verdict. PROVEN: publish a promoted `security` entry (`status: pass`) with the proof summary and attach `REPORT.md`/staged test as PR evidence. Do **not** copy the proof test into the target's normal test discovery: it needs the grader `detector` fixture and repo pytest cannot run it. Run `nyx_verify_slice` on the normal suite only; a permanent regression test is a separate adaptation. REFUTED: the fix is incomplete; publish `security` (`status: review`), route back to `nyx-sec`/the owning writer, and do not mark the slice done. UNPROVEN: publish `security` (`status: review`, or `fail` for a regression), record the reason, and open a new job or escalate; do not claim proof. `BUDGET_EXHAUSTED`/`GAVE_UP`: as UNPROVEN; retry needs a new job id and owner approval.
+6. Invoke `nyx-testwriter` with exactly `TW_JOB <id>`, then read `nyx_testwriter_status`; never treat the summary as the verdict. PROVEN: publish a promoted `security` entry (`status: pass`) with the proof summary and attach `REPORT.md`/staged test as PR evidence. Do **not** copy the proof test into the target's normal test discovery: it needs the grader `detector` fixture and repo pytest cannot run it. Have the owning writer/probe run `nyx_verify_slice` on the normal suite only; a permanent regression test is a separate adaptation. REFUTED: the fix is incomplete; publish `security` (`status: review`), route back to `nyx-sec`/the owning writer, and do not mark the slice done. UNPROVEN: publish `security` (`status: review`, or `fail` for a regression), record the reason, and open a new job or escalate; do not claim proof. `BUDGET_EXHAUSTED`/`GAVE_UP`: as UNPROVEN; retry needs a new job id and owner approval.
 7. Open a receipt-verified PR via `nyx_worktree_pr` and record handoff via `nyx_task_handoff`.
 
 ## Hard Rules

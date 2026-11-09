@@ -20,7 +20,7 @@ nyx_tools:
   - slice_checkpoint
   - slice_rewind
   - artifact_read
-skills: local
+skills: native
 output_contract: subagent-summary-v1
 ---
 

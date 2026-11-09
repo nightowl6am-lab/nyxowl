@@ -18,7 +18,7 @@ nyxowl /path/to/your/project
 
 That's it. On first run, `nyxowl` automatically:
 1. Initializes `~/.nyxowl/` (`0700`) and generates your local HMAC-SHA256 receipt signing key (`0600`).
-2. Ships 11 per-agent skill slots at `agents/skills/<agent-id>/SKILL.md` (empty until the owner authors them) and reports the filled/empty count.
+2. Ships 11 authored skill packages (10 native + 1 inline) under `agents/skills/<agent-id>/`, each with a license, references, and a provenance lock; `nyxowl doctor` reports the native/inline counts.
 3. Detects your installed OpenCode host (`opencode`) and builds its session-scoped package under `~/.nyxowl/hosts/opencode/`. **OpenCode v2.2.5 is the only supported host.** Nyxowl v1 is **Linux-only** (including WSL2).
 4. Classifies `/path/to/your/project` (empty folder → Greenfield bootstrap; untracked files → Adopt mode with secret & 50 MB guard; Git repo → isolated worktree) and launches OpenCode with the `nyxowl` Principal Tech Lead agent preselected.
 5. Installs the rootless Test-Writer runtime under `~/.nyxowl/test-writer` (or `$NYXOWL_HOME/test-writer`) using Python 3 with venv/pip. No extra commands or root are required; if Python is unavailable, the rest of Nyxowl still launches and the Test-Writer tools stay fail-closed.
@@ -72,7 +72,7 @@ See [`docs/host-matrix.md`](./docs/host-matrix.md) for the full capability detai
 
 ```bash
 nyxowl [path] [--host <id>] [--include-dirty]   # Setup (if first run) and launch OpenCode
-nyxowl doctor                                   # Verify runtimes, OpenCode status, skill slots, and MCP server
+nyxowl doctor                                   # Verify runtimes, OpenCode status, skill packages, and MCP server
 nyxowl status [path]                            # Show worktrees, slices, strikes, locks, receipts
 nyxowl handoff [path]                           # Print latest task handoff & hydrate digest
 nyxowl worktree list|prune|remove [<slug>]      # Manage isolated Nyxowl worktrees
@@ -88,7 +88,7 @@ nyxowl uninstall [--purge]                      # Restore user configs and remov
 
 ## Updating Nyxowl
 
-Upgrade with `npm install -g nyxowl@latest`, then run `nyxowl doctor` to verify runtimes, OpenCode status, skill slots, Test-Writer status, and a live MCP `ListTools` round-trip. State in `~/.nyxowl/` persists across upgrades, and the OpenCode package regenerates automatically. If the Test-Writer runtime is missing after an upgrade, run `nyxowl testwriter install`. See [`docs/updating.md`](./docs/updating.md) for upgrade, verification, rollback, and state guidance.
+Upgrade with `npm install -g nyxowl@latest`, then run `nyxowl doctor` to verify runtimes, OpenCode status, skill packages, Test-Writer status, and a live MCP `ListTools` round-trip. State in `~/.nyxowl/` persists across upgrades, and the OpenCode package regenerates automatically. If the Test-Writer runtime is missing after an upgrade, run `nyxowl testwriter install`. See [`docs/updating.md`](./docs/updating.md) for upgrade, verification, rollback, and state guidance.
 
 The committed master specification is [`PLAN.md`](./PLAN.md); release steps are in [`docs/release.md`](./docs/release.md).
 

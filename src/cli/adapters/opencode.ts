@@ -1,9 +1,18 @@
 import { NYXOWL_VERSION } from "../../core/version.ts";
+import fs from "node:fs";
 import path from "node:path";
 import { resolveGlobalNyxowlPaths } from "../../core/paths.ts";
-import { compileAllAgentsAndCommands } from "../compiler.ts";
+import {
+  compileAllAgentsAndCommands,
+  NYX_MCP_TOOL_BASENAMES,
+} from "../compiler.ts";
 import { resolveNyxowlCliCommand } from "../cli-command.ts";
 import { writeTrackedFile } from "../manifest.ts";
+import {
+  AGENT_SKILL_IDS,
+  agentSkillDir,
+  loadAgentSkillPackage,
+} from "../skills.ts";
 
 export interface OpenCodePackageResult {
   packageDir: string;
@@ -165,6 +174,7 @@ const FULLY_ISOLATED_DENY_ACTIONS = [
 
 export function buildAgentPermissionRules(agent: {
   contract: {
+    id: string;
     host_tools: {
       read: "allow" | "deny";
       edit: "worktree" | "tests" | "deny";
@@ -173,6 +183,7 @@ export function buildAgentPermissionRules(agent: {
     };
     nyx_tools: readonly string[];
   };
+  skillMode?: "native" | "inline";
 }): OpenCodePermissionRule[] {
   const rulesOut: OpenCodePermissionRule[] = [];
   const hostTools = agent.contract.host_tools;
@@ -203,13 +214,96 @@ export function buildAgentPermissionRules(agent: {
     rulesOut.push({ action: "websearch", resource: "*", effect: "deny" });
   }
 
-  // Last-match-wins: deny every MCP tool, then allow only this role's tools.
-  rulesOut.push({ action: "nyxowl_*", resource: "*", effect: "deny" });
-  for (const tool of agent.contract.nyx_tools) {
-    const fullToolName = tool.startsWith("nyx_") ? tool : `nyx_${tool}`;
+  // Per-agent skill permissions: deny every skill, then allow only the exact
+  // native skill id. Inline agents have no host skill and get no allow. Fully
+  // isolated agents already received the skill deny in their host-action list.
+  if (!fullyIsolated) {
+    rulesOut.push({ action: "skill", resource: "*", effect: "deny" });
+  }
+  if ((agent.skillMode ?? "native") === "native") {
+    rulesOut.push({ action: "skill", resource: agent.contract.id, effect: "allow" });
+  }
+
+  // Last-match-wins: deny every known MCP tool by exact name, then allow only
+  // this role's tools. A `nyxowl_*` action wildcard is deliberately avoided:
+  // live QA showed OpenCode hides the allowed MCP tools when a wildcard action
+  // is present, even though last-match-wins keeps them allowed.
+  for (const tool of NYX_MCP_TOOL_BASENAMES) {
+    rulesOut.push({ action: `nyxowl_nyx_${tool}`, resource: "*", effect: "deny" });
+  }
+  const allowedToolNames = new Set(
+    agent.contract.nyx_tools.map((tool) =>
+      tool.startsWith("nyx_") ? tool : `nyx_${tool}`,
+    ),
+  );
+  for (const fullToolName of allowedToolNames) {
     rulesOut.push({ action: `nyxowl_${fullToolName}`, resource: "*", effect: "allow" });
   }
+
   return rulesOut;
+}
+
+/**
+ * Returns every symlink under a skill package. The caller must reject rather
+ * than dereference: a symlink could point outside the skills root.
+ */
+function findSkillSymlinks(root: string, base = root): string[] {
+  const out: string[] = [];
+  if (!fs.existsSync(root)) return out;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const full = path.join(root, entry.name);
+    const relative = path.relative(base, full).split(path.sep).join("/");
+    if (entry.isSymbolicLink()) {
+      out.push(relative);
+      continue;
+    }
+    if (entry.isDirectory()) out.push(...findSkillSymlinks(full, base));
+  }
+  return out;
+}
+
+/**
+ * Copies all 11 authored skill packages into the host skills root and prunes
+ * any stale directory. The host advertises only this absolute root.
+ */
+export function syncSkillPackages(options: {
+  packageDir: string;
+  pkgRoot?: string;
+}): { skillsRoot: string; copied: string[]; pruned: string[] } {
+  const skillsRoot = path.join(options.packageDir, "skills");
+  fs.mkdirSync(skillsRoot, { recursive: true });
+  const expected = new Set<string>(AGENT_SKILL_IDS);
+  const pruned: string[] = [];
+  for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
+    const full = path.join(skillsRoot, entry.name);
+    if (entry.isDirectory() || entry.isFile()) {
+      if (!expected.has(entry.name as (typeof AGENT_SKILL_IDS)[number])) {
+        fs.rmSync(full, { recursive: true, force: true });
+        pruned.push(entry.name);
+      }
+    }
+  }
+  const copied: string[] = [];
+  for (const agentId of AGENT_SKILL_IDS) {
+    const pkg = loadAgentSkillPackage(agentId, options.pkgRoot);
+    if (!pkg.loaded || !pkg.licensePresent) {
+      throw new Error(
+        `Skill package ${agentId} is missing SKILL.md or LICENSE at ${pkg.dir}`,
+      );
+    }
+    const destination = path.join(skillsRoot, agentId);
+    const sourceDir = agentSkillDir(agentId, options.pkgRoot);
+    const symlinks = findSkillSymlinks(sourceDir);
+    if (symlinks.length > 0) {
+      throw new Error(
+        `Skill package ${agentId} contains unsupported symlink(s): ${symlinks.join(", ")}`,
+      );
+    }
+    fs.rmSync(destination, { recursive: true, force: true });
+    fs.cpSync(sourceDir, destination, { recursive: true });
+    copied.push(agentId);
+  }
+  return { skillsRoot, copied, pruned };
 }
 
 function buildOpenCodePluginCode(cliCmd: { command: string; args: string[] }): string {
@@ -519,6 +613,20 @@ export function generateOpenCodeHostPackage(options?: {
     ...(options?.pkgRoot ? { pkgRoot: options.pkgRoot } : {}),
   });
 
+  const { skillsRoot } = syncSkillPackages({
+    packageDir,
+    ...(options?.pkgRoot ? { pkgRoot: options.pkgRoot } : {}),
+  });
+
+  // Skills live outside the worktree. Non-interactive runs cannot answer an
+  // `external_directory` prompt, so allow only the skills root and its
+  // descendants after the worktree rules (last-match-wins).
+  const hostPermissions = buildOpenCodePermissions(worktreeRoot, options?.projectPath);
+  hostPermissions.push(
+    { action: "external_directory", resource: skillsRoot, effect: "allow" },
+    { action: "external_directory", resource: `${skillsRoot}/**`, effect: "allow" },
+  );
+
   const agentsConfig: Record<string, unknown> = {};
   for (const agent of bundle.agents) {
     agentsConfig[agent.contract.id] = {
@@ -565,7 +673,8 @@ export function generateOpenCodeHostPackage(options?: {
         },
       },
     },
-    permissions: buildOpenCodePermissions(worktreeRoot, options?.projectPath),
+    permissions: hostPermissions,
+    skills: [skillsRoot],
     agents: agentsConfig,
     commands: commandsConfig,
     plugins: [pluginPath],

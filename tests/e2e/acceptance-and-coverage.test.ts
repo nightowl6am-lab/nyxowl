@@ -201,7 +201,7 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
     );
     expect(dispatchDb.isError).toBeFalsy();
     expect(dispatchDb.structuredContent?.["outputContract"]).toBe("subagent-summary-v1");
-    expect(dispatchDb.structuredContent?.["skillLoaded"]).toBe(false);
+    expect(dispatchDb.structuredContent?.["skillLoaded"]).toBe(true);
     expect(
       String(dispatchDb.structuredContent?.["skillPath"]).endsWith(
         path.join("nyx-db", "SKILL.md"),

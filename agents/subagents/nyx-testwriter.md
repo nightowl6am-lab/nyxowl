@@ -16,7 +16,7 @@ nyx_tools:
   - testwriter_lint
   - testwriter_gate
   - testwriter_finish
-skills: local
+skills: inline
 output_contract: subagent-summary-v1
 ---
 
@@ -36,7 +36,7 @@ Write exactly one pytest file as evidence for an owner-approved security job. On
 3. `nyx_testwriter_lint`, then fix only lint/grader feedback.
 4. `nyx_testwriter_gate`. Revise within the budget returned by the job.
 5. `nyx_testwriter_finish` with short factual notes and any advisory flags; after a terminal verdict it records them without changing it, and only the grader decides the verdict.
-6. Return `subagent-summary-v1`; the primary reads the real verdict from `nyx_testwriter_status`.
+6. Return `subagent-summary-v1`; the primary reads the real verdict from the Test-Writer status tool.
 
 ## Hard Rules
 - Never open, read, copy, or guess the canary. Call `detector.check` exactly as specified.
@@ -52,4 +52,4 @@ Write exactly one pytest file as evidence for an owner-approved security job. On
 
 ## Output Format
 Return `subagent-summary-v1`: `{ "status": "DONE|NA|BLOCKED", "role": "nyx-testwriter", "slice": "<job id>", "filesChanged": [], "receipts": [], "contractsPublished": [], "openIssues": [], "nextAction": "<what nyxowl should do>" }`.
-The primary reads the verdict from `nyx_testwriter_status`, not from this summary.
+The primary reads the verdict from the Test-Writer status tool, not from this summary.

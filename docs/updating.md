@@ -29,7 +29,7 @@ nyxowl doctor
 nyxowl /path/to/project
 ```
 
-`nyxowl doctor` checks runtimes, reports OpenCode status, reports the 11 per-agent skill slots, reports Test-Writer runtime status, and performs a live MCP `ListTools` round-trip against the in-process server (it reports the number of tools actually listed, not a hardcoded count). Your existing state and the OpenCode package are reused or regenerated as described below.
+`nyxowl doctor` checks runtimes, reports OpenCode status, reports the 11 skill packages (10 native, 1 inline), reports Test-Writer runtime status, and performs a live MCP `ListTools` round-trip against the in-process server (it reports the number of tools actually listed, not a hardcoded count). The OpenCode package is regenerated on every run, so a stale config is replaced.
 
 If `nyxowl doctor` or the first run after an upgrade reports that the Test-Writer runtime is missing, install it as your normal user (no root or sudo):
 
@@ -80,7 +80,7 @@ Nyxowl does not modify repository files during an upgrade. Optional files writte
 ## Post-upgrade checklist
 
 1. `nyxowl --version` — confirm the expected version.
-2. `nyxowl doctor` — confirm OpenCode status, the 11 skill slots, and runtimes.
+2. `nyxowl doctor` — confirm OpenCode status, the 11 skill packages (10 native, 1 inline), and runtimes.
 3. Relaunch OpenCode so it loads the regenerated package.
 4. `nyxowl status [path]` — confirm worktrees, slices, locks, and receipts are intact.
 5. If a repository moved, run `nyxowl relink <old-path> <new-path>`. The old path must still exist when you run the command (relink resolves the old repo id from it), so copy the repository to the new location first, run relink, and only then remove the old path.

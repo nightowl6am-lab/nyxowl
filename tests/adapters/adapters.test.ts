@@ -93,9 +93,17 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
         };
       };
       permissions: Array<{ action: string; resource: string; effect: string }>;
+      skills: string[];
       agents: Record<
         string,
-        { mode: string; description: string; system: string; permissions: unknown[]; prompt?: unknown }
+        {
+          mode: string;
+          description: string;
+          system: string;
+          permissions: unknown[];
+          prompt?: unknown;
+          model?: unknown;
+        }
       >;
       commands: Record<string, { description: string; template: string }>;
       plugins: string[];
@@ -130,11 +138,18 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
     expect(envAllowIndex).toBeGreaterThan(envDenyIndex);
 
     expect(cfg.agents["nyxowl"]).toBeDefined();
-    for (const agent of Object.values(cfg.agents)) {
+    for (const [agentId, agent] of Object.entries(cfg.agents)) {
       expect(typeof agent.system).toBe("string");
       expect(agent.system.length).toBeGreaterThan(0);
-      expect(agent.system).not.toContain("## Agent Skill");
+      expect(agent.system.match(/^## Agent Skill$/gm)).toHaveLength(1);
+      if (agentId === "nyx-testwriter") {
+        expect(agent.system).toContain("Security Fix Test-Writer");
+      } else {
+        expect(agent.system).not.toContain("Trust boundary.");
+        expect(agent.system).toContain(`Use the \`skill\` tool with id \`${agentId}\``);
+      }
       expect(agent.prompt).toBeUndefined();
+      expect(agent.model).toBeUndefined();
       expect(Array.isArray(agent.permissions)).toBe(true);
     }
     expect(cfg.agents["nyxowl"]?.permissions).toContainEqual({
@@ -142,6 +157,24 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
       resource: "*",
       effect: "deny",
     });
+
+    // The host config advertises one absolute skills root and copies all 11 packages.
+    const skillsRoot = path.join(pkg.packageDir, "skills");
+    expect(cfg.skills).toEqual([skillsRoot]);
+    const skillDirs = fs
+      .readdirSync(skillsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(skillDirs).toHaveLength(11);
+    for (const agentId of skillDirs) {
+      expect(fs.existsSync(path.join(skillsRoot, agentId, "SKILL.md"))).toBe(true);
+      expect(
+        fs
+          .readdirSync(path.join(skillsRoot, agentId))
+          .some((name) => name.startsWith("LICENSE")),
+      ).toBe(true);
+    }
 
     expect(cfg.commands).toBeTypeOf("object");
     expect(cfg.plugins).toEqual([pkg.pluginPath]);
@@ -198,8 +231,8 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
     expect(pkg.launchArgs).toEqual(["--standalone", projectDir]);
     expect(pkg.launchEnv["OPENCODE_CONFIG"]).toBe(pkg.configPath);
 
-    // No skill-copy directory is generated: slots are read by the compiler, not copied.
-    expect(fs.existsSync(path.join(pkg.packageDir, "skills"))).toBe(false);
+    // The host skills root is generated inside the OpenCode package.
+    expect(fs.existsSync(path.join(pkg.packageDir, "skills"))).toBe(true);
   });
 
   it("never caches edit decisions: consecutive edit actions invoke edit-guard twice", async () => {
@@ -218,7 +251,7 @@ describe("Step 9 — OpenCode Adapter, Permission Ordering & Manifest Uninstall"
       ].join("\n"),
       { mode: 0o755 },
     );
-    // compileAllAgentsAndCommands resolves agents and skill slots from pkgRoot.
+    // compileAllAgentsAndCommands resolves agents and skill packages from pkgRoot.
     fs.symlinkSync(path.join(process.cwd(), "agents"), path.join(fakeRoot, "agents"));
 
     const pkg = generateOpenCodeHostPackage({

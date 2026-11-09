@@ -6,8 +6,17 @@ import {
   buildAgentPermissionRules,
   buildOpenCodePermissions,
 } from "../../src/cli/adapters/opencode.ts";
-import { AGENT_SKILL_IDS, agentSkillPath } from "../../src/cli/skills.ts";
-import { compileAllAgentsAndCommands, ROLE_ALLOWED_NYX_TOOLS } from "../../src/cli/compiler.ts";
+import {
+  AGENT_SKILL_MODES,
+  AGENT_SKILL_IDS,
+  agentSkillPath,
+  loadAgentSkillPackage,
+} from "../../src/cli/skills.ts";
+import {
+  compileAllAgentsAndCommands,
+  NYX_MCP_TOOL_BASENAMES,
+  ROLE_ALLOWED_NYX_TOOLS,
+} from "../../src/cli/compiler.ts";
 import { EXPECTED_AGENTS } from "./expected.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -93,16 +102,27 @@ describe("agent readiness: security boundary", () => {
     }
   });
 
-  it("keeps nyxowl_* deny before per-role allows and allows exactly the role tool set", () => {
+  it("denies every exact nyxowl_nyx_* action, allows exactly the role set, and leaves no wildcard", () => {
     for (const expected of EXPECTED_AGENTS) {
       const agent = bundle.agents.find((candidate) => candidate.contract.id === expected.id);
       expect(agent, `${expected.id} compiled agent`).toBeDefined();
       if (!agent) continue;
       const rules = buildAgentPermissionRules(agent);
-      const denyIndex = rules.findIndex(
-        (rule) => rule.action === "nyxowl_*" && rule.effect === "deny",
+
+      // No wildcard action may remain: live QA showed it hides allowed tools.
+      expect(
+        rules.some((rule) => rule.action === "nyxowl_*"),
+        `${expected.id} wildcard action`,
+      ).toBe(false);
+
+      const exactDenies = rules.filter(
+        (rule) => rule.action.startsWith("nyxowl_") && rule.effect === "deny",
       );
-      expect(denyIndex, `${expected.id} wildcard deny`).toBeGreaterThanOrEqual(0);
+      expect(
+        exactDenies.map((rule) => rule.action).sort(),
+        `${expected.id} exact denies`,
+      ).toEqual(NYX_MCP_TOOL_BASENAMES.map((tool) => `nyxowl_nyx_${tool}`).sort());
+
       const allowed = rules
         .map((rule, index) => ({ rule, index }))
         .filter(({ rule }) => rule.action.startsWith("nyxowl_") && rule.effect === "allow");
@@ -114,9 +134,38 @@ describe("agent readiness: security boundary", () => {
           .map((tool) => `nyxowl_nyx_${tool}`)
           .sort(),
       );
-      for (const { index } of allowed) {
+      for (const { rule, index } of allowed) {
+        const denyIndex = rules.findIndex(
+          (candidate) => candidate.action === rule.action && candidate.effect === "deny",
+        );
+        expect(denyIndex, `${expected.id} deny for ${rule.action}`).toBeGreaterThanOrEqual(0);
         expect(index, `${expected.id} allow after deny`).toBeGreaterThan(denyIndex);
       }
+
+      // Per-agent skill permissions: deny all, allow only the exact skill id.
+      expect(
+        rules.some(
+          (rule) => rule.action === "skill" && rule.resource === "*" && rule.effect === "deny",
+        ),
+        `${expected.id} skill deny`,
+      ).toBe(true);
+      if (AGENT_SKILL_MODES[expected.id as keyof typeof AGENT_SKILL_MODES] === "native") {
+        expect(
+          rules.some(
+            (rule) =>
+              rule.action === "skill" &&
+              rule.resource === expected.id &&
+              rule.effect === "allow",
+          ),
+          `${expected.id} skill allow`,
+        ).toBe(true);
+      } else {
+        expect(
+          rules.some((rule) => rule.action === "skill" && rule.effect === "allow"),
+          `${expected.id} must not allow any skill`,
+        ).toBe(false);
+      }
+
       for (const action of ["webfetch", "websearch"] as const) {
         expect(
           rules.some((rule) => rule.action === action && rule.effect === "deny"),
@@ -128,9 +177,11 @@ describe("agent readiness: security boundary", () => {
         ).toBe(false);
       }
       for (const rule of rules) {
-        if (!rule.action.startsWith("nyxowl_")) {
-          expect(rule.effect, `${expected.id} host action ${rule.action}`).toBe("deny");
+        if (rule.action.startsWith("nyxowl_")) continue;
+        if (rule.action === "skill" && rule.effect === "allow" && rule.resource === expected.id) {
+          continue;
         }
+        expect(rule.effect, `${expected.id} host action ${rule.action}`).toBe("deny");
       }
     }
   });
@@ -155,12 +206,15 @@ describe("agent readiness: security boundary", () => {
     );
   });
 
-  it("keeps every fixture inert and every skill slot untouched", () => {
+  it("keeps every fixture inert and every skill package licensed", () => {
     assertNoInertViolations(BASE_DIR);
     assertNoInertViolations(FIXTURES_DIR);
     expect(AGENT_SKILL_IDS).toHaveLength(11);
     for (const agentId of AGENT_SKILL_IDS) {
-      expect(fs.statSync(agentSkillPath(agentId)).size, agentId).toBe(0);
+      const pkg = loadAgentSkillPackage(agentId);
+      expect(pkg.loaded, agentId).toBe(true);
+      expect(pkg.licensePresent, agentId).toBe(true);
+      expect(fs.statSync(agentSkillPath(agentId)).size, agentId).toBeGreaterThan(0);
     }
   });
 });

@@ -4,12 +4,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  AGENT_BUDGET_OVERRIDES,
   buildProjectAgentsBlock,
   compileAllAgentsAndCommands,
+  NYX_MCP_TOOL_BASENAMES,
   REQUIRED_AGENT_SECTIONS,
   ROLE_ALLOWED_NYX_TOOLS,
 } from "../../src/cli/compiler.ts";
-import { AGENT_SKILL_IDS, agentSkillPath } from "../../src/cli/skills.ts";
+import {
+  AGENT_SKILL_IDS,
+  AGENT_SKILL_MODES,
+  agentSkillPath,
+  loadAgentSkillPackage,
+} from "../../src/cli/skills.ts";
 import { estimateTokens } from "../../src/core/tokens.ts";
 import { ALL_NYX_TOOLS } from "../../src/mcp/server.ts";
 import {
@@ -89,30 +96,50 @@ describe("agent readiness: contract matrix", () => {
     }
   });
 
-  it("keeps all 11 prompts under 1200 tokens and loads all six required sections", () => {
+  it("keeps native prompts under 1200 tokens and the inline testwriter under 6000", () => {
     for (const expected of EXPECTED_AGENTS) {
       const actual = agentById.get(expected.id);
       expect(actual, `missing agent ${expected.id}`).toBeDefined();
       if (!actual) continue;
-      expect(actual.tokenCount, `${expected.id} token budget`).toBeLessThanOrEqual(1200);
+      const budget =
+        AGENT_BUDGET_OVERRIDES[expected.id] ??
+        (actual.skillMode === "inline" ? 6000 : 1200);
+      expect(actual.tokenCount, `${expected.id} token budget`).toBeLessThanOrEqual(budget);
       for (const section of REQUIRED_AGENT_SECTIONS) {
         expect(actual.bodyMarkdown, `${expected.id} section ${section}`).toMatch(
           new RegExp(`^##\\s+${section}\\b`, "m"),
         );
       }
+      if (actual.skillMode === "native") {
+        expect(actual.compiledPrompt.match(/^## Agent Skill$/gm)).toHaveLength(1);
+        expect(actual.compiledPrompt).not.toContain("Trust boundary.");
+      } else {
+        expect(actual.compiledPrompt).toContain("Security Fix Test-Writer");
+      }
     }
   });
 
-  it("keeps every skill slot empty and unloaded", () => {
+  it("keeps every skill package loaded with a mode, references, and license", () => {
     expect(AGENT_SKILL_IDS).toHaveLength(11);
+    let native = 0;
+    let inline = 0;
     for (const agentId of AGENT_SKILL_IDS) {
       const actual = agentById.get(agentId);
       expect(actual, `missing agent ${agentId}`).toBeDefined();
       if (!actual) continue;
-      expect(actual.skillLoaded, `${agentId} skillLoaded`).toBe(false);
+      expect(actual.skillLoaded, `${agentId} skillLoaded`).toBe(true);
+      expect(actual.skillMode, `${agentId} skillMode`).toBe(AGENT_SKILL_MODES[agentId]);
+      if (actual.skillMode === "native") native += 1;
+      else inline += 1;
+      const pkg = loadAgentSkillPackage(agentId);
+      expect(pkg.loaded, `${agentId} package loaded`).toBe(true);
+      expect(pkg.licensePresent, `${agentId} license`).toBe(true);
+      expect(pkg.references.length, `${agentId} references`).toBeGreaterThan(0);
       const stat = fs.statSync(agentSkillPath(agentId));
-      expect(stat.size, `${agentId} SKILL.md size`).toBe(0);
+      expect(stat.size, `${agentId} SKILL.md size`).toBeGreaterThan(0);
     }
+    expect(native).toBe(10);
+    expect(inline).toBe(1);
   });
 
   it("exposes exactly the six canonical command names", () => {
@@ -126,6 +153,7 @@ describe("agent readiness: contract matrix", () => {
     expect(actualNames).toHaveLength(38);
     expect(new Set(actualNames).size).toBe(38);
     expect([...actualNames].sort()).toEqual([...EXPECTED_NYX_TOOL_NAMES].sort());
+    expect([...NYX_MCP_TOOL_BASENAMES].sort()).toEqual([...actualNames].sort());
     for (const tool of ALL_NYX_TOOLS) {
       expect(tool.description.length, `${tool.name} description`).toBeGreaterThan(0);
       expect(tool.description.length, `${tool.name} description`).toBeLessThanOrEqual(200);

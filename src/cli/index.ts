@@ -58,7 +58,7 @@ export async function runCli(
       "",
       "Usage:",
       "  nyxowl [path] [--host opencode] [--include-dirty]   Setup (if first run) and launch an OpenCode session",
-      "  nyxowl doctor                                   Verify runtimes, OpenCode status, skill slots, and MCP server",
+      "  nyxowl doctor                                   Verify runtimes, OpenCode status, skill packages, and MCP server",
       "  nyxowl status [path]                            Show worktrees, slices, strikes, locks, receipts",
       "  nyxowl handoff [path]                           Print latest task handoff & hydrate digest",
       "  nyxowl worktree list|prune|remove [<slug>]      Manage isolated Nyxowl worktrees",

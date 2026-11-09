@@ -13,7 +13,7 @@ import {
   selectHostToLaunch,
 } from "./detect-hosts.ts";
 import { loadInstallManifest, saveInstallManifest } from "./manifest.ts";
-import { getSkillSlotReport } from "./skills.ts";
+import { getSkillSlotReport, type AgentSkillSlotReport } from "./skills.ts";
 import { ensureTestWriterRuntime, type TestWriterInstallStatus } from "./testwriter.ts";
 
 export { NYXOWL_VERSION };
@@ -25,7 +25,7 @@ export interface SetupResult {
   gitVersion: string;
   detectedHosts: DetectedHost[];
   defaultHost: DetectedHost | null;
-  skillSlots: Array<{ agentId: string; path: string; loaded: boolean }>;
+  skillSlots: AgentSkillSlotReport[];
   testWriter: { status: TestWriterInstallStatus; root: string; message: string };
   summaryLines: string[];
 }
@@ -115,11 +115,14 @@ export async function ensureFirstRunSetup(options?: {
   });
   const defaultHost = selectHostToLaunch(detectedHosts);
 
-  if (!alreadyInitialized) {
-    generateOpenCodeHostPackage({
-      ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
-    });
+  // Always regenerate the host package, even on an already-initialized home.
+  // The generation is idempotent; skipping it previously left a stale v0.1.0
+  // config in place and hid the MCP tools from the model.
+  generateOpenCodeHostPackage({
+    ...(options?.nyxowlHome ? { nyxowlHome: options.nyxowlHome } : {}),
+  });
 
+  if (!alreadyInitialized) {
     const updatedManifest = loadInstallManifest(options?.nyxowlHome);
     updatedManifest.nyxowlVersion = NYXOWL_VERSION;
     saveInstallManifest(updatedManifest, options?.nyxowlHome);
@@ -141,6 +144,10 @@ export async function ensureFirstRunSetup(options?: {
     .join(", ");
 
   const filledSlots = skillSlots.filter((slot) => slot.loaded).length;
+  const nativeSlots = skillSlots.filter((slot) => slot.mode === "native").length;
+  const inlineSlots = skillSlots.filter((slot) => slot.mode === "inline").length;
+  const totalReferences = skillSlots.reduce((total, slot) => total + slot.references, 0);
+  const licensedSlots = skillSlots.filter((slot) => slot.licensePresent).length;
   const testWriterLine =
     testWriter.status === "installed" || testWriter.status === "already-installed"
       ? `Test-Writer: ready at ${testWriter.root}`
@@ -152,7 +159,7 @@ export async function ensureFirstRunSetup(options?: {
   const summaryLines = [
     `Nyxowl v${NYXOWL_VERSION} initialized at ${resolveGlobalNyxowlPaths(options?.nyxowlHome).homeDir} (0700)`,
     `Runtimes verified: Node v${nodeVersion}, git v${gitVersion}`,
-    `Skill slots: ${skillSlots.length} total (${filledSlots} filled, ${skillSlots.length - filledSlots} empty)`,
+    `Skill packages: ${filledSlots}/${skillSlots.length} loaded (${nativeSlots} native, ${inlineSlots} inline); references: ${totalReferences}; licenses: ${licensedSlots}/${skillSlots.length}`,
     `Detected host: ${installedNames || "none on PATH"}`,
     `OpenCode: ${defaultHost ? `${defaultHost.displayName} (Tier ${defaultHost.tier})` : "none"}`,
     testWriterLine,

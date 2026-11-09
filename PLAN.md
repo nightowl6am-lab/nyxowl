@@ -26,9 +26,15 @@ verified.
 - **Agents:** exactly **1 primary + 10 subagents** (11 agent contracts):
   `nyxowl` (primary), `nyx-product`, `nyx-architect`, `nyx-designer`, `nyx-db`,
   `nyx-api`, `nyx-ui`, `nyx-sec`, `nyx-testwriter`, `nyx-probe`, `nyx-devops`.
-- **Skill slots:** exactly 11 per-agent slots at
-  `agents/skills/<agent-id>/SKILL.md`. Empty slots contribute nothing to a
-  compiled prompt; an owner-authored slot is appended under `## Agent Skill`.
+- **Skills:** exactly 11 authored skill packages under
+  `agents/skills/<agent-id>/` — 10 **native** packages registered through the
+  host `skills` root and loaded on demand with the `skill` tool, plus
+  **nyx-testwriter** in **inline** mode with its text embedded in that agent's
+  system prompt. Every package has a `SKILL.md`, at least one `LICENSE`, and a
+  read-only `references/` set. `agents/skills.lock.json` pins each file's
+  upstream repo/commit/path, SPDX license, and local/upstream SHA-256;
+  `npm run skills:verify` checks provenance, hashes, links, licenses, and
+  dangerous patterns offline.
 - **Commands:** six canonical slash commands compiled into the OpenCode package.
 - **Launch contract:** `OPENCODE_CONFIG=<package>/opencode.json opencode --standalone <path>`
   with `default_agent: "nyxowl"`.
@@ -218,6 +224,8 @@ A release is publishable when:
   opt-in (for example `nyx_web_fetch`, OSV lookups, and loopback probes).
 - New MCP engines, new `nyx_*` tool names, or new dependencies outside the
   reviewed supply chain.
-- A vendored skill tree or a bundled skill registry.
+- A runtime skill registry, remote skill fetch, or execution of third-party
+  skill code. Vendored skills are pinned, adapted, locked, and verified offline;
+  they are reference data, not executable plugins.
 - Changing engine, gate, or grader behavior as part of documentation and
   lifecycle work.

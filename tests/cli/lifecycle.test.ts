@@ -96,7 +96,7 @@ describe("fresh-HOME CLI lifecycle matrix", () => {
     const doctor = await runCli(["doctor"], { nyxowlHome });
     expect(doctor.exitCode).toBe(0);
     expect(doctor.stderr).toBe("");
-    expect(doctor.stdout).toContain("Skill slots: 11");
+    expect(doctor.stdout).toContain("Skill packages: 11/11 loaded (10 native, 1 inline)");
     expect(doctor.stdout).toContain("MCP Smoke Test: OK (38 tools listed)");
     expect(doctor.stdout).toContain("INSTALLED at");
     expect(modeOf(nyxowlHome)).toBe(0o700);

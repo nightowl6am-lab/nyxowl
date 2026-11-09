@@ -5,7 +5,7 @@
 Nyxowl consists of three tightly integrated subsystems:
 1. **Core & State Layer (`src/core/`, `src/mcp/db/`):** Zero-native-addon SQLite WAL state engine (`node:sqlite`), HMAC-SHA256 receipt signer, Exact-Value + Entropy Redactor, token budgeter, and Git temporary-index worktree manager.
 2. **8-Engine Heavy Runtime MCP Server (`src/mcp/engines/`):** 38 deterministic tools (`nyx_*`) exposed over stdio MCP (`nyxowl mcp`) with strict Zod input/output schemas, MCP annotations, token budget truncation + overflow artifacts, and `audit_log` recording.
-3. **Universal CLI, Compiler, Hooks & OpenCode Adapter (`src/cli/`):** Compiles canonical Markdown agents (`agents/primary/`, `agents/subagents/`) and per-agent skill slots (`agents/skills/<agent-id>/SKILL.md`) into the session-scoped OpenCode v2.2.5 package under `~/.nyxowl/hosts/opencode/`.
+3. **Universal CLI, Compiler, Hooks & OpenCode Adapter (`src/cli/`):** Compiles canonical Markdown agents (`agents/primary/`, `agents/subagents/`) and 11 authored skill packages (`agents/skills/<agent-id>/`) into the session-scoped OpenCode v2.2.5 package under `~/.nyxowl/hosts/opencode/`. Ten skills are native (copied to `hosts/opencode/skills/`, advertised by absolute root, loaded on demand); `nyx-testwriter` is inline (embedded in its system prompt). The TUI launches with the generated `opencode.json` via `opencode --standalone <path>`; OpenCode manages its own service and MCP connections.
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
 
 All Nyxowl state lives outside the user's repository in `~/.nyxowl/` (`0700`, overrideable via `NYXOWL_HOME`):
 - `secrets/receipt.key` (`0600`): 32-byte random key used for HMAC-SHA256 receipt signing.
-- `hosts/opencode/`: Generated session-scoped OpenCode config, agents, and commands.
+- `hosts/opencode/`: Generated session-scoped OpenCode config, agents, commands, and the copied `skills/` root.
 - `hosts/opencode-plugin/`: Generated OpenCode plugin that registers the permission and session hooks.
 - `worktrees/<repo-id>/<slug>/`: Default external Git worktrees so the user's main checkout stays untouched and clean.
 - `projects/<repo-id>/state.db`: Per-repository SQLite database in `WAL` mode (`busy_timeout = 5000`, `BEGIN IMMEDIATE` write transactions) shared across all worktrees of the same repository via `git rev-parse --git-common-dir`.

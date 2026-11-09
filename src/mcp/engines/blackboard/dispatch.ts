@@ -40,7 +40,7 @@ export const taskDispatchOutputSchema = z.object({
 export const nyxTaskDispatchTool = defineTool({
   name: "nyx_task_dispatch",
   description:
-    "Resolves the per-agent skill slot, promoted Blackboard keys, lock plan, and budgets for a subagent.",
+    "Resolves the per-agent skill package, promoted Blackboard keys, lock plan, and budgets for a subagent.",
   annotations: {
     title: "Dispatch Task to Subagent",
     readOnlyHint: true,
