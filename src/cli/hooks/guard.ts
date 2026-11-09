@@ -62,11 +62,14 @@ export function isNyxowlSessionActive(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   if (env["NYXOWL_SESSION"] === "1") return true;
+  // Activation depends on the hook payload's own agent identity (or the
+  // NYXOWL_SESSION=1 marker) only: an inherited NYXOWL_ROLE value is a
+  // server/role context, not hook trigger evidence, and must not activate the
+  // guard for an empty or unknown-agent payload.
   const agentName = (
     payload.agent_name ??
     payload.subagent_type ??
     payload.agent ??
-    env["NYXOWL_ROLE"] ??
     ""
   ).toLowerCase();
   if (agentName === "nyxowl" || agentName.startsWith("nyx-")) {

@@ -12,6 +12,7 @@ import {
 import {
   evaluateGuardPayload,
   evaluateShellCommandGuard,
+  isNyxowlSessionActive,
   runGuardCli,
   splitShellCommandsRecursive,
 } from "../../src/cli/hooks/guard.ts";
@@ -53,6 +54,42 @@ describe("Step 9 — Host Hooks (guard, edit-guard, session-start, pre-compact)"
       { env: { NYXOWL_SESSION: "0" }, nyxowlHome },
     );
     expect(editDecision).toBeNull();
+  });
+
+  it("ignores an inherited NYXOWL_ROLE for activation (payload identity or NYXOWL_SESSION=1 only)", async () => {
+    const prevRole = process.env["NYXOWL_ROLE"];
+    const prevSession = process.env["NYXOWL_SESSION"];
+    process.env["NYXOWL_ROLE"] = "nyx-probe";
+    try {
+      delete process.env["NYXOWL_SESSION"];
+      // A role env inherited from a parent (e.g. the gate harness) is not hook
+      // activation evidence by itself.
+      expect(isNyxowlSessionActive({}, process.env)).toBe(false);
+
+      // Empty hook payloads stay no-ops even with NYXOWL_ROLE set.
+      expect(await runGuardCli("")).toEqual({ exitCode: 0, stdout: "" });
+      expect(await runEditGuardCli("")).toEqual({ exitCode: 0, stdout: "" });
+      expect(await runSessionStartCli("")).toEqual({ exitCode: 0, stdout: "" });
+      expect(await runPreCompactCli("")).toEqual({ exitCode: 0, stdout: "" });
+
+      // Explicit payload identity still activates.
+      expect(isNyxowlSessionActive({ agent_name: "nyxowl" }, process.env)).toBe(true);
+      const active = await runSessionStartCli(
+        JSON.stringify({ agent_name: "nyxowl", cwd: projectDir }),
+      );
+      expect(active.exitCode).toBe(0);
+      expect(active.stdout).toContain("Nyxowl Session Hydrate");
+
+      // The explicit NYXOWL_SESSION=1 marker still activates on its own
+      // (fail-safe/latency branches covered in the dedicated test below).
+      process.env["NYXOWL_SESSION"] = "1";
+      expect(isNyxowlSessionActive({}, process.env)).toBe(true);
+    } finally {
+      if (prevRole === undefined) delete process.env["NYXOWL_ROLE"];
+      else process.env["NYXOWL_ROLE"] = prevRole;
+      if (prevSession === undefined) delete process.env["NYXOWL_SESSION"];
+      else process.env["NYXOWL_SESSION"] = prevSession;
+    }
   });
 
   it("blocks the entire secret-bypass corpus while allowing .env.example/.env.sample/.env.template", () => {
