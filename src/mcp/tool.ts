@@ -175,23 +175,6 @@ export async function invokeToolDefinition(
   try {
     ctx = await createToolContext(rawArgs, options);
 
-    // Enforce maxToolCallsPerTask soft-stop budget
-    const countRow = ctx.db.db
-      .prepare("SELECT COUNT(*) as cnt FROM audit_log")
-      .get() as { cnt: number } | undefined;
-    const totalCalls = countRow?.cnt ?? 0;
-    if (
-      totalCalls >= ctx.config.budgets.maxToolCallsPerTask &&
-      tool.name !== "nyx_task_handoff" &&
-      tool.name !== "nyx_context_hydrate" &&
-      tool.name !== "nyx_artifact_read"
-    ) {
-      throw new NyxError(
-        "ERR_BUDGET_EXCEEDED",
-        `Task tool-call budget reached (${totalCalls}/${ctx.config.budgets.maxToolCallsPerTask}). Call nyx_task_handoff and report status.`,
-      );
-    }
-
     const parsedInput = tool.inputSchema.safeParse(rawArgs ?? {});
     if (!parsedInput.success) {
       throw new NyxError(

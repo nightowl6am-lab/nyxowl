@@ -433,7 +433,6 @@ describe("Config validation and JSONC parsing", () => {
           subagentSummaryTokens: 240,
           handoffTokens: 380,
           agentPromptTokens: 1150,
-          maxToolCallsPerTask: 300,
         },
         network: {
           depGuard: "warn",
@@ -483,6 +482,34 @@ describe("Config validation and JSONC parsing", () => {
       assert.equal(cfg.network.depGuard, "warn");
       assert.deepEqual(cfg.deps, { allow: ["zod"], deny: ["left-pad"] });
       assert.deepEqual(cfg.probe.allowedHosts, ["127.0.0.1"]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("ignores the legacy maxToolCallsPerTask budget key without failing", () => {
+    const { tmpHome, tmpRepo, cleanup } = withConfigDirs();
+    try {
+      // Legacy configs may still carry the removed tool-call budget key; the
+      // loader must load them successfully and drop the key from the result.
+      const legacyConfig = {
+        version: 1,
+        baseBranch: "main",
+        budgets: {
+          maxToolOutputTokens: 1400,
+          maxToolCallsPerTask: 300,
+        },
+      } as Record<string, unknown>;
+      writeRepoConfig(tmpRepo, legacyConfig);
+
+      const cfg = loadConfig({ projectPath: tmpRepo, nyxHome: tmpHome });
+      assert.equal(cfg.baseBranch, "main");
+      assert.equal(cfg.budgets.maxToolOutputTokens, 1400);
+      assert.ok(!("maxToolCallsPerTask" in cfg.budgets));
+      assert.equal(
+        Object.keys(cfg.budgets).includes("maxToolCallsPerTask"),
+        false,
+      );
     } finally {
       cleanup();
     }

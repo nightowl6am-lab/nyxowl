@@ -62,7 +62,6 @@ export interface NyxConfig {
     subagentSummaryTokens: number;
     handoffTokens: number;
     agentPromptTokens: number;
-    maxToolCallsPerTask: number;
     /** Per-tool absolute overrides for maxToolOutputTokens. */
     toolOutputOverrides: Record<string, number>;
     /** Per-caller-role absolute overrides for maxToolOutputTokens. */
@@ -133,7 +132,6 @@ export const DEFAULT_CONFIG: NyxConfig = {
     subagentSummaryTokens: 250,
     handoffTokens: 400,
     agentPromptTokens: 1200,
-    maxToolCallsPerTask: 400,
     toolOutputOverrides: {},
     roleOutputOverrides: {},
   },
@@ -434,7 +432,6 @@ function validateAndMergeConfig(
           "subagentSummaryTokens",
           "handoffTokens",
           "agentPromptTokens",
-          "maxToolCallsPerTask",
         ] as const) {
           if (k in bObj && bObj[k] !== undefined) {
             const v = bObj[k];
