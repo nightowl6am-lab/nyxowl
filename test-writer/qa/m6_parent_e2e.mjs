@@ -123,7 +123,7 @@ try {
 
   const list = await client.listTools();
   const names = list.tools.map((tool) => tool.name);
-  assert.equal(names.length, 38, `expected 38 tools, got ${names.length}`);
+  assert.equal(names.length, 39, `expected 39 tools, got ${names.length}`);
   const testwriterTools = names.filter((name) => name.startsWith("nyx_testwriter_"));
   assert.equal(testwriterTools.length, 7, `expected 7 Test-Writer tools, got ${testwriterTools.length}`);
   const subagentTools = parseSubagentTools();

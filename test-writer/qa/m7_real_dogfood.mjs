@@ -291,7 +291,7 @@ async function runTarget(spec) {
     await client.connect(transport);
     const listed = await client.listTools();
     const names = listed.tools.map((tool) => tool.name);
-    assert.equal(names.length, 38, `expected 38 registered tools, got ${names.length}`);
+    assert.equal(names.length, 39, `expected 39 registered tools, got ${names.length}`);
     for (const required of [...DOGFOOD_TOOLS, "nyx_worktree_manage"]) {
       assert.ok(names.includes(required), `${required} is not registered`);
     }
