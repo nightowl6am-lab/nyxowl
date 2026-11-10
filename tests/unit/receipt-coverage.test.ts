@@ -897,6 +897,7 @@ describe("PR publish idempotency — existing PR is updated in place", () => {
       },
     ]);
     expect(result.ciNotice).toContain("still pending for PR #26");
+    expect(result.ciNotice).toContain("CI is not confirmed");
   });
 
   it("reports failed checks in structured output without throwing after the PR exists", async () => {
@@ -940,6 +941,7 @@ describe("PR publish idempotency — existing PR is updated in place", () => {
     expect(result.ciStatus).toBe("unknown");
     expect(result.ciChecks).toEqual([]);
     expect(result.ciNotice).toContain("No CI check rollup was reported for PR #99");
+    expect(result.ciNotice).toContain("CI is not confirmed");
     const checksCall = calls.find(
       (c) =>
         c.args[0] === "pr" &&
@@ -981,5 +983,20 @@ describe("GitHub slug and CI notice helpers", () => {
     const notice = buildCiNotice("not-applicable", [], null, false);
     expect(notice).toContain("not applicable");
     expect(notice).not.toContain("passed");
+  });
+
+  it("never confirms CI when the rollup is unknown or pending", () => {
+    const unknown = buildCiNotice("unknown", [], 27, false);
+    expect(unknown).toContain("PR #27");
+    expect(unknown).toContain("CI is not confirmed");
+
+    const pending = buildCiNotice("pending", [], 27, false);
+    expect(pending).toContain("PR #27");
+    expect(pending).toContain("CI is not confirmed");
+
+    const timedOut = buildCiNotice("pending", [], 27, true);
+    expect(timedOut).toContain("PR #27");
+    expect(timedOut).toContain("Timed out");
+    expect(timedOut).toContain("CI is not confirmed");
   });
 });

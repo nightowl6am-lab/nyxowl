@@ -273,7 +273,96 @@ describe("waitForPrChecks", () => {
     expect(calls).toBe(4);
   });
 
-  it("stops immediately for a terminal or unknown rollup", async () => {
+  it("retries an empty/unknown first rollup and returns passed once checks register", async () => {
+    const passedPayload = JSON.stringify({
+      headRefOid: "abc",
+      statusCheckRollup: [
+        { __typename: "CheckRun", name: "build", status: "COMPLETED", conclusion: "SUCCESS" },
+      ],
+    });
+    const responses = ["", '{"headRefOid":"abc","statusCheckRollup":[]}', passedPayload];
+    let index = 0;
+    const exec: CiExec = async () =>
+      execResult({ stdout: responses[Math.min(index++, responses.length - 1)] ?? passedPayload });
+
+    const sleeps: number[] = [];
+    const snapshot = await waitForPrChecks(exec, 26, {
+      timeoutMs: 1_000,
+      intervalMs: 100,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(snapshot.status).toBe("passed");
+    expect(snapshot.timedOut).toBe(false);
+    expect(sleeps).toEqual([100, 100]);
+    expect(index).toBe(3);
+  });
+
+  it("returns unknown with timedOut when the rollup stays empty past the budget", async () => {
+    let calls = 0;
+    const exec: CiExec = async () => {
+      calls += 1;
+      return execResult({ stdout: " " });
+    };
+
+    const snapshot = await waitForPrChecks(exec, 26, {
+      timeoutMs: 30,
+      intervalMs: 10,
+      sleep: async () => {},
+    });
+
+    expect(snapshot.status).toBe("unknown");
+    expect(snapshot.timedOut).toBe(true);
+    expect(snapshot.checks).toEqual([]);
+    expect(calls).toBe(4);
+  });
+
+  it("returns failed when a pending rollup transitions to failure", async () => {
+    const pendingPayload = JSON.stringify({
+      statusCheckRollup: [
+        { __typename: "CheckRun", name: "build", status: "IN_PROGRESS", conclusion: null },
+      ],
+    });
+    const failedPayload = JSON.stringify({
+      statusCheckRollup: [
+        { __typename: "CheckRun", name: "build", status: "COMPLETED", conclusion: "FAILURE" },
+      ],
+    });
+    let calls = 0;
+    const exec: CiExec = async () => {
+      calls += 1;
+      return execResult({ stdout: calls === 1 ? pendingPayload : failedPayload });
+    };
+
+    const snapshot = await waitForPrChecks(exec, 26, {
+      timeoutMs: 1_000,
+      intervalMs: 100,
+      sleep: async () => {},
+    });
+
+    expect(snapshot.status).toBe("failed");
+    expect(snapshot.timedOut).toBe(false);
+    expect(snapshot.checks[0]?.conclusion).toBe("FAILURE");
+    expect(calls).toBe(2);
+  });
+
+  it("keeps a malformed rollup unknown and times out conservatively", async () => {
+    const exec: CiExec = async () => execResult({ stdout: "not json at all" });
+
+    const snapshot = await waitForPrChecks(exec, 26, {
+      timeoutMs: 20,
+      intervalMs: 10,
+      sleep: async () => {},
+    });
+
+    expect(snapshot.status).toBe("unknown");
+    expect(snapshot.timedOut).toBe(true);
+    expect(snapshot.checks).toEqual([]);
+  });
+
+  it("stops immediately for a terminal rollup", async () => {
     let calls = 0;
     const passed: CiExec = async () => {
       calls += 1;
@@ -296,16 +385,6 @@ describe("waitForPrChecks", () => {
     expect(result.status).toBe("passed");
     expect(result.timedOut).toBe(false);
     expect(calls).toBe(1);
-
-    const unknown = await waitForPrChecks(passed, 0, {
-      timeoutMs: 1_000,
-      intervalMs: 100,
-      sleep: async () => {
-        throw new Error("sleep must not run for an unknown rollup");
-      },
-    });
-    expect(unknown.status).toBe("unknown");
-    expect(unknown.timedOut).toBe(false);
   });
 });
 

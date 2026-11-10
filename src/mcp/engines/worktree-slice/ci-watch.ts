@@ -268,12 +268,20 @@ function defaultSleep(ms: number): Promise<void> {
 }
 
 /**
+ * Only a definitive result stops polling. `pending` and `unknown` are both
+ * non-terminal: right after PR creation the check rollup can be empty for a
+ * short window, and treating that as final would defeat CI observation.
+ */
+function isTerminalCiStatus(status: CiStatusSummary): boolean {
+  return status === "passed" || status === "failed";
+}
+
+/**
  * Polls the check rollup until it reaches a terminal state (passed/failed) or
- * the timeout budget is exhausted. `unknown` stops immediately: there is no
- * rollup to observe, so polling would never produce a different answer.
- *
- * Returns the last snapshot plus `timedOut`, which is true only when the loop
- * stopped while checks were still pending.
+ * the timeout budget is exhausted. `pending` and `unknown` are NOT terminal:
+ * an empty rollup immediately after PR creation is retried until checks
+ * register. The returned `timedOut` flag is true when the loop stopped while
+ * the last snapshot was still `pending` or `unknown`.
  */
 export async function waitForPrChecks(
   exec: CiExec,
@@ -285,7 +293,7 @@ export async function waitForPrChecks(
   const sleep = options.sleep ?? defaultSleep;
 
   const first = await collectPrChecks(exec, prNumber, options);
-  if (first.status !== "pending") {
+  if (isTerminalCiStatus(first.status)) {
     return { ...first, timedOut: false };
   }
 
@@ -299,10 +307,10 @@ export async function waitForPrChecks(
     elapsed += step;
 
     snapshot = await collectPrChecks(exec, prNumber, options);
-    if (snapshot.status !== "pending") {
+    if (isTerminalCiStatus(snapshot.status)) {
       return { ...snapshot, timedOut: false };
     }
   }
 
-  return { ...snapshot, timedOut: snapshot.status === "pending" };
+  return { ...snapshot, timedOut: true };
 }

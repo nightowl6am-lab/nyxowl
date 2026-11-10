@@ -249,16 +249,16 @@ export function buildCiNotice(
 
   if (status === "pending") {
     if (timedOut) {
-      return `Timed out waiting for CI checks on ${prLabel}; they are still pending. Re-check before merge.`;
+      return `Timed out waiting for CI checks on ${prLabel}; CI is not confirmed because checks are still pending. Re-check before merge.`;
     }
-    return `CI checks are still pending for ${prLabel}. Re-check before merge.`;
+    return `CI checks are still pending for ${prLabel}; CI is not confirmed. Re-check before merge.`;
   }
 
   if (status === "passed") {
     return `CI checks passed for ${prLabel} (${checks.length}/${checks.length}).`;
   }
 
-  return `No CI check rollup was reported for ${prLabel}; CI status is unknown.`;
+  return `No CI check rollup was reported for ${prLabel}; CI is not confirmed (status unknown).`;
 }
 
 /**
