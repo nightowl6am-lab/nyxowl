@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **MCP runtime handshake:** the stdio server writes a private `run/mcp-server.json` marker (pid, version, tool count, entry path, project) and removes it on shutdown, so orchestrators can detect a stale or mismatched host server instead of trusting an old binary.
 - **PR CI observation:** `nyx_worktree_pr` reports `prNumber`, `ciStatus`, `ciChecks`, and a `ciNotice` after publish; `waitForChecks` polls the check rollup and reports failed check names/URLs. The gh publish path now falls back to the REST `pulls` PATCH when `gh pr edit` fails.
 
+### Removed
+- **Per-task tool-call soft stop:** removed `budgets.maxToolCallsPerTask` and the cumulative `ERR_BUDGET_EXCEEDED` check that blocked tools after 400 project-wide calls. Token/output budgets and the `audit_log` table remain; legacy configs that still contain the key load successfully and the key is dropped.
+
 ### Changed
 - **Verify mirrors CI:** `nyx_verify_slice` derives safe local commands from `.github/workflows/ci.yml` (including `test:coverage`, `skills:verify`, and `test:agents`) and prefers `test:coverage` in the no-workflow fallback, so a gate can no longer pass locally while the coverage job fails in CI.
 - **Non-pro model roster:** `nyx-probe`, `nyx-devops`, `nyx-designer`, `nyx-product`, and `nyx-testwriter` now use the supported non-pro models (`glm-5.3-flash#high`, `deepseek-v4.1-flash#high`, `qwen3.8-flash#xhigh`); `mimo-v2.6-pro`, `minimax-m3.1-flash`, and `qwen3.7-plus` are rejected with the available-model list.

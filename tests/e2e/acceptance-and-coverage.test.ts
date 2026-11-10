@@ -340,7 +340,7 @@ describe("Step 10 — Acceptance Scenarios (§13), Polyglot Coverage & Dogfoodin
       '  "gates": { "verify": "required", "seam": "required", "slop": "required", "exploit": "auto" },',
       '  "slop": { "scope": "diff", "disable": ["SLOP_TODO"], "advisoryAsBlocking": true },',
       '  "github": { "mode": "gh", "attribution": "coauthor", "appId": "12345" },',
-      '  "budgets": { "maxToolOutputTokens": 1400, "subagentSummaryTokens": 240, "handoffTokens": 380, "agentPromptTokens": 1150, "maxToolCallsPerTask": 300 },',
+      '  "budgets": { "maxToolOutputTokens": 1400, "subagentSummaryTokens": 240, "handoffTokens": 380, "agentPromptTokens": 1150 },',
       '  "network": { "depGuard": "fail-closed", "webFetchAllow": ["docs.fastify.dev"], "webFetchDeny": ["evil.example.com"], "maxQueryChars": 200 },',
       '  "deps": { "allow": ["zod"], "deny": ["left-pad"] },',
       '  "probe": { "allowedHosts": ["127.0.0.1", "localhost"] },',
