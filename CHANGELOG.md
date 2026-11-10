@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- **`nyxowl gate-run`:** a first-class runner that executes any MCP tool against the current build in-process, with `--info` reporting the running server marker, tool count, entry path, worktree HEAD/tree, source/dist freshness, and stale reasons. It is the sanctioned way to run gates when the host MCP process is older than the worktree build.
+- **MCP runtime handshake:** the stdio server writes a private `run/mcp-server.json` marker (pid, version, tool count, entry path, project) and removes it on shutdown, so orchestrators can detect a stale or mismatched host server instead of trusting an old binary.
+- **PR CI observation:** `nyx_worktree_pr` reports `prNumber`, `ciStatus`, `ciChecks`, and a `ciNotice` after publish; `waitForChecks` polls the check rollup and reports failed check names/URLs. The gh publish path now falls back to the REST `pulls` PATCH when `gh pr edit` fails.
+
+### Changed
+- **Verify mirrors CI:** `nyx_verify_slice` derives safe local commands from `.github/workflows/ci.yml` (including `test:coverage`, `skills:verify`, and `test:agents`) and prefers `test:coverage` in the no-workflow fallback, so a gate can no longer pass locally while the coverage job fails in CI.
+- **Non-pro model roster:** `nyx-probe`, `nyx-devops`, `nyx-designer`, `nyx-product`, and `nyx-testwriter` now use the supported non-pro models (`glm-5.3-flash#high`, `deepseek-v4.1-flash#high`, `qwen3.8-flash#xhigh`); `mimo-v2.6-pro`, `minimax-m3.1-flash`, and `qwen3.7-plus` are rejected with the available-model list.
+
 ### Fixed
 - **MCP truncation schema safety:** `structuredContent` is now always the validated, schema-shaped output. Oversized results store the full original payload as an overflow artifact and put the artifact id plus a `nyx_artifact_read` instruction in the human-readable text, so clients no longer reject truncated responses and the agent can always recover the result. Token budgets are configurable per tool and per caller role, and the default output budget is raised to 6000 tokens.
 - **Seam scanning ignores generated output:** one central ignore registry now prunes framework/build/cache/dependency directories (`.next`, `out`, `build`, `.output`, `.nuxt`, `.svelte-kit`, `.turbo`, `.vercel`, `.cache`, `target`, `bin`, `obj`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.venv`, `venv`, coverage, and similar), honors `.gitignore` through `git ls-files --exclude-standard`, excludes test/fixture trees from product-source seams, deduplicates env drift by key, and caps mismatch lists.

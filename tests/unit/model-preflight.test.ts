@@ -31,16 +31,16 @@ const EXPECTED_ROSTER: Array<[string, string]> = [
   ["nyx-sec", "opencode-go/deepseek-v4.1-flash#high"],
   ["nyx-api", "opencode-go/glm-5.3-flash#high"],
   ["nyx-db", "opencode-go/glm-5.3-flash#high"],
-  ["nyx-probe", "opencode-go/mimo-v2.6-pro"],
-  ["nyx-devops", "opencode-go/minimax-m3.1-flash#high"],
+  ["nyx-probe", "opencode-go/glm-5.3-flash#high"],
+  ["nyx-devops", "opencode-go/deepseek-v4.1-flash#high"],
   ["nyx-ui", "opencode-go/deepseek-v4.1-flash#high"],
-  ["nyx-designer", "opencode-go/qwen3.7-plus#high"],
-  ["nyx-product", "opencode-go/qwen3.7-plus#high"],
-  ["nyx-testwriter", "opencode-go/mimo-v2.6-pro"],
+  ["nyx-designer", "opencode-go/qwen3.8-flash#xhigh"],
+  ["nyx-product", "opencode-go/qwen3.8-flash#xhigh"],
+  ["nyx-testwriter", "opencode-go/glm-5.3-flash#high"],
 ];
 
 describe("roster resolution", () => {
-  it("resolves every role to its exact roster model and variant", () => {
+  it("resolves every role to its exact roster model and variant (no substitutions)", () => {
     for (const [role, expectedResolved] of EXPECTED_ROSTER) {
       const res = resolveModelVariant({ role });
       expect(res.resolved, role).toBe(expectedResolved);
@@ -54,13 +54,23 @@ describe("roster resolution", () => {
     }
   });
 
-  it("resolves variant-free models (mimo) without substituting", () => {
-    const res = resolveModelVariant({ role: "nyx-probe" });
-    expect(res.model).toBe("mimo-v2.6-pro");
-    expect(res.variant).toBeNull();
-    expect(res.resolved).toBe("opencode-go/mimo-v2.6-pro");
-    expect(AVAILABLE_MODEL_VARIANTS["mimo-v2.6-pro"]).toEqual([null]);
+  it("exposes exactly the non-pro model roster strings", () => {
+    expect(Object.keys(AVAILABLE_MODEL_VARIANTS).sort()).toEqual([
+      "deepseek-v4.1-flash",
+      "glm-5.3-flash",
+      "qwen3.8-flash",
+    ]);
+    expect(AVAILABLE_MODEL_VARIANTS["qwen3.8-flash"]).toEqual([null, "low", "medium", "xhigh"]);
     expect(Object.keys(NYX_MODEL_ROSTER)).toHaveLength(EXPECTED_ROSTER.length);
+  });
+
+  it("resolves qwen3.8-flash#xhigh for designer/product without substituting", () => {
+    for (const role of ["nyx-designer", "nyx-product"]) {
+      const res = resolveModelVariant({ role });
+      expect(res.model).toBe("qwen3.8-flash");
+      expect(res.variant).toBe("xhigh");
+      expect(res.resolved).toBe(`opencode-go/qwen3.8-flash#xhigh`);
+    }
   });
 });
 
@@ -69,16 +79,23 @@ describe("loud rejections", () => {
     expect(() => resolveModelVariant({ role: "nyx-intern" })).toThrowError(/nyx-intern/);
   });
 
-  it("rejects a variant on a variant-free model and lists only \"none\"", () => {
-    try {
-      resolveModelVariant({ role: "nyx-probe", variant: "high" });
-      expect.unreachable("must reject a #high variant for mimo-v2.6-pro");
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe(ERR_MODEL_UNAVAILABLE);
-      expect((err as { message: string }).message).toContain("mimo-v2.6-pro");
-      expect((err as { details?: { availableVariants: string[] } }).details?.availableVariants).toEqual([
-        "none",
-      ]);
+  it("rejects the removed pro models with the current model list", () => {
+    for (const pro of ["mimo-v2.6-pro", "minimax-m3.1-flash", "qwen3.7-plus"]) {
+      try {
+        resolveModelVariant({ role: "nyx-probe", model: pro });
+        expect.unreachable(`must reject the removed model ${pro}`);
+      } catch (err) {
+        const details = (err as {
+          code?: string;
+          details?: { availableModels: string[] };
+        }).details;
+        expect((err as { code?: string }).code).toBe(ERR_MODEL_UNAVAILABLE);
+        expect(details?.availableModels).toEqual([
+          "deepseek-v4.1-flash",
+          "glm-5.3-flash",
+          "qwen3.8-flash",
+        ]);
+      }
     }
   });
 
@@ -124,16 +141,34 @@ describe("nyx_model_preflight tool", () => {
   it("exposes a schema-valid preflight tool via invokeToolDefinition", async () => {
     const response = await invokeToolDefinition(
       nyxModelPreflightTool,
-      { role: "nyx-designer", model: "qwen3.7-plus", variant: "high" },
+      { role: "nyx-designer" },
       { nyxHome, defaultProjectPath: repoPath },
     );
     expect(response.isError).toBeFalsy();
     const structured = response.structuredContent as Record<string, unknown>;
     const parsed = nyxModelPreflightTool.outputSchema.safeParse(structured);
     expect(parsed.success).toBe(true);
-    expect(structured["resolved"]).toBe("opencode-go/qwen3.7-plus#high");
+    expect(structured["resolved"]).toBe("opencode-go/qwen3.8-flash#xhigh");
     expect(structured["ok"]).toBe(true);
-    expect(structured["availableVariants"]).toEqual(["none", "high", "max"]);
+    expect(structured["availableVariants"]).toEqual(["none", "low", "medium", "xhigh"]);
+  });
+
+  it("surfaces ERR_MODEL_UNAVAILABLE with unknown-model details removed from the roster", async () => {
+    const response = await invokeToolDefinition(
+      nyxModelPreflightTool,
+      { role: "nyx-testwriter", model: "mimo-v2.6-pro" },
+      { nyxHome, defaultProjectPath: repoPath },
+    );
+    expect(response.isError).toBe(true);
+    const structured = response.structuredContent as Record<string, unknown>;
+    expect(structured["code"]).toBe(ERR_MODEL_UNAVAILABLE);
+    const details = structured["details"] as { availableModels?: string[] };
+    expect(details["availableModels"]).toEqual([
+      "deepseek-v4.1-flash",
+      "glm-5.3-flash",
+      "qwen3.8-flash",
+    ]);
+    expect(structured["message"]).toContain("mimo-v2.6-pro");
   });
 
   it("surfaces ERR_MODEL_UNAVAILABLE with variant details through the tool error path", async () => {

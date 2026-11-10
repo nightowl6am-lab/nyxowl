@@ -18,6 +18,12 @@ export interface NyxConfig {
     lint: string | null;
     test: string | null;
     build: string | null;
+    /** Coverage test command (e.g. "npm run test:coverage"); CI parity default: from CI or package script. */
+    coverage: string | null;
+    /** Skills vendor verification command (e.g. "npm run skills:verify"). Default: null. */
+    skills: string | null;
+    /** Agent readiness test command (e.g. "npm run test:agents"). Default: null. */
+    agents: string | null;
     /**
      * Browser/e2e test command (e.g. "npm run test:e2e"). When set (or when the
      * project exposes a test:e2e/e2e package script), nyx_verify_slice exercises
@@ -96,6 +102,9 @@ export const DEFAULT_CONFIG: NyxConfig = {
     lint: null,
     test: null,
     build: null,
+    coverage: null,
+    skills: null,
+    agents: null,
     e2e: null,
     browser: null,
   },
@@ -276,7 +285,17 @@ function validateAndMergeConfig(
           throw new NyxError("ERR_CONFIG_INVALID", `${sourceLabel}: commands must be object`);
         }
         const cmdObj = val as Record<string, unknown>;
-        for (const k of ["typecheck", "lint", "test", "build", "e2e", "browser"] as const) {
+        for (const k of [
+          "typecheck",
+          "lint",
+          "test",
+          "build",
+          "coverage",
+          "skills",
+          "agents",
+          "e2e",
+          "browser",
+        ] as const) {
           if (k in cmdObj && cmdObj[k] !== undefined) {
             const v = cmdObj[k];
             if (v !== null && typeof v !== "string") {

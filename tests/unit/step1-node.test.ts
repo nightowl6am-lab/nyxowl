@@ -460,6 +460,9 @@ describe("Config validation and JSONC parsing", () => {
         lint: null,
         test: null,
         build: "npm run build",
+        coverage: null,
+        skills: null,
+        agents: null,
         e2e: null,
         browser: null,
       });

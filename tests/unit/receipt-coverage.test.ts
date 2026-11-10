@@ -22,11 +22,14 @@ import {
 import { runCli } from "../../src/cli/index.ts";
 import { nyxProjectBootstrapTool } from "../../src/mcp/engines/bootstrap-navigator/index.ts";
 import {
+  buildCiNotice,
   buildPrNotice,
   decidePrPublishAction,
   formatCoverageCell,
   parseExistingPrList,
   parseExistingPrView,
+  parseGitHubRepoSlug,
+  parsePrNumberFromUrl,
   publishPrToGitHub,
   renderCoverageAndLimitationsSection,
   summarizeSurfaceExercise,
@@ -431,6 +434,10 @@ describe("Receipt coverage honesty — PR gate rendering and signed evidence", (
     const prData = pr.structuredContent as {
       mode: string;
       prBody: string;
+      prNumber: number | null;
+      ciStatus: string;
+      ciNotice: string;
+      ciChecks: Array<{ name: string; status: string; conclusion: string | null; url: string }>;
       verifiedReceipts: Array<{
         id: string;
         kind: string;
@@ -440,6 +447,13 @@ describe("Receipt coverage honesty — PR gate rendering and signed evidence", (
         limitations?: string[];
       }>;
     };
+
+    // Local mode never claims a CI result.
+    expect(prData.mode).toBe("local");
+    expect(prData.prNumber).toBeNull();
+    expect(prData.ciStatus).toBe("not-applicable");
+    expect(prData.ciChecks).toEqual([]);
+    expect(prData.ciNotice).toContain("not applicable");
 
     // (1) The receipts table reports coverage honestly.
     const slopRow = prData.prBody
@@ -513,17 +527,40 @@ describe("PR publish idempotency — existing PR is updated in place", () => {
   }
 
   /**
-   * Builds a stub `gh` executor. `view` is the stdout of `gh pr view`,
+   * Builds a stub `gh`/`git` executor. `view` is the stdout of `gh pr view`,
    * `list` the stdout of `gh pr list`, `create` the stdout of `gh pr create`.
    */
   function stubExec(options: {
     view?: { stdout?: string; exitCode?: number };
     list?: { stdout?: string; exitCode?: number };
     create?: { stdout?: string; exitCode?: number };
+    edit?: { stdout?: string; stderr?: string; exitCode?: number };
+    remote?: { stdout?: string; exitCode?: number };
+    repoView?: { stdout?: string; exitCode?: number };
+    api?: { stdout?: string; stderr?: string; exitCode?: number };
   }): { exec: GhExec; calls: GhCall[] } {
     const calls: GhCall[] = [];
     const exec: GhExec = async (command, args) => {
       calls.push({ command, args });
+      if (command === "git" && args[0] === "remote") {
+        return execResult({
+          stdout: options.remote?.stdout ?? "git@github.com:acme/repo.git\n",
+          exitCode: options.remote?.exitCode ?? 0,
+        });
+      }
+      if (args[0] === "repo" && args[1] === "view") {
+        return execResult({
+          stdout: options.repoView?.stdout ?? "acme/repo\n",
+          exitCode: options.repoView?.exitCode ?? 0,
+        });
+      }
+      if (args[0] === "api") {
+        return execResult({
+          stdout: options.api?.stdout ?? "",
+          stderr: options.api?.stderr ?? "",
+          exitCode: options.api?.exitCode ?? 0,
+        });
+      }
       if (args[0] === "pr" && args[1] === "view") {
         return execResult({
           stdout: options.view?.stdout ?? "",
@@ -537,7 +574,11 @@ describe("PR publish idempotency — existing PR is updated in place", () => {
         });
       }
       if (args[0] === "pr" && args[1] === "edit") {
-        return execResult({ stdout: "" });
+        return execResult({
+          stdout: options.edit?.stdout ?? "",
+          stderr: options.edit?.stderr ?? "",
+          exitCode: options.edit?.exitCode ?? 0,
+        });
       }
       if (args[0] === "pr" && args[1] === "create") {
         return execResult({
@@ -694,5 +735,268 @@ describe("PR publish idempotency — existing PR is updated in place", () => {
       "number,url",
     ]);
     expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "create")).toBe(false);
+  });
+
+  it("falls back to the REST PATCH with the gate-generated title/body when gh pr edit fails", async () => {
+    const { exec, calls } = stubExec({
+      view: {
+        stdout: '{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"OPEN"}',
+      },
+      edit: { exitCode: 1, stderr: "HTTP 404: Not Found" },
+      remote: { stdout: "git@github.com:acme/repo.git\n" },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("update");
+    expect(result.prUrl).toBe("https://github.com/acme/repo/pull/26");
+    expect(result.prNumber).toBe(26);
+
+    const apiCall = calls.find((c) => c.command === "gh" && c.args[0] === "api");
+    expect(apiCall).toBeTruthy();
+    expect(apiCall?.args).toEqual([
+      "api",
+      "--method",
+      "PATCH",
+      "repos/acme/repo/pulls/26",
+      "-f",
+      "title=feat: gate hardening",
+      "-f",
+      "body=## Summary\nBody",
+    ]);
+    expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "create")).toBe(false);
+  });
+
+  it("resolves the repo slug through gh repo view when the remote is not a GitHub URL", async () => {
+    const { exec, calls } = stubExec({
+      view: {
+        stdout: '{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"OPEN"}',
+      },
+      edit: { exitCode: 1, stderr: "unknown command edit" },
+      remote: { stdout: "https://gitlab.com/acme/repo.git\n" },
+      repoView: { stdout: "acme/repo\n" },
+    });
+
+    await publishPrToGitHub(PARAMS, exec);
+
+    const repoViewCall = calls.find((c) => c.args[0] === "repo" && c.args[1] === "view");
+    expect(repoViewCall?.args).toEqual([
+      "repo",
+      "view",
+      "--json",
+      "nameWithOwner",
+      "--jq",
+      ".nameWithOwner",
+    ]);
+    const apiCall = calls.find((c) => c.args[0] === "api");
+    expect(apiCall?.args).toContain("repos/acme/repo/pulls/26");
+  });
+
+  it("falls back to the REST PATCH using an HTTPS origin URL and keeps the gate title/body", async () => {
+    const { exec, calls } = stubExec({
+      view: {
+        stdout: '{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"OPEN"}',
+      },
+      edit: { exitCode: 1, stderr: "HTTP 422" },
+      remote: { stdout: "https://github.com/acme/repo.git\n" },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("update");
+    const apiCall = calls.find((c) => c.command === "gh" && c.args[0] === "api");
+    expect(apiCall?.args).toEqual([
+      "api",
+      "--method",
+      "PATCH",
+      "repos/acme/repo/pulls/26",
+      "-f",
+      "title=feat: gate hardening",
+      "-f",
+      "body=## Summary\nBody",
+    ]);
+    // The origin URL is enough: no `gh repo view` round-trip.
+    expect(calls.some((c) => c.args[0] === "repo" && c.args[1] === "view")).toBe(false);
+  });
+
+  it("refuses the REST fallback when neither origin nor gh repo view yields a slug", async () => {
+    const noOrigin = stubExec({
+      view: {
+        stdout: '{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"OPEN"}',
+      },
+      edit: { exitCode: 1, stderr: "HTTP 404" },
+      remote: { exitCode: 1, stdout: "" },
+      repoView: { exitCode: 1, stdout: "" },
+    });
+
+    await expect(publishPrToGitHub(PARAMS, noOrigin.exec)).rejects.toThrow(
+      /no GitHub owner\/repo could be resolved/,
+    );
+    expect(noOrigin.calls.some((c) => c.args[0] === "api")).toBe(false);
+  });
+
+  it("rejects a gh repo view nameWithOwner that is not exactly owner/repo", async () => {
+    const malformed = stubExec({
+      view: {
+        stdout: '{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"OPEN"}',
+      },
+      edit: { exitCode: 1, stderr: "HTTP 404" },
+      remote: { stdout: "not-a-github-url" },
+      repoView: { stdout: "acme/repo/extra\n" },
+    });
+
+    await expect(publishPrToGitHub(PARAMS, malformed.exec)).rejects.toThrow(
+      /no GitHub owner\/repo could be resolved/,
+    );
+  });
+
+  it("populates prNumber, ciStatus and ciChecks after updating an existing PR", async () => {
+    const { exec } = stubExec({
+      view: {
+        stdout: JSON.stringify({
+          number: 26,
+          url: "https://github.com/acme/repo/pull/26",
+          state: "OPEN",
+          headRefOid: "deadbeef",
+          statusCheckRollup: [
+            {
+              __typename: "CheckRun",
+              name: "build",
+              status: "COMPLETED",
+              conclusion: "SUCCESS",
+              detailsUrl: "https://github.com/acme/repo/actions/runs/5/job/6",
+            },
+            {
+              __typename: "CheckRun",
+              name: "test",
+              status: "IN_PROGRESS",
+              conclusion: null,
+              detailsUrl: "https://github.com/acme/repo/actions/runs/7/job/8",
+            },
+          ],
+        }),
+      },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.prNumber).toBe(26);
+    expect(result.ciStatus).toBe("pending");
+    expect(result.ciChecks).toEqual([
+      {
+        name: "build",
+        status: "COMPLETED",
+        conclusion: "SUCCESS",
+        url: "https://github.com/acme/repo/actions/runs/5/job/6",
+      },
+      {
+        name: "test",
+        status: "IN_PROGRESS",
+        conclusion: null,
+        url: "https://github.com/acme/repo/actions/runs/7/job/8",
+      },
+    ]);
+    expect(result.ciNotice).toContain("still pending for PR #26");
+    expect(result.ciNotice).toContain("CI is not confirmed");
+  });
+
+  it("reports failed checks in structured output without throwing after the PR exists", async () => {
+    const { exec } = stubExec({
+      view: {
+        stdout: JSON.stringify({
+          number: 26,
+          url: "https://github.com/acme/repo/pull/26",
+          state: "OPEN",
+          statusCheckRollup: [
+            {
+              __typename: "CheckRun",
+              name: "build",
+              status: "COMPLETED",
+              conclusion: "FAILURE",
+              detailsUrl: "https://github.com/acme/repo/actions/runs/5/job/6",
+            },
+          ],
+        }),
+      },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.ciStatus).toBe("failed");
+    expect(result.ciChecks).toHaveLength(1);
+    expect(result.ciNotice).toContain("CI checks failed for PR #26");
+    expect(result.ciNotice).toContain("build (FAILURE)");
+  });
+
+  it("derives prNumber from the created PR URL and reports an unknown rollup", async () => {
+    const { exec, calls } = stubExec({
+      view: { exitCode: 1, stdout: "no pull requests found for branch" },
+      create: { stdout: "https://github.com/acme/repo/pull/99\n" },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("create");
+    expect(result.prNumber).toBe(99);
+    expect(result.ciStatus).toBe("unknown");
+    expect(result.ciChecks).toEqual([]);
+    expect(result.ciNotice).toContain("No CI check rollup was reported for PR #99");
+    expect(result.ciNotice).toContain("CI is not confirmed");
+    const checksCall = calls.find(
+      (c) =>
+        c.args[0] === "pr" &&
+        c.args[1] === "view" &&
+        c.args.includes("statusCheckRollup,headRefOid"),
+    );
+    expect(checksCall?.args).toContain("99");
+  });
+});
+
+describe("GitHub slug and CI notice helpers", () => {
+  it("parses HTTPS and SSH remote URLs into owner/repo", () => {
+    expect(parseGitHubRepoSlug("https://github.com/acme/repo.git")).toBe("acme/repo");
+    expect(parseGitHubRepoSlug("https://github.com/acme/repo")).toBe("acme/repo");
+    expect(parseGitHubRepoSlug("https://github.com/acme/repo/")).toBe("acme/repo");
+    expect(parseGitHubRepoSlug("ssh://git@github.com/acme/repo.git")).toBe("acme/repo");
+    expect(parseGitHubRepoSlug("git@github.com:acme/repo.git")).toBe("acme/repo");
+    expect(parseGitHubRepoSlug("git@github.com:acme/repo")).toBe("acme/repo");
+    expect(parseGitHubRepoSlug("  git@github.com:acme/repo.git\n")).toBe("acme/repo");
+  });
+
+  it("rejects invalid or non-GitHub remote URLs", () => {
+    expect(parseGitHubRepoSlug("")).toBeNull();
+    expect(parseGitHubRepoSlug("not-a-url")).toBeNull();
+    expect(parseGitHubRepoSlug("https://github.com/acme")).toBeNull();
+    expect(parseGitHubRepoSlug("https://github.com/acme/repo/extra")).toBeNull();
+    expect(parseGitHubRepoSlug("https://gitlab.com/acme/repo.git")).toBeNull();
+    expect(parseGitHubRepoSlug("git@gitlab.com:acme/repo.git")).toBeNull();
+  });
+
+  it("parses PR numbers from pull request URLs", () => {
+    expect(parsePrNumberFromUrl("https://github.com/acme/repo/pull/26")).toBe(26);
+    expect(parsePrNumberFromUrl("https://github.com/acme/repo/pull/99/files")).toBe(99);
+    expect(parsePrNumberFromUrl("")).toBeNull();
+    expect(parsePrNumberFromUrl("https://github.com/acme/repo")).toBeNull();
+  });
+
+  it("renders a not-applicable CI notice for local mode", () => {
+    const notice = buildCiNotice("not-applicable", [], null, false);
+    expect(notice).toContain("not applicable");
+    expect(notice).not.toContain("passed");
+  });
+
+  it("never confirms CI when the rollup is unknown or pending", () => {
+    const unknown = buildCiNotice("unknown", [], 27, false);
+    expect(unknown).toContain("PR #27");
+    expect(unknown).toContain("CI is not confirmed");
+
+    const pending = buildCiNotice("pending", [], 27, false);
+    expect(pending).toContain("PR #27");
+    expect(pending).toContain("CI is not confirmed");
+
+    const timedOut = buildCiNotice("pending", [], 27, true);
+    expect(timedOut).toContain("PR #27");
+    expect(timedOut).toContain("Timed out");
+    expect(timedOut).toContain("CI is not confirmed");
   });
 });

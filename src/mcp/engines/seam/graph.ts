@@ -138,7 +138,7 @@ export const seamCheckOutputSchema = z.object({
 
 export const nyxSeamCheckTool = defineTool({
   name: "nyx_seam_check",
-  description: "Diffs the full-stack seam graph (DB migrations <-> ORM <-> API routes <-> frontend & server-action clients <-> env keys), ignoring generated build directories.",
+  description: "Diffs the full-stack seam graph (DB/ORM/API/client/env), ignoring generated build directories.",
   annotations: {
     title: "Full-Stack Seam Graph Checker",
     readOnlyHint: false,

@@ -15,6 +15,7 @@ import { openProjectDb } from "../mcp/db/sqlite.ts";
 import { startStdioMcpServer } from "../mcp/server.ts";
 import { buildProjectAgentsBlock } from "./compiler.ts";
 import { type HostId } from "./detect-hosts.ts";
+import { runGateRunCli } from "./gate-run.ts";
 import { runEditGuardCli } from "./hooks/edit-guard.ts";
 import { runGuardCli } from "./hooks/guard.ts";
 import { runPreCompactCli } from "./hooks/pre-compact.ts";
@@ -74,6 +75,8 @@ export async function runCli(
       "  nyxowl relink <old-path> <new-path>             Migrate state after moving a repository",
       "  nyxowl uninstall [--purge] [--yes]              Restore user configs and remove Nyxowl files",
       "  nyxowl mcp                                      Start stdio MCP server",
+      "  nyxowl gate-run [--info] [--tool <name> --args '<json>']",
+      "                                                  Run a gate tool against this worktree build (freshness-checked)",
       "  nyxowl hook <guard|edit-guard|session-start|pre-compact>",
       "",
     ].join("\n");
@@ -91,7 +94,17 @@ export async function runCli(
     return { exitCode: 0, stdout: "", stderr: "" };
   }
 
-  // 2. nyxowl hook <subcommand>
+  // 2. nyxowl gate-run ...
+  if (sub === "gate-run") {
+    const res = await runGateRunCli(args.slice(1), {
+      ...(nyxowlHome ? { nyxHome: nyxowlHome } : {}),
+      defaultWorktreePath: cwd,
+      defaultProjectPath: cwd,
+    });
+    return { exitCode: res.exitCode, stdout: res.stdout, stderr: res.stderr };
+  }
+
+  // 3. nyxowl hook <subcommand>
   if (sub === "hook") {
     const hookSub = args[1];
     if (hookSub === "guard") {
