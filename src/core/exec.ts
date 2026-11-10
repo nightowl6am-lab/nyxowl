@@ -81,11 +81,34 @@ export async function execCommand(
       timer.unref();
     }
 
-    if (options.stdin !== undefined && child.stdin) {
-      child.stdin.write(options.stdin);
-      child.stdin.end();
-    } else if (child.stdin) {
-      child.stdin.end();
+    // The child's exit code / close event is authoritative. When the child
+    // exits or closes its read side first (e.g. `git check-ignore` failing fast
+    // on a corrupt index), a pending stdin write would otherwise emit an
+    // unhandled EPIPE that escapes this promise and crashes the caller.
+    // Stdin errors are therefore always handled here and never propagated:
+    // they cannot change the command's real outcome.
+    child.stdin?.on("error", () => {
+      // EPIPE / ERR_STREAM_DESTROYED / ERR_STREAM_WRITE_AFTER_END / etc. after
+      // the child is gone — the close handler below decides the result.
+    });
+
+    const endStdin = (): void => {
+      try {
+        child.stdin?.end();
+      } catch {
+        // Stream already destroyed; the close handler produces the result.
+      }
+    };
+
+    if (options.stdin !== undefined) {
+      // The write callback swallows asynchronous write failures sync-side; the
+      // error handler above covers the stream-level ones.
+      child.stdin?.write(options.stdin, () => {
+        // Intentional: stdin write outcome never overrides the child's status.
+      });
+      endStdin();
+    } else {
+      endStdin();
     }
 
     child.stdout?.on("data", (chunk: Buffer) => {
