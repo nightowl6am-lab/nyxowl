@@ -18,6 +18,18 @@ export interface NyxConfig {
     lint: string | null;
     test: string | null;
     build: string | null;
+    /**
+     * Browser/e2e test command (e.g. "npm run test:e2e"). When set (or when the
+     * project exposes a test:e2e/e2e package script), nyx_verify_slice exercises
+     * the running surface in addition to the code steps. Default: null.
+     */
+    e2e: string | null;
+    /**
+     * App start command launched with provisioned env on an isolated loopback
+     * port before the e2e command runs (e.g. "node server.js"). Default: null —
+     * the e2e command then owns its own server lifecycle.
+     */
+    browser: string | null;
   };
   provision: {
     install: "auto" | "off";
@@ -45,6 +57,10 @@ export interface NyxConfig {
     handoffTokens: number;
     agentPromptTokens: number;
     maxToolCallsPerTask: number;
+    /** Per-tool absolute overrides for maxToolOutputTokens. */
+    toolOutputOverrides: Record<string, number>;
+    /** Per-caller-role absolute overrides for maxToolOutputTokens. */
+    roleOutputOverrides: Record<string, number>;
   };
   network: {
     depGuard: "fail-closed" | "warn";
@@ -80,6 +96,8 @@ export const DEFAULT_CONFIG: NyxConfig = {
     lint: null,
     test: null,
     build: null,
+    e2e: null,
+    browser: null,
   },
   provision: {
     install: "auto",
@@ -102,11 +120,13 @@ export const DEFAULT_CONFIG: NyxConfig = {
     appId: null,
   },
   budgets: {
-    maxToolOutputTokens: 1500,
+    maxToolOutputTokens: 6000,
     subagentSummaryTokens: 250,
     handoffTokens: 400,
     agentPromptTokens: 1200,
     maxToolCallsPerTask: 400,
+    toolOutputOverrides: {},
+    roleOutputOverrides: {},
   },
   network: {
     depGuard: "fail-closed",
@@ -256,7 +276,7 @@ function validateAndMergeConfig(
           throw new NyxError("ERR_CONFIG_INVALID", `${sourceLabel}: commands must be object`);
         }
         const cmdObj = val as Record<string, unknown>;
-        for (const k of ["typecheck", "lint", "test", "build"] as const) {
+        for (const k of ["typecheck", "lint", "test", "build", "e2e", "browser"] as const) {
           if (k in cmdObj && cmdObj[k] !== undefined) {
             const v = cmdObj[k];
             if (v !== null && typeof v !== "string") {
@@ -406,6 +426,34 @@ function validateAndMergeConfig(
               );
             }
             next.budgets[k] = v;
+          }
+        }
+        for (const k of ["toolOutputOverrides", "roleOutputOverrides"] as const) {
+          if (k in bObj && bObj[k] !== undefined) {
+            const raw = bObj[k];
+            if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+              throw new NyxError(
+                "ERR_CONFIG_INVALID",
+                `${sourceLabel}: budgets.${k} must be an object mapping names to positive integer budgets`,
+              );
+            }
+            const merged: Record<string, number> = {};
+            for (const [name, num] of Object.entries(raw as Record<string, unknown>)) {
+              if (typeof name !== "string" || name.trim().length === 0) {
+                throw new NyxError(
+                  "ERR_CONFIG_INVALID",
+                  `${sourceLabel}: budgets.${k} keys must be non-empty names`,
+                );
+              }
+              if (typeof num !== "number" || !Number.isInteger(num) || num < 10) {
+                throw new NyxError(
+                  "ERR_CONFIG_INVALID",
+                  `${sourceLabel}: budgets.${k}.${name} must be a positive integer >= 10`,
+                );
+              }
+              merged[name] = num;
+            }
+            next.budgets[k] = merged;
           }
         }
         break;

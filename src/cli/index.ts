@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_NYXOWL_CONFIG } from "../core/config.ts";
 import { computeRepoId, computeTempIndexTreeHash, resolveGitCommonDir } from "../core/git.ts";
 import { resolveGlobalNyxowlPaths, resolveProjectNyxowlPaths } from "../core/paths.ts";
-import { ensureReceiptKey, type ReceiptPayload, verifyReceiptHmac } from "../core/receipts.ts";
+import {
+  decodeOptionalNoteList,
+  ensureReceiptKey,
+  type ReceiptPayload,
+  verifyReceiptHmac,
+} from "../core/receipts.ts";
 import { openProjectDb } from "../mcp/db/sqlite.ts";
 import { startStdioMcpServer } from "../mcp/server.ts";
 import { buildProjectAgentsBlock } from "./compiler.ts";
@@ -303,12 +308,28 @@ export async function runCli(
     const db = openProjectDb(projPaths.stateDbFile);
     try {
       const rows = (receiptId
-        ? db.db.prepare("SELECT * FROM receipts WHERE id = ?").all(receiptId)
-        : db.db.prepare("SELECT * FROM receipts ORDER BY created_at DESC").all()) as Array<{
+        ? db.db
+            .prepare(
+              `SELECT id, kind, status, coverage, coverage_notes, limitations, worktree, branch,
+                      tree_hash, base_sha, commands_hash, evidence_artifact_id, na_justification,
+                      created_at, hmac
+               FROM receipts WHERE id = ?`,
+            )
+            .all(receiptId)
+        : db.db
+            .prepare(
+              `SELECT id, kind, status, coverage, coverage_notes, limitations, worktree, branch,
+                      tree_hash, base_sha, commands_hash, evidence_artifact_id, na_justification,
+                      created_at, hmac
+               FROM receipts ORDER BY created_at DESC`,
+            )
+            .all()) as Array<{
         id: string;
         kind: "verify" | "seam" | "slop" | "exploit";
         status: "GREEN" | "RED" | "NA";
         coverage: "full" | "partial" | "none" | null;
+        coverage_notes: string | null;
+        limitations: string | null;
         worktree: string;
         branch: string;
         tree_hash: string;
@@ -326,11 +347,18 @@ export async function runCli(
 
       const failures: string[] = [];
       for (const row of rows) {
+        // The optional evidence fields are part of the signed payload. They are
+        // reconstructed ONLY when the stored column decodes to a list, so a
+        // legacy receipt (NULL columns) keeps exactly its original HMAC.
+        const coverageNotes = decodeOptionalNoteList(row.coverage_notes);
+        const limitations = decodeOptionalNoteList(row.limitations);
         const payload: ReceiptPayload = {
           id: row.id,
           kind: row.kind,
           status: row.status,
           ...(row.coverage ? { coverage: row.coverage } : {}),
+          ...(coverageNotes !== undefined ? { coverageNotes } : {}),
+          ...(limitations !== undefined ? { limitations } : {}),
           worktree: row.worktree,
           branch: row.branch,
           treeHash: row.tree_hash,

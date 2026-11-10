@@ -197,7 +197,7 @@ describe("Test-Writer broker and tools", () => {
 
   it("registers all seven Test-Writer tools and compiles exact per-role scopes", async () => {
     const names = ALL_NYX_TOOLS.map((tool) => tool.name);
-    expect(ALL_NYX_TOOLS.length).toBe(38);
+    expect(ALL_NYX_TOOLS.length).toBe(39);
     for (const name of [
       "nyx_testwriter_job",
       "nyx_testwriter_write",
@@ -595,7 +595,7 @@ describe("Test-Writer broker and tools", () => {
     const firstAllow = permissions.findIndex(
       (rule) => rule.effect === "allow" && rule.action.startsWith("nyxowl_"),
     );
-    expect(nyxowlDenies).toHaveLength(38);
+    expect(nyxowlDenies).toHaveLength(39);
     expect(permissions.some((rule) => rule.action === "nyxowl_*")).toBe(false);
     expect(firstAllow).toBeGreaterThan(
       permissions.findIndex(

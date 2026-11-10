@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS receipts (
   kind TEXT NOT NULL,
   status TEXT NOT NULL,
   coverage TEXT,
+  coverage_notes TEXT,
+  limitations TEXT,
   worktree TEXT NOT NULL,
   branch TEXT NOT NULL,
   tree_hash TEXT NOT NULL,
@@ -212,7 +214,38 @@ export class StateDb {
         this.db.exec(sql);
         this.db.exec("PRAGMA user_version = 1;");
       }
+      // Migration 2 is idempotent and therefore always re-checked: databases
+      // created from an older 001_initial.sql (or from the embedded fallback)
+      // must gain the receipt evidence columns, while databases that already
+      // have them are left untouched.
+      this.addReceiptEvidenceColumns();
+      this.db.exec("PRAGMA user_version = 2;");
     });
+  }
+
+  /**
+   * Adds the nullable `coverage_notes` and `limitations` columns to the
+   * `receipts` table when they are missing.
+   *
+   * Both columns are nullable, so gate writers that insert a receipt without
+   * them keep working unchanged (the columns simply stay NULL).
+   */
+  private addReceiptEvidenceColumns(): void {
+    const info = this.db.prepare("PRAGMA table_info(receipts);").all() as Array<{
+      name: string;
+    }>;
+    if (info.length === 0) {
+      // The receipts table does not exist yet (should not happen after
+      // migration 1); nothing to alter.
+      return;
+    }
+    const existing = new Set(info.map((col) => col.name));
+    if (!existing.has("coverage_notes")) {
+      this.db.exec("ALTER TABLE receipts ADD COLUMN coverage_notes TEXT;");
+    }
+    if (!existing.has("limitations")) {
+      this.db.exec("ALTER TABLE receipts ADD COLUMN limitations TEXT;");
+    }
   }
 
   /**

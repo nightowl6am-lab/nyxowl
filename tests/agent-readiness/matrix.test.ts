@@ -313,12 +313,12 @@ describe("agent readiness: contract matrix", () => {
     expect(bundle.commands.map((command) => command.name)).toEqual([...EXPECTED_COMMANDS]);
   });
 
-  it("pins the full 38-tool inventory with valid descriptions and JSON-object schemas", () => {
+  it("pins the full 39-tool inventory with valid descriptions and JSON-object schemas", () => {
     const actualNames = ALL_NYX_TOOLS.map((tool) => tool.name).map((name) =>
       name.startsWith("nyx_") ? name.slice("nyx_".length) : name,
     );
-    expect(actualNames).toHaveLength(38);
-    expect(new Set(actualNames).size).toBe(38);
+    expect(actualNames).toHaveLength(39);
+    expect(new Set(actualNames).size).toBe(39);
     expect([...actualNames].sort()).toEqual([...EXPECTED_NYX_TOOL_NAMES].sort());
     expect([...NYX_MCP_TOOL_BASENAMES].sort()).toEqual([...actualNames].sort());
     for (const tool of ALL_NYX_TOOLS) {

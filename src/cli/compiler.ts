@@ -19,6 +19,7 @@ export const AGENT_BUDGET_OVERRIDES: Record<string, number> = {
 
 /** The complete nyx_* tool inventory (basenames), used for exact permission denies. */
 export const NYX_MCP_TOOL_BASENAMES = [
+  "model_preflight",
   "context_hydrate",
   "task_handoff",
   "task_dispatch",

@@ -2,13 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { NyxError } from "../../../core/errors.ts";
-import { execCommand } from "../../../core/exec.ts";
+import { execCommand, type ExecOptions, type ExecResult } from "../../../core/exec.ts";
 import {
   computeWorkingTreeHash,
   getDirtyFiles,
   getHeadTreeHash,
 } from "../../../core/git.ts";
 import {
+  classifyCoverageNote,
+  classifySurfaceExercise,
+  decodeOptionalNoteList,
   ensureReceiptKey,
   verifyReceipt,
   type ReceiptKind,
@@ -45,6 +48,197 @@ export function extractAllowSuppressionsFromDiff(diffText: string): string[] {
   return suppressions;
 }
 
+/**
+ * An existing pull request that already tracks the head branch.
+ */
+export interface ExistingPrView {
+  number: number;
+  url: string;
+  state: string;
+}
+
+/**
+ * Parses the output of `gh pr view <branch> --json number,url,state`.
+ *
+ * The parser is deliberately defensive: malformed JSON, a missing/invalid
+ * field, or a PR that is not OPEN all return `null` so the caller falls
+ * through to the create path instead of editing an unknown PR.
+ */
+export function parseExistingPrView(stdout: string): ExistingPrView | null {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const number = record["number"];
+  const url = record["url"];
+  const state = record["state"];
+
+  if (typeof number !== "number" || !Number.isInteger(number)) return null;
+  if (typeof url !== "string" || url.trim().length === 0) return null;
+  if (typeof state !== "string") return null;
+  if (state.toUpperCase() !== "OPEN") return null;
+
+  return { number, url: url.trim(), state };
+}
+
+/**
+ * Parses the output of `gh pr list --head <branch> --state open --json number,url`.
+ *
+ * The list output carries no `state` field (the query already filtered on
+ * `--state open`), so the first well-formed entry is returned as an OPEN PR.
+ * Malformed or empty output returns `null`.
+ */
+export function parseExistingPrList(stdout: string): ExistingPrView | null {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsed)) return null;
+
+  for (const entry of parsed) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    const number = record["number"];
+    const url = record["url"];
+    if (typeof number !== "number" || !Number.isInteger(number)) continue;
+    if (typeof url !== "string" || url.trim().length === 0) continue;
+    return { number, url: url.trim(), state: "OPEN" };
+  }
+
+  return null;
+}
+
+/**
+ * The action the PR gate takes for a given branch.
+ */
+export type PrPublishAction = "update" | "create";
+
+/**
+ * Decides whether the gate updates an existing PR in place or creates a new
+ * one. A missing/closed/malformed PR view yields `create`.
+ */
+export function decidePrPublishAction(existing: ExistingPrView | null): PrPublishAction {
+  return existing ? "update" : "create";
+}
+
+/**
+ * Renders the notice returned to the caller. Both variants state that human
+ * approval is required to merge (Red-Line Gate).
+ */
+export function buildPrNotice(action: PrPublishAction, prUrl: string): string {
+  const verb = action === "update" ? "updated" : "opened";
+  return `PR ${verb} at ${prUrl}. Human approval is required to merge (Red-Line Gate).`;
+}
+
+/**
+ * Minimal executor shape used by the GitHub publishing path, so the flow can
+ * be exercised without a network or `gh` authentication.
+ */
+export type GhExec = (
+  command: string,
+  args: string[],
+  options?: ExecOptions,
+) => Promise<ExecResult>;
+
+export interface GhPublishParams {
+  worktreePath: string;
+  branch: string;
+  baseBranch: string;
+  title: string;
+  prBody: string;
+}
+
+export interface GhPublishResult {
+  action: PrPublishAction;
+  prUrl: string;
+  notice: string;
+}
+
+/**
+ * Publishes the slice to GitHub idempotently.
+ *
+ * When an OPEN pull request already tracks the head branch, the PR is updated
+ * in place (`gh pr edit`) and the SAME URL is returned. Otherwise a new PR is
+ * created (`gh pr create`), preserving the previous behaviour.
+ */
+export async function publishPrToGitHub(
+  params: GhPublishParams,
+  exec: GhExec = execCommand,
+): Promise<GhPublishResult> {
+  const { worktreePath, branch, baseBranch, title, prBody } = params;
+
+  const viewRes = await exec(
+    "gh",
+    ["pr", "view", branch, "--json", "number,url,state"],
+    { cwd: worktreePath, timeoutMs: 30_000 },
+  );
+  let existing: ExistingPrView | null =
+    viewRes.exitCode === 0 ? parseExistingPrView(viewRes.stdout) : null;
+
+  if (!existing) {
+    // Fallback for gh versions that do not resolve a branch to its PR via
+    // `gh pr view <branch>`.
+    const listRes = await exec(
+      "gh",
+      ["pr", "list", "--head", branch, "--state", "open", "--json", "number,url"],
+      { cwd: worktreePath, timeoutMs: 30_000 },
+    );
+    existing = listRes.exitCode === 0 ? parseExistingPrList(listRes.stdout) : null;
+  }
+
+  const action = decidePrPublishAction(existing);
+
+  if (action === "update" && existing) {
+    await exec(
+      "gh",
+      ["pr", "edit", String(existing.number), "--title", title, "--body", prBody],
+      { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
+    );
+    return {
+      action,
+      prUrl: existing.url,
+      notice: buildPrNotice(action, existing.url),
+    };
+  }
+
+  const createRes = await exec(
+    "gh",
+    [
+      "pr",
+      "create",
+      "--title",
+      title,
+      "--body",
+      prBody,
+      "--base",
+      baseBranch,
+      "--head",
+      branch,
+    ],
+    { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
+  );
+
+  const prUrl = createRes.stdout.trim().split(/\r?\n/).pop() ?? createRes.stdout.trim();
+  return { action, prUrl, notice: buildPrNotice(action, prUrl) };
+}
+
 export const worktreePrInputSchema = z.object({
   taskSlug: z.string().min(1),
   title: z.string().min(3).max(200),
@@ -68,11 +262,169 @@ export const worktreePrOutputSchema = z.object({
       kind: z.enum(["verify", "seam", "slop", "exploit"]),
       status: z.enum(["GREEN", "NA"]),
       coverage: z.string().optional(),
+      coverageNotes: z.array(z.string()).optional(),
+      limitations: z.array(z.string()).optional(),
     }),
   ),
   suppressions: z.array(z.string()),
   prBody: z.string(),
 });
+
+/**
+ * A receipt as it is rendered in the PR body and returned by the tool.
+ *
+ * `coverage` is the coverage value the gate itself reported. It is NEVER
+ * defaulted to "full": a receipt that did not report coverage renders as
+ * "not reported", so the PR body can never overstate the evidence.
+ */
+export interface VerifiedReceiptView {
+  id: string;
+  kind: ReceiptKind;
+  status: "GREEN" | "NA";
+  coverage?: string;
+  coverageNotes?: string[];
+  limitations?: string[];
+}
+
+/**
+ * Renders a coverage value for the receipts table.
+ *
+ * "full" is printed ONLY when the receipt itself reported "full". Every other
+ * value is printed as reported, and an absent value prints "not reported"
+ * (never "full").
+ */
+export function formatCoverageCell(coverage: string | null | undefined): string {
+  if (coverage === "full") return "full";
+  if (coverage === "partial") return "partial";
+  if (coverage === "none") return "none";
+  return "not reported";
+}
+
+/**
+ * Aggregated surface-exercise state across every receipt of the PR.
+ *
+ * The vocabulary is exactly the one of `classifySurfaceExercise`, so the PR
+ * body and the signed evidence always use the same words.
+ */
+export type PrSurfaceState = "exercised" | "not-exercised" | "not-reported";
+
+/**
+ * Determines the PR-level surface state from the coverage notes of all
+ * receipts. An explicit "not exercised" always wins (conservative), so a
+ * single gate that could not exercise the running surface can never be
+ * hidden by another gate that did.
+ */
+export function summarizeSurfaceExercise(receipts: VerifiedReceiptView[]): PrSurfaceState {
+  const allNotes = receipts.flatMap((receipt) => receipt.coverageNotes ?? []);
+  return classifySurfaceExercise(allNotes);
+}
+
+/**
+ * Renders the "Coverage & Limitations" PR body section.
+ *
+ * Every coverage note and limitation is rendered VERBATIM (the note text is
+ * never rewritten, summarized, or reworded). `classifyCoverageNote` and
+ * `classifySurfaceExercise` are used to state explicitly whether the running
+ * surface was exercised; when it was not exercised (or was not reported), a
+ * caveat is added and the PR is never described as fully verified.
+ */
+export function renderCoverageAndLimitationsSection(
+  receipts: VerifiedReceiptView[],
+): string[] {
+  const lines: string[] = ["## Coverage & Limitations", ""];
+  const caveatReasons: string[] = [];
+
+  for (const receipt of receipts) {
+    const coverageCell = formatCoverageCell(receipt.coverage);
+    const notes = receipt.coverageNotes ?? [];
+    const limitations = receipt.limitations ?? [];
+
+    lines.push(
+      `### \`${receipt.kind}\` — receipt \`${receipt.id}\` — ${receipt.status} — coverage: ${coverageCell}`,
+    );
+    lines.push("");
+
+    lines.push("**Coverage notes (verbatim):**");
+    if (notes.length === 0) {
+      lines.push("- _none recorded_");
+    } else {
+      for (const note of notes) {
+        lines.push(`- ${note}`);
+      }
+    }
+    lines.push("");
+
+    lines.push("**Limitations (verbatim):**");
+    if (limitations.length === 0) {
+      lines.push("- _none recorded_");
+    } else {
+      for (const limitation of limitations) {
+        lines.push(`- ${limitation}`);
+      }
+    }
+    lines.push("");
+
+    const surfaceNotes = notes.filter((note) => classifyCoverageNote(note) === "surface");
+    const stepNotes = notes.filter((note) => classifyCoverageNote(note) !== "surface");
+    const surfaceState = classifySurfaceExercise(notes);
+    const counts = `${surfaceNotes.length} surface note(s), ${stepNotes.length} configured-step note(s)`;
+    if (notes.length === 0) {
+      lines.push(
+        "**Surface coverage:** not reported — this gate recorded no coverage notes, so it makes no claim about the running surface.",
+      );
+    } else if (surfaceState === "exercised") {
+      lines.push(
+        `**Surface coverage:** exercised — the coverage notes record that the running surface WAS exercised (${counts}).`,
+      );
+    } else if (surfaceState === "not-exercised") {
+      lines.push(
+        `**Surface coverage:** not exercised — the coverage notes record that the running surface was NOT exercised (${counts}).`,
+      );
+    } else {
+      lines.push(
+        `**Surface coverage:** not reported — no coverage note states whether the running surface was exercised (${counts}).`,
+      );
+    }
+    lines.push("");
+
+    if (receipt.coverage === "none") {
+      caveatReasons.push(
+        `\`${receipt.kind}\`: coverage recorded as \`none\` — this gate exercised no coverage at all.`,
+      );
+    } else if (receipt.coverage === "partial") {
+      caveatReasons.push(
+        `\`${receipt.kind}\`: coverage recorded as \`partial\` — only part of the configured work was exercised.`,
+      );
+    }
+  }
+
+  const prSurfaceState = summarizeSurfaceExercise(receipts);
+
+  if (prSurfaceState === "not-exercised") {
+    caveatReasons.unshift(
+      "the receipt coverage notes record that the running surface was NOT exercised.",
+    );
+  } else if (prSurfaceState === "not-reported") {
+    caveatReasons.unshift(
+      "no receipt coverage note states whether the running surface was exercised.",
+    );
+  }
+
+  lines.push(`**PR-level surface coverage:** ${prSurfaceState}.`);
+  lines.push("");
+
+  if (caveatReasons.length > 0) {
+    lines.push(
+      "> **Coverage caveat — this PR is not fully verified.** The receipts above do not establish that the running application was exercised; passing configured code steps are not evidence that the running surface works.",
+    );
+    for (const reason of caveatReasons) {
+      lines.push(`> - ${reason}`);
+    }
+    lines.push("");
+  }
+
+  return lines;
+}
 
 export const nyxWorktreePrTool = defineTool({
   name: "nyx_worktree_pr",
@@ -158,8 +510,8 @@ export const nyxWorktreePrTool = defineTool({
     const key = ensureReceiptKey(ctx.nyxHome);
     const receiptRows = ctx.db.db
       .prepare(
-        `SELECT id, kind, status, coverage, worktree, branch, tree_hash, base_sha,
-                commands_hash, evidence_artifact_id, na_justification, created_at, hmac
+        `SELECT id, kind, status, coverage, coverage_notes, limitations, worktree, branch, tree_hash,
+                base_sha, commands_hash, evidence_artifact_id, na_justification, created_at, hmac
          FROM receipts
          WHERE worktree = ? OR branch = ?
          ORDER BY created_at DESC`,
@@ -169,6 +521,8 @@ export const nyxWorktreePrTool = defineTool({
       kind: ReceiptKind;
       status: "GREEN" | "RED" | "NA";
       coverage: "full" | "partial" | "none" | null;
+      coverage_notes: string | null;
+      limitations: string | null;
       worktree: string;
       branch: string;
       tree_hash: string;
@@ -180,12 +534,7 @@ export const nyxWorktreePrTool = defineTool({
       hmac: string;
     }>;
 
-    const verifiedReceipts: Array<{
-      id: string;
-      kind: ReceiptKind;
-      status: "GREEN" | "NA";
-      coverage?: string;
-    }> = [];
+    const verifiedReceipts: VerifiedReceiptView[] = [];
 
     for (const reqKind of requiredKinds) {
       const candidates = receiptRows.filter((r) => r.kind === reqKind);
@@ -198,11 +547,19 @@ export const nyxWorktreePrTool = defineTool({
 
       // Check latest receipt of this kind
       const latest = candidates[0]!;
+      // The optional evidence fields are part of the signed payload. They are
+      // included ONLY when the stored column decodes to a list, so a legacy
+      // receipt (NULL columns) canonicalizes to exactly the same JSON — and
+      // therefore to exactly the same HMAC — as when it was signed.
+      const coverageNotes = decodeOptionalNoteList(latest.coverage_notes);
+      const limitations = decodeOptionalNoteList(latest.limitations);
       const signedObj: SignedReceipt = {
         id: latest.id,
         kind: latest.kind,
         status: latest.status,
         ...(latest.coverage ? { coverage: latest.coverage } : {}),
+        ...(coverageNotes !== undefined ? { coverageNotes } : {}),
+        ...(limitations !== undefined ? { limitations } : {}),
         worktree: latest.worktree,
         branch: latest.branch,
         treeHash: latest.tree_hash,
@@ -235,6 +592,8 @@ export const nyxWorktreePrTool = defineTool({
         kind: latest.kind,
         status: latest.status as "GREEN" | "NA",
         ...(latest.coverage ? { coverage: latest.coverage } : {}),
+        ...(coverageNotes !== undefined ? { coverageNotes } : {}),
+        ...(limitations !== undefined ? { limitations } : {}),
       });
     }
 
@@ -273,10 +632,10 @@ export const nyxWorktreePrTool = defineTool({
     });
     const suppressions = extractAllowSuppressionsFromDiff(fullDiffRes.stdout);
 
-    // Step 5: Build PR Body with Receipts Table, Coverage, Suppressions, and Nyxowl Footer
+    // Step 5: Build PR Body with Receipts Table, Coverage & Limitations, Suppressions, and Nyxowl Footer
     const receiptTableRows = verifiedReceipts.map(
       (r) =>
-        `| \`${r.kind}\` | **${r.status}** | \`${r.id}\` | \`${headTreeHash.slice(0, 12)}\` | ${r.coverage ?? "full"} |`,
+        `| \`${r.kind}\` | **${r.status}** | \`${r.id}\` | \`${headTreeHash.slice(0, 12)}\` | ${formatCoverageCell(r.coverage)} |`,
     );
 
     const prBodyLines = [
@@ -287,6 +646,8 @@ export const nyxWorktreePrTool = defineTool({
       `| Gate | Status | Receipt ID | Tree Hash | Coverage |`,
       `| :--- | :--- | :--- | :--- | :--- |`,
       ...receiptTableRows,
+      ``,
+      ...renderCoverageAndLimitationsSection(verifiedReceipts),
     ];
 
     if (disabledGates.length > 0) {
@@ -330,38 +691,27 @@ export const nyxWorktreePrTool = defineTool({
         throwOnNonZero: true,
       });
 
-      const prCreate = await execCommand(
-        "gh",
-        [
-          "pr",
-          "create",
-          "--title",
-          input.title,
-          "--body",
-          prBody,
-          "--base",
-          baseBranch,
-          "--head",
-          branch,
-        ],
-        { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
-      );
+      const published = await publishPrToGitHub({
+        worktreePath,
+        branch,
+        baseBranch,
+        title: input.title,
+        prBody,
+      });
 
-      const prUrl = prCreate.stdout.trim().split(/\r?\n/).pop() ?? prCreate.stdout.trim();
       return {
         taskSlug: input.taskSlug,
         branch,
         headTreeHash,
         mode: "gh" as const,
-        prUrl,
+        prUrl: published.prUrl,
         localPrFilePath: null,
-        notice: `PR opened at ${prUrl}. Human approval is required to merge (Red-Line Gate).`,
+        notice: published.notice,
         verifiedReceipts,
         suppressions,
         prBody,
       };
     }
-
     // Local PR fallback when no gh auth or no remote (§1.1.6)
     const localPrFilePath = path.join(ctx.projectLayout.prsDir, `${input.taskSlug}.md`);
     fs.mkdirSync(ctx.projectLayout.prsDir, { recursive: true, mode: 0o700 });

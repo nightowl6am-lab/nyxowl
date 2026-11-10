@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import { type HookInputPayload, isNyxowlSessionActive } from "./guard.ts";
-import { buildHydrateDigestForHook } from "./session-start.ts";
+import type { HookInputPayload } from "./guard.ts";
+import { buildHydrateDigestForHook, isHookPayloadActive } from "./session-start.ts";
 
 export async function runPreCompactCli(stdinText?: string): Promise<{
   exitCode: number;
@@ -9,7 +9,7 @@ export async function runPreCompactCli(stdinText?: string): Promise<{
   try {
     const raw = stdinText !== undefined ? stdinText : fs.readFileSync(0, "utf8");
     const payload = raw.trim() ? (JSON.parse(raw) as HookInputPayload) : {};
-    if (!isNyxowlSessionActive(payload)) {
+    if (!isHookPayloadActive(payload)) {
       return { exitCode: 0, stdout: "" };
     }
     const projectPath =

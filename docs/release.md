@@ -103,7 +103,7 @@ export NYXOWL_TESTWRITER_INSTALL=0
 "$SMOKE_DIR/node_modules/.bin/nyxowl" doctor
 ```
 
-`doctor` must print `MCP Smoke Test: OK (38 tools listed)` and
+`doctor` must print `MCP Smoke Test: OK (39 tools listed)` and
 `Skill packages: 11/11 loaded (10 native, 1 inline); references: 22; licenses: 11/11`, create `~/.nyxowl` with mode `0700`, and create
 `secrets/receipt.key` with mode `0600`.
 

@@ -250,7 +250,7 @@ evidence, not a model judgment.
 
 `m6_parent_e2e.mjs` starts this worktree's `dist/cli/bin.js mcp` over stdio and
 drives prepare, both `tw-add-variant` calls, approve, job read, write, lint,
-gate, finish, and status. It asserts 38 tools, exactly seven Test-Writer tools,
+gate, finish, and status. It asserts 39 tools, exactly seven Test-Writer tools,
 exactly five subagent tools, no variant refs/tars/store paths in the job
 response, a PROVEN report with `## Limits`, and the error paths.
 

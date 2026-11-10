@@ -71,7 +71,7 @@ jobs:
 
           DOCTOR_OUT="$("$NYX_BIN" doctor)"
           printf '%s\n' "$DOCTOR_OUT"
-          grep -Fq "MCP Smoke Test: OK (38 tools listed)" <<<"$DOCTOR_OUT"
+          grep -Fq "MCP Smoke Test: OK (39 tools listed)" <<<"$DOCTOR_OUT"
           grep -Fq "Skill packages: 11/11 loaded (10 native, 1 inline)" <<<"$DOCTOR_OUT"
           test "$(stat -c '%a' "$NYXOWL_HOME")" = "700"
           test "$(stat -c '%a' "$NYXOWL_HOME/secrets/receipt.key")" = "600"

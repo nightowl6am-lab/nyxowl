@@ -4,7 +4,7 @@
 
 Nyxowl consists of three tightly integrated subsystems:
 1. **Core & State Layer (`src/core/`, `src/mcp/db/`):** Zero-native-addon SQLite WAL state engine (`node:sqlite`), HMAC-SHA256 receipt signer, Exact-Value + Entropy Redactor, token budgeter, and Git temporary-index worktree manager.
-2. **8-Engine Heavy Runtime MCP Server (`src/mcp/engines/`):** 38 deterministic tools (`nyx_*`) exposed over stdio MCP (`nyxowl mcp`) with strict Zod input/output schemas, MCP annotations, token budget truncation + overflow artifacts, and `audit_log` recording.
+2. **8-Engine Heavy Runtime MCP Server (`src/mcp/engines/`):** 39 deterministic tools (`nyx_*`) exposed over stdio MCP (`nyxowl mcp`) with strict Zod input/output schemas, MCP annotations, schema-safe token-budget truncation + recoverable overflow artifacts, and `audit_log` recording.
 3. **Universal CLI, Compiler, Hooks & OpenCode Adapter (`src/cli/`):** Compiles canonical Markdown agents (`agents/primary/`, `agents/subagents/`) and 11 authored skill packages (`agents/skills/<agent-id>/`) into the session-scoped OpenCode v2.2.5 package under `~/.nyxowl/hosts/opencode/`. Ten skills are native (copied to `hosts/opencode/skills/`, advertised by absolute root, loaded on demand); `nyx-testwriter` is inline (embedded in its system prompt). The TUI launches with the generated `opencode.json` via `opencode --standalone <path>`; OpenCode manages its own service and MCP connections.
 
 ```mermaid
@@ -12,7 +12,7 @@ flowchart LR
     U["User: nyxowl /path/to/repo"] --> L["Launcher (src/cli/launcher.ts)"]
     L --> H["OpenCode v2.2.5 Session"]
     H -- "Plugin permission/session hooks" --> HK["Hooks (guard / edit-guard / session-start)"]
-    H -- "stdio MCP" --> M["Nyxowl MCP Server (38 nyx_* tools)"]
+    H -- "stdio MCP" --> M["Nyxowl MCP Server (39 nyx_* tools)"]
     M --> DB[("~/.nyxowl/projects/<repo-id>/state.db (SQLite WAL)")]
     M --> WT["Isolated Worktree (~/.nyxowl/worktrees/<repo-id>/<slug>/)"]
 ```
@@ -60,3 +60,16 @@ Parsing and skeleton extraction are bounded before recursion:
 Coverage gates are enforced per glob in addition to the global thresholds: `src/core/**` and `src/mcp/engines/**` require at least 85% lines and 85% branches, `src/cli/**` requires at least 75% lines and 75% branches, and the whole tree keeps 80% statements/functions and 65% branches.
 
 Version reporting in the MCP server, bootstrap commit trailers, and PR footer is sourced from `NYXOWL_VERSION` (`src/core/version.ts`), which resolves `package.json` at runtime.
+
+---
+
+## 5. Gate Evidence, Coverage, and Isolation
+
+- **Schema-safe truncation:** every tool response validates against its advertised output schema. When the serialized output exceeds the resolved budget (tool override > role override > global default), the full payload is stored as an overflow artifact and the bounded preview names the artifact id in `content` text; `structuredContent` is never extended with `_truncated` or `_overflowArtifactId`.
+- **Seam source boundary:** the seam scanner enumerates `git ls-files -co --exclude-standard` when available and always prunes a central generated-directory registry (`.next`, `out`, `build`, `.output`, `.nuxt`, `.svelte-kit`, `.turbo`, `.vercel`, `.cache`, `target`, `bin`, `obj`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.venv`, `venv`, coverage, and similar). Env drift is deduplicated by key and large mismatch sets are summarized.
+- **Server-side seams:** extractors cover `"use server"` actions, server components/loaders, Supabase `.from()`/`.rpc()`, Prisma, Drizzle, and raw SQL, mapped against migration tables and RPCs. Layers that are absent are reported as unchecked; layers that are present but unsupported are reported with a reason.
+- **Fail-closed exploit preflight:** a target must return 2xx for a known route before vectors run. Connection refusal, timeout, redirects, 4xx/5xx, and env/proxy rejection produce RED/INCONCLUSIVE evidence with coverage `none`; a GREEN exploit receipt requires an exercised surface.
+- **Browser/e2e and ports:** `nyx_verify_slice` can run a configured e2e command with package-level env loaded only into child processes, on a freshly allocated loopback port, with process-group teardown on every exit path. Explicit occupied ports fail closed.
+- **Receipt coverage honesty:** receipts may carry signed `coverageNotes` and `limitations`. The PR table prints the actual coverage (`full`, `partial`, `none`) or `not reported`, never a fabricated `full`, and renders the notes verbatim with a not-fully-verified caveat when a relevant surface was not exercised.
+- **Order independence:** verify snapshots untracked files before running and removes generated build/e2e artifacts it created, so `verify → seam` and `seam → verify` bind the same tree hash.
+- **Model preflight:** `nyx_model_preflight` resolves role → provider → model → variant against the supported roster and known variant sets, failing loudly with the available variants rather than substituting a model or a free variant.
