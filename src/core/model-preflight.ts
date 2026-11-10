@@ -25,21 +25,18 @@ export const NYX_MODEL_ROSTER: Readonly<Record<string, RosterEntry>> = {
   "nyx-sec": { provider: "opencode-go", model: "deepseek-v4.1-flash", variant: "high" },
   "nyx-api": { provider: "opencode-go", model: "glm-5.3-flash", variant: "high" },
   "nyx-db": { provider: "opencode-go", model: "glm-5.3-flash", variant: "high" },
-  "nyx-probe": { provider: "opencode-go", model: "mimo-v2.6-pro", variant: null },
-  "nyx-devops": { provider: "opencode-go", model: "minimax-m3.1-flash", variant: "high" },
+  "nyx-probe": { provider: "opencode-go", model: "glm-5.3-flash", variant: "high" },
+  "nyx-devops": { provider: "opencode-go", model: "deepseek-v4.1-flash", variant: "high" },
   "nyx-ui": { provider: "opencode-go", model: "deepseek-v4.1-flash", variant: "high" },
-  "nyx-designer": { provider: "opencode-go", model: "qwen3.7-plus", variant: "high" },
-  "nyx-product": { provider: "opencode-go", model: "qwen3.7-plus", variant: "high" },
-  "nyx-testwriter": { provider: "opencode-go", model: "mimo-v2.6-pro", variant: null },
+  "nyx-designer": { provider: "opencode-go", model: "qwen3.8-flash", variant: "xhigh" },
+  "nyx-product": { provider: "opencode-go", model: "qwen3.8-flash", variant: "xhigh" },
+  "nyx-testwriter": { provider: "opencode-go", model: "glm-5.3-flash", variant: "high" },
 } as const;
 
 /** `null` in the list means "no variant suffix" (displayed as "none"). */
 export const AVAILABLE_MODEL_VARIANTS: Readonly<Record<string, readonly (string | null)[]>> = {
-  "mimo-v2.6-pro": [null],
   "deepseek-v4.1-flash": ["low", "high", "max"],
   "glm-5.3-flash": ["low", "high", "max"],
-  "minimax-m3.1-flash": ["low", "medium", "high", "xhigh", "max"],
-  "qwen3.7-plus": [null, "high", "max"],
   "qwen3.8-flash": [null, "low", "medium", "xhigh"],
 } as const;
 
@@ -193,7 +190,7 @@ export const modelPreflightOutputSchema = z.strictObject({
 });
 
 const PREFLIGHT_DESCRIPTION =
-  "Preflights a role's model and variant against the Nyxowl roster before dispatch; rejects unavailable models or variants and never substitutes.";
+  "Preflights a role's model and variant against the Nyxowl roster; rejects unavailable models/variants and never substitutes.";
 
 export const nyxModelPreflightTool = defineTool({
   name: "nyx_model_preflight",

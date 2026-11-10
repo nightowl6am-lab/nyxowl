@@ -4,11 +4,16 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import path from "node:path";
 import { z } from "zod";
 import { nyxModelPreflightTool } from "../core/model-preflight.ts";
 import { computeRepoId } from "../core/git.ts";
 import { createLogger } from "../core/logger.ts";
 import { ensureProjectLayout } from "../core/paths.ts";
+import {
+  removeServerRuntimeMarker,
+  writeServerRuntimeMarker,
+} from "../core/server-runtime.ts";
 import { NYXOWL_VERSION } from "../core/version.ts";
 import { StateDb } from "./db/sqlite.ts";
 import { blackboardEngineTools } from "./engines/blackboard/index.ts";
@@ -143,12 +148,52 @@ export async function startStdioMcpServer(options: ExecuteToolOptions = {}): Pro
     }
   };
 
+  // Register the runtime marker so `nyxowl gate-run` can detect a host-loaded
+  // server that predates the current worktree build. A marker failure is
+  // reported to stderr and never prevents the server from starting.
+  const entryPath = process.argv[1]
+    ? path.resolve(process.argv[1])
+    : path.resolve(".");
+  let markerWritten = false;
+  try {
+    writeServerRuntimeMarker(
+      {
+        pid: process.pid,
+        version: NYXOWL_VERSION,
+        toolCount: ALL_NYX_TOOLS.length,
+        entryPath,
+        startedAt: new Date().toISOString(),
+        projectPath,
+      },
+      nyxHome,
+    );
+    markerWritten = true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Nyxowl MCP server: failed to write runtime marker: ${message}\n`);
+  }
+
+  const removeMarker = (): void => {
+    if (!markerWritten) {
+      return;
+    }
+    try {
+      removeServerRuntimeMarker(process.pid, nyxHome);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`Nyxowl MCP server: failed to remove runtime marker: ${message}\n`);
+    }
+  };
+
   process.once("SIGINT", () => {
+    removeMarker();
     void cleanupProcs().finally(() => process.exit(0));
   });
   process.once("SIGTERM", () => {
+    removeMarker();
     void cleanupProcs().finally(() => process.exit(0));
   });
+  process.once("exit", removeMarker);
 
   const server = createNyxMcpServer(options);
   const transport = new StdioServerTransport();

@@ -19,6 +19,12 @@ import {
 } from "../../../core/receipts.ts";
 import { NYXOWL_VERSION } from "../../../core/version.ts";
 import { defineTool } from "../../tool.ts";
+import {
+  collectPrChecks,
+  waitForPrChecks,
+  type CiCheck,
+  type CiStatusSummary,
+} from "./ci-watch.ts";
 import { scanDiffForSecrets } from "./secret-scan.ts";
 
 const REDLINE_CI_PATTERNS = [
@@ -125,6 +131,136 @@ export function parseExistingPrList(stdout: string): ExistingPrView | null {
   return null;
 }
 
+const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9_.-]+$/;
+
+/**
+ * Validates one side of an `owner/repo` slug. Rejects `.`/`..` so the value can
+ * never escape the intended REST API path segment.
+ */
+function isValidRepoSegment(segment: string): boolean {
+  return (
+    segment.length > 0 &&
+    segment !== "." &&
+    segment !== ".." &&
+    REPO_SEGMENT_PATTERN.test(segment)
+  );
+}
+
+/**
+ * Parses a git remote URL into a GitHub `owner/repo` slug.
+ *
+ * Supported forms:
+ * - `https://github.com/owner/repo(.git)`
+ * - `ssh://git@github.com/owner/repo(.git)`
+ * - `git@github.com:owner/repo(.git)` (scp-like)
+ *
+ * Any other host or a shape that does not resolve to exactly two path
+ * segments returns `null`.
+ */
+export function parseGitHubRepoSlug(remoteUrl: string): string | null {
+  if (typeof remoteUrl !== "string") return null;
+  const trimmed = remoteUrl.trim();
+  if (trimmed.length === 0) return null;
+
+  let repoPath: string | null = null;
+
+  // scp-like SSH form: [user@]github.com:owner/repo.git
+  const scpLike = /^(?:[^@\s/]+@)?github\.com:([^\s]+)$/i.exec(trimmed);
+  if (scpLike?.[1]) {
+    repoPath = scpLike[1];
+  } else {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(trimmed);
+    } catch {
+      return null;
+    }
+    if (parsedUrl.hostname.toLowerCase() !== "github.com") return null;
+    repoPath = parsedUrl.pathname;
+  }
+
+  if (!repoPath) return null;
+
+  const normalized = repoPath
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "");
+  const segments = normalized.split("/");
+  if (segments.length !== 2) return null;
+
+  const owner = segments[0] ?? "";
+  const repo = segments[1] ?? "";
+  if (!isValidRepoSegment(owner) || !isValidRepoSegment(repo)) return null;
+
+  return `${owner}/${repo}`;
+}
+
+/**
+ * Extracts the PR number from a GitHub pull request URL.
+ */
+export function parsePrNumberFromUrl(prUrl: string): number | null {
+  const match = /\/pull\/(\d+)(?:[/?#]|$)/.exec(prUrl.trim());
+  if (!match?.[1]) return null;
+  const value = Number.parseInt(match[1], 10);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/** Output CI labels returned by the PR gate. */
+export type PrCiStatus = CiStatusSummary | "not-applicable";
+
+/** CI fields shared by the publish result and the tool output. */
+export interface PrCiReport {
+  prNumber: number | null;
+  ciStatus: PrCiStatus;
+  ciChecks: Array<Pick<CiCheck, "name" | "status" | "conclusion" | "url">>;
+  ciNotice: string;
+}
+
+function toReportedChecks(checks: CiCheck[]): PrCiReport["ciChecks"] {
+  return checks.map(({ name, status, conclusion, url }) => ({ name, status, conclusion, url }));
+}
+
+/**
+ * Renders the human-facing CI notice. Failed and timed-out checks are always
+ * reported as actionable text; a passing/absent rollup is never overclaimed.
+ */
+export function buildCiNotice(
+  status: PrCiStatus,
+  checks: CiCheck[],
+  prNumber: number | null,
+  timedOut: boolean,
+): string {
+  if (status === "not-applicable") {
+    return "CI checks are not applicable: the PR was written locally, so no GitHub check rollup exists.";
+  }
+
+  const prLabel = prNumber === null ? "the pull request" : `PR #${prNumber}`;
+
+  if (status === "failed") {
+    const failing = checks
+      .filter((check) =>
+        ["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED"].includes(
+          (check.conclusion ?? "").toUpperCase(),
+        ),
+      )
+      .map((check) => `${check.name} (${check.conclusion})`);
+    return `CI checks failed for ${prLabel}: ${failing.join(", ") || "see check rollup"}. Do not merge until the failures are resolved.`;
+  }
+
+  if (status === "pending") {
+    if (timedOut) {
+      return `Timed out waiting for CI checks on ${prLabel}; they are still pending. Re-check before merge.`;
+    }
+    return `CI checks are still pending for ${prLabel}. Re-check before merge.`;
+  }
+
+  if (status === "passed") {
+    return `CI checks passed for ${prLabel} (${checks.length}/${checks.length}).`;
+  }
+
+  return `No CI check rollup was reported for ${prLabel}; CI status is unknown.`;
+}
+
 /**
  * The action the PR gate takes for a given branch.
  */
@@ -163,20 +299,113 @@ export interface GhPublishParams {
   baseBranch: string;
   title: string;
   prBody: string;
+  /** When true, poll the check rollup until terminal or timeout. */
+  waitForChecks?: boolean;
+  /** Polling budget for `waitForChecks`. */
+  checkTimeoutMs?: number;
 }
 
-export interface GhPublishResult {
+export interface GhPublishResult extends PrCiReport {
   action: PrPublishAction;
   prUrl: string;
   notice: string;
 }
 
 /**
+ * Resolves `owner/repo` for the current checkout. The remote URL is preferred
+ * (no extra API call); `gh repo view` is the fallback when the remote is not a
+ * parseable GitHub URL.
+ */
+async function resolveGitHubRepoSlug(
+  exec: GhExec,
+  worktreePath: string,
+): Promise<string | null> {
+  const remoteRes = await exec("git", ["remote", "get-url", "origin"], {
+    cwd: worktreePath,
+    timeoutMs: 30_000,
+  });
+  if (remoteRes.exitCode === 0) {
+    const slug = parseGitHubRepoSlug(remoteRes.stdout);
+    if (slug) return slug;
+  }
+
+  const repoViewRes = await exec(
+    "gh",
+    ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+    { cwd: worktreePath, timeoutMs: 30_000 },
+  );
+  if (repoViewRes.exitCode !== 0) return null;
+
+  const nameWithOwner = repoViewRes.stdout.trim();
+  if (nameWithOwner.length === 0) return null;
+
+  const segments = nameWithOwner.split("/");
+  if (segments.length !== 2) return null;
+
+  const owner = segments[0] ?? "";
+  const repo = segments[1] ?? "";
+  if (!isValidRepoSegment(owner) || !isValidRepoSegment(repo)) return null;
+  if (owner === "." || owner === ".." || repo === "." || repo === "..") return null;
+
+  return `${owner}/${repo}`;
+}
+
+/**
+ * Collects (and optionally waits for) the check rollup after the PR exists.
+ * CI problems are reported in the structured output; they never throw once the
+ * PR has been created or updated.
+ */
+async function observePrCi(
+  exec: GhExec,
+  worktreePath: string,
+  prNumber: number | null,
+  waitForChecks: boolean,
+  checkTimeoutMs: number | undefined,
+): Promise<PrCiReport> {
+  if (prNumber === null) {
+    return {
+      prNumber: null,
+      ciStatus: "unknown",
+      ciChecks: [],
+      ciNotice: buildCiNotice("unknown", [], null, false),
+    };
+  }
+
+  if (waitForChecks) {
+    const snapshot = await waitForPrChecks(exec, prNumber, {
+      cwd: worktreePath,
+      timeoutMs: checkTimeoutMs ?? 300_000,
+      intervalMs: 5_000,
+    });
+    return {
+      prNumber,
+      ciStatus: snapshot.status,
+      ciChecks: toReportedChecks(snapshot.checks),
+      ciNotice: buildCiNotice(snapshot.status, snapshot.checks, prNumber, snapshot.timedOut),
+    };
+  }
+
+  const snapshot = await collectPrChecks(exec, prNumber, { cwd: worktreePath });
+  return {
+    prNumber,
+    ciStatus: snapshot.status,
+    ciChecks: toReportedChecks(snapshot.checks),
+    ciNotice: buildCiNotice(snapshot.status, snapshot.checks, prNumber, false),
+  };
+}
+
+/**
  * Publishes the slice to GitHub idempotently.
  *
  * When an OPEN pull request already tracks the head branch, the PR is updated
- * in place (`gh pr edit`) and the SAME URL is returned. Otherwise a new PR is
- * created (`gh pr create`), preserving the previous behaviour.
+ * in place (`gh pr edit`) and the SAME URL is returned. If `gh pr edit` fails,
+ * the update is retried through the REST API. Otherwise a new PR is created
+ * (`gh pr create`), preserving the previous behaviour.
+ *
+ * After the PR exists, the check rollup is always collected once; with
+ * `waitForChecks` the gate polls until the rollup is terminal or the timeout
+ * budget is exhausted. CI failures are returned as structured data, never as
+ * an exception, because the PR already exists.
  */
 export async function publishPrToGitHub(
   params: GhPublishParams,
@@ -206,15 +435,52 @@ export async function publishPrToGitHub(
   const action = decidePrPublishAction(existing);
 
   if (action === "update" && existing) {
-    await exec(
+    const editRes = await exec(
       "gh",
       ["pr", "edit", String(existing.number), "--title", title, "--body", prBody],
-      { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
+      { cwd: worktreePath, timeoutMs: 30_000 },
     );
+
+    if (editRes.exitCode !== 0) {
+      // `gh pr edit` can fail on older gh versions / token scopes. The REST
+      // PATCH uses the same gate-generated title and body.
+      const slug = await resolveGitHubRepoSlug(exec, worktreePath);
+      if (!slug) {
+        throw new NyxError(
+          "ERR_EXEC_FAILED",
+          `gh pr edit failed for PR #${existing.number} and no GitHub owner/repo could be resolved for the REST fallback: ${editRes.stderr || editRes.stdout}`,
+          { prNumber: existing.number, exitCode: editRes.exitCode },
+        );
+      }
+      await exec(
+        "gh",
+        [
+          "api",
+          "--method",
+          "PATCH",
+          `repos/${slug}/pulls/${existing.number}`,
+          "-f",
+          `title=${title}`,
+          "-f",
+          `body=${prBody}`,
+        ],
+        { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
+      );
+    }
+
+    const ci = await observePrCi(
+      exec,
+      worktreePath,
+      existing.number,
+      params.waitForChecks ?? false,
+      params.checkTimeoutMs,
+    );
+
     return {
       action,
       prUrl: existing.url,
       notice: buildPrNotice(action, existing.url),
+      ...ci,
     };
   }
 
@@ -236,7 +502,15 @@ export async function publishPrToGitHub(
   );
 
   const prUrl = createRes.stdout.trim().split(/\r?\n/).pop() ?? createRes.stdout.trim();
-  return { action, prUrl, notice: buildPrNotice(action, prUrl) };
+  const ci = await observePrCi(
+    exec,
+    worktreePath,
+    parsePrNumberFromUrl(prUrl),
+    params.waitForChecks ?? false,
+    params.checkTimeoutMs,
+  );
+
+  return { action, prUrl, notice: buildPrNotice(action, prUrl), ...ci };
 }
 
 export const worktreePrInputSchema = z.object({
@@ -246,6 +520,8 @@ export const worktreePrInputSchema = z.object({
   worktreePath: z.string().optional(),
   allowCiChanges: z.boolean().optional(),
   repoPath: z.string().optional(),
+  waitForChecks: z.boolean().optional(),
+  checkTimeoutMs: z.number().int().positive().max(1_800_000).optional(),
 });
 
 export const worktreePrOutputSchema = z.object({
@@ -254,8 +530,19 @@ export const worktreePrOutputSchema = z.object({
   headTreeHash: z.string(),
   mode: z.enum(["gh", "local"]),
   prUrl: z.string().nullable(),
+  prNumber: z.number().nullable(),
   localPrFilePath: z.string().nullable(),
   notice: z.string(),
+  ciStatus: z.enum(["passed", "failed", "pending", "unknown", "not-applicable"]),
+  ciChecks: z.array(
+    z.object({
+      name: z.string(),
+      status: z.string(),
+      conclusion: z.string().nullable(),
+      url: z.string(),
+    }),
+  ),
+  ciNotice: z.string(),
   verifiedReceipts: z.array(
     z.object({
       id: z.string(),
@@ -697,6 +984,10 @@ export const nyxWorktreePrTool = defineTool({
         baseBranch,
         title: input.title,
         prBody,
+        waitForChecks: input.waitForChecks ?? false,
+        ...(input.checkTimeoutMs !== undefined
+          ? { checkTimeoutMs: input.checkTimeoutMs }
+          : {}),
       });
 
       return {
@@ -705,8 +996,12 @@ export const nyxWorktreePrTool = defineTool({
         headTreeHash,
         mode: "gh" as const,
         prUrl: published.prUrl,
+        prNumber: published.prNumber,
         localPrFilePath: null,
         notice: published.notice,
+        ciStatus: published.ciStatus,
+        ciChecks: published.ciChecks,
+        ciNotice: published.ciNotice,
         verifiedReceipts,
         suppressions,
         prBody,
@@ -726,8 +1021,12 @@ export const nyxWorktreePrTool = defineTool({
       headTreeHash,
       mode: "local" as const,
       prUrl: null,
+      prNumber: null,
       localPrFilePath,
       notice: `Branch ${branch} verified. PR body written to ${localPrFilePath} — run "gh auth login" to enable automatic PRs.`,
+      ciStatus: "not-applicable" as const,
+      ciChecks: [],
+      ciNotice: buildCiNotice("not-applicable", [], null, false),
       verifiedReceipts,
       suppressions,
       prBody,
