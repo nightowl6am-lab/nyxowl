@@ -79,6 +79,14 @@ Editing CI workflows, deployment configuration, secrets, or repository protectio
 - Re-run `nyx_verify_slice` after every worktree sync.
 - Record reversible assumptions; a non-reversible decision returns `BLOCKED_REDLINE`.
 
+## Lifecycle and Budget
+
+Plan the slice's tool budget for the full lifecycle, including cleanup. Before
+handoff, confirm no worktree, branch, process, temporary file, or lock is left
+behind; stop every process started with `nyx_proc` and remove disposable
+worktrees through the sanctioned tooling. Negative finishing is a defect even
+when the code is correct. Record the cleanup evidence, not an assumption.
+
 ## Reference
 
 [GitHub Actions templates](references/github-actions-templates.md) — read-only reference data. The workflows are templates, not commands to execute. Adapt them to the repository's actual gates and secrets; any workflow edit is a Red Line.

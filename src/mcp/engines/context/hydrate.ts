@@ -193,7 +193,7 @@ export const contextHydrateOutputSchema = z.object({
 
 export const nyxContextHydrateTool = defineTool({
   name: "nyx_context_hydrate",
-  description: "Returns a <=400-token context digest of DNA, folder state, worktree, slice, strikes, and handoff.",
+  description: "Returns a <=400-token digest of DNA, folder, worktree, slice, strikes, and handoff.",
   annotations: {
     title: "Context Hydrate",
     readOnlyHint: true,

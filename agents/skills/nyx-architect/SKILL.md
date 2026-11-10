@@ -96,6 +96,18 @@ interface Thing {
 
 Use `nyx_seam_check` to find export/import mismatches and `nyx_pkg_verify` to confirm package structure, entry points, and dependency boundaries. Do not run the project's test suite; writer and probe roles own execution. If a package or seam is broken, publish the finding and the exact contract change, then return `BLOCKED_REDLINE` if the fix requires a red-line action.
 
+## Analysis Depth and Evidence
+
+Review every layer the application actually has, not just the files that are easy to parse:
+
+- **Data access** — schema, migrations, ORM models, raw queries, and RLS/tenant scope.
+- **Client/server boundary** — every client call has a server route or action, and every route has a caller where the product requires one.
+- **Request/response contracts** — typed input/output, error shapes, status mapping, and compatibility.
+- **Server-side mutations** — actions, loaders, jobs, and transaction boundaries.
+- **Routing and typed navigation** — route definitions, parameters, redirects, and generated types.
+
+Report separately what you **inspected** (static AST/seam evidence) and what you **executed** (`nyx_seam_check`, `nyx_pkg_verify`). A layer you did not inspect is `not verified`, not absent. This role is read-only: it may issue analysis and seam verdicts backed by those tools, but never a machine-backed test, runtime, or security verdict.
+
 ## References
 
 - [API design principles](references/api-design-principles.md) — read-only reference data from the upstream API design guide.

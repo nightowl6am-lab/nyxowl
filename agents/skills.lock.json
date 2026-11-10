@@ -23,7 +23,7 @@
           "upstreamPath": "plugins/agent-teams/skills/parallel-feature-development/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "721cc38d7e3fba5e4699359667bd8f4f7332659d34d971c1f7ba21a8718c977e",
+          "localSha256": "7ca9bb19ddf505039ea258c2d976c7dd41c075de09ede04a6b8bec21853424b3",
           "upstreamSha256": "9d39b7d0f3011a8e0f468d000987758f6ac493edc6e6fe73227fa3e75e209458",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },
@@ -145,7 +145,7 @@
           "upstreamPath": "skills/api-and-interface-design/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "2915e060d296806c0ef984505a3ac0c5f5b3c91249cb13bb29702cfb003d1bb9",
+          "localSha256": "a4c662106e10377890d53731764b44b2f98735086c0428de8b750d672c47bb34",
           "upstreamSha256": "cc5e2166c484b2c297e8253f56e7525e5031f81d66101ca4e760ef378ea6bad0",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },
@@ -489,7 +489,7 @@
           "upstreamPath": "skills/frontend-ui-engineering/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "33835a01c9af29126e0e2e767960b68f4730c08c07d4d90eaac84604147f7321",
+          "localSha256": "ca38c18cb31b66935ad720daff8978f3aa8922d7a93b057f22aceaf7ccfbb3db",
           "upstreamSha256": "93a0ebffbb6075340d85255ae50724bc5e5e19b0fcbf2ae5d5857b9c5ddf9498",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },
@@ -552,7 +552,7 @@
           "upstreamPath": "skills/security-and-hardening/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "70acce31b32748122e3c0bba8e6e352a40fa89c0e9b77247fa0f268a592e359f",
+          "localSha256": "2e73ebb5dbf8354825543648a985eeb176da2e42b5bb84ee489d145db17bfbcc",
           "upstreamSha256": "358566859a3d791c474eb9fa36939b45875c7480d7d4650eaa092dceae2c1c37",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },
@@ -690,7 +690,7 @@
           "upstreamPath": "skills/systematic-debugging/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "b509541b93db32a8dc3b99c0565d04af5a91dd753ec0d6a0fa2e68f016a96ff9",
+          "localSha256": "60618288953b498a0d4d7cc71efe0938d51901dea5603a6b1684ed8a2e4687ab",
           "upstreamSha256": "51c6435d98c83c42c96ba7c35725a0b2c376cd487fb1a4e6bd0ddbe7e33ef202",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },
@@ -785,7 +785,7 @@
           "upstreamPath": "skills/ci-cd-and-automation/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "451af06345aa9591d319d13b4ae69a1fbfb13e2e86c1180edfee10227c8e6c45",
+          "localSha256": "de548fcbc3d2f56b994b472c7d7595c0183f43a1daaf3e93b4c28c45ee39e11c",
           "upstreamSha256": "5e0e55c059670a7838dc9d58dc20a3a645c0d43c974416490112af7de522df95",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },
