@@ -83,6 +83,44 @@ Dispatch decision:
 - Keep `subagent-summary-v1` and `orchestrator-report-v1` within budget, and stop when acceptance criteria and receipts are met.
 - Load this skill once; read `references/` only when a link or a decision directs you there.
 
+## Operating Standard (binding)
+
+`docs/operating-standard.md` is the delivery standard; these points are the
+orchestrator's acceptance gates.
+
+- **Vocabulary.** `VERIFIED` means the gate executed the check and the receipt
+  binds to the current tree; state counts and surface. `NOT VERIFIED` means the
+  check exists but did not run or covered only part; say why. `NA` is a separate,
+  machine-justified statement. Never merge them, and never say "full coverage"
+  unless the tool reports `full`.
+- **Execution.** Verify must run the complete configured suite (typecheck, lint,
+  test/coverage, build) and exercise the real surface under its own control.
+  Deployment-shaped checks belong in the normal verdict; if they cannot run,
+  record a limitation.
+- **Capability parity.** Dispatch a machine-backed verdict only to a role that
+  can execute the check. A read-only analysis cannot certify execution.
+- **Depth and realism.** Architect reports inspected versus executed layers;
+  security probes authenticated in-scope users with credentials isolated from
+  evidence and covers abuse controls; UI evidence includes rendered behaviour,
+  not only source.
+- **Determinism and performance.** Fixtures must not depend on wall-clock age,
+  order, locale, or timezone. Performance evidence is measured on a production
+  build at realistic and scaled volumes, against a stated budget; over-budget is
+  an owner decision argued with numbers.
+- **Lifecycle and plan.** Every slice has a stated scope and acceptance criteria.
+  The budget covers cleanup: leave no worktree, branch, process, temp file, or
+  lock behind. Negative finishing is a defect.
+- **Decisions.** Reversible engineering choices are recorded. Product, market,
+  pricing, legal, and irreversible security choices go to research or the owner
+  with the exact missing decision named; business behaviour is never invented.
+- **Truth and credentials.** Report exact numbers and errors, never an inferred
+  receipt or measurement. No credential may appear in a URL, log, artifact,
+  commit, or transcript; a pre-auth or no-script fallback that exposes one is a
+  release blocker.
+- **Context and consistency.** Prefer skeletons, diffs, and traces; stop at
+  acceptance criteria and receipts. Apply the same bar to every stack and every
+  change size.
+
 ## Security-Fix Test-Writer Flow
 
 For a confirmed security fix, confirm the target is Python with `nyx_dna_get`.

@@ -93,6 +93,13 @@ All of these mean: stop and return to Phase 1.
 - [ ] Started processes are stopped.
 - [ ] Reversible assumptions are recorded; a non-reversible decision returns `BLOCKED_REDLINE`.
 
+## Performance and Determinism Evidence
+
+- Measure, do not assert. `nyx_verify_slice` reports per-step and total duration; record the production build time and the test time in the receipt notes.
+- When the slice changes a hot path or payload, measure latency and payload size on a production build at realistic and scaled data volumes, against a stated budget. Over-budget is a decision for the owner, argued with the numbers; it is not a silent pass.
+- Fixtures must not depend on wall-clock age, insertion order, execution order, locale, or timezone. Re-run a suspect test with a fixed seed and report the divergence as a defect.
+- If a measurement or a surface did not run, record `not verified` with the reason. Never infer a number.
+
 ## References
 
 - [Root cause tracing](references/root-cause-tracing.md) — read-only reference data.

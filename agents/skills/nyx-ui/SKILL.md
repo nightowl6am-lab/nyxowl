@@ -109,13 +109,24 @@ Do not drill props through more than three levels. Do not duplicate server state
 - [ ] `nyx_slop_check` reports no slop.
 - [ ] The UI matches the published `api-contract`.
 
+## Runtime UX Evidence
+
+Source inspection cannot certify the interface. When the project has a
+configured e2e/browser step, run it through `nyx_verify_slice` and report the
+rendered evidence: breakpoints (320/768/1024/1440), right-to-left layout,
+keyboard operation and focus order/visibility, assistive-technology names,
+and contrast. If no browser step is configured, say so, record
+`surface: not verified`, and never describe the UI as fully reviewed. Do not
+use ad-hoc host browser or screenshot tools; the configured gate owns the
+runtime.
+
 ## Reference
 
 [Web interface guidelines](references/web-interface-guidelines.md) — read-only reference data for interaction, accessibility, layout, and performance rules.
 
 ## Hard Rules
 
-- Do not use browsers, devtools, or screenshot tools.
+- Do not use ad-hoc host browser, devtools, or screenshot tools; the configured e2e/browser step run through `nyx_verify_slice` owns runtime evidence.
 - Do not edit architect-owned contract files.
 - Do not add dependencies without `nyx_dep_guard`.
 - Do not leave mock production data, empty handlers, `any`, or dead TODOs.

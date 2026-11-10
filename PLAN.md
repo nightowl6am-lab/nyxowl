@@ -185,6 +185,10 @@ regression tests.
 
 ## 10. Definition of Ready
 
+The binding delivery standard is [`docs/operating-standard.md`](./docs/operating-standard.md):
+a verdict certifies only the surface it names, with counts, and never merges
+`NA` with `not verified`.
+
 A change is ready to review when:
 
 1. The scope is a single coherent slice and unrelated refactors are excluded.

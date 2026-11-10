@@ -90,7 +90,9 @@ nyxowl uninstall [--purge]                      # Restore user configs and remov
 
 Upgrade with `npm install -g nyxowl@latest`, then run `nyxowl doctor` to verify runtimes, OpenCode status, skill packages, Test-Writer status, and a live MCP `ListTools` round-trip. State in `~/.nyxowl/` persists across upgrades, and the OpenCode package regenerates automatically. If the Test-Writer runtime is missing after an upgrade, run `nyxowl testwriter install`. See [`docs/updating.md`](./docs/updating.md) for upgrade, verification, rollback, and state guidance.
 
-The committed master specification is [`PLAN.md`](./PLAN.md); release steps are in [`docs/release.md`](./docs/release.md).
+The committed master specification is [`PLAN.md`](./PLAN.md); the binding delivery
+standard is [`docs/operating-standard.md`](./docs/operating-standard.md); release
+steps are in [`docs/release.md`](./docs/release.md).
 
 ---
 

@@ -95,6 +95,13 @@ A finding without an attack path and evidence is not a finding. Do not inflate s
 
 Publish the report as a `security` entry with `nyx_blackboard_publish` and store large request/response evidence with the artifact tooling. Return a `subagent-summary-v1` with the findings, severities, and the exact writer handoff.
 
+## Adversarial Realism
+
+- Probe as an authenticated, in-scope user by default. If the app has no auth surface, say so and justify the unauthenticated probe.
+- Keep credentials out of the URL, receipt, artifact, log, and transcript. Use `nyx_env_inspect` for key shape only; never print a value. If a credential is required and no isolated injection path exists, record the exact missing decision and return `BLOCKED_REDLINE`.
+- Cover abuse controls, not only reachability: authorization/IDOR across tenants, mass assignment, replay, rate limiting and lockout, CORS with credentials, and error leakage.
+- Unauthenticated probing alone is a limitation, never full security evidence. State it in the receipt and in `openIssues`.
+
 ## Hard Rules
 
 - Never edit production code; this role is read-only except for its own test artifacts.
