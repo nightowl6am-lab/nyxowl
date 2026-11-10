@@ -39,9 +39,9 @@ verified.
 - **Launch contract:** `OPENCODE_CONFIG=<package>/opencode.json opencode --standalone <path>`
   with `default_agent: "nyxowl"`.
 
-## 3. Runtime: 8 Engines, 38 Tools
+## 3. Runtime: 8 Engines, 39 Tools
 
-The MCP server (`nyxowl mcp`, `src/mcp/server.ts`) registers exactly **38
+The MCP server (`nyxowl mcp`, `src/mcp/server.ts`) registers exactly **39
 `nyx_*` tools** across **8 engines**:
 
 | Engine | Directory | Tools |
@@ -54,6 +54,10 @@ The MCP server (`nyxowl mcp`, `src/mcp/server.ts`) registers exactly **38
 | 6 — Probe & Exploit | `src/mcp/engines/probe-exploit/` | `nyx_debug_isolate`, `nyx_proc`, `nyx_slop_check`, `nyx_verify_slice`, `nyx_exploit_probe` |
 | 7 — Context | `src/mcp/engines/context/` | `nyx_context_hydrate`, `nyx_task_handoff`, `nyx_artifact_read` |
 | 8 — Test-Writer | `src/mcp/engines/testwriter/` | `nyx_testwriter_job`, `nyx_testwriter_write`, `nyx_testwriter_lint`, `nyx_testwriter_gate`, `nyx_testwriter_finish`, `nyx_testwriter_prepare`, `nyx_testwriter_status` |
+
+The 39th tool, `nyx_model_preflight` (runtime core,
+`src/core/model-preflight.ts`), is registered ahead of the engine tools by
+`src/mcp/server.ts`.
 
 All tools use strict Zod input/output schemas and MCP annotations. Responses
 pass through the Exact-Value + Entropy Output Redactor, and token budgets
