@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { NyxError } from "../../../core/errors.ts";
-import { execCommand } from "../../../core/exec.ts";
+import { execCommand, type ExecOptions, type ExecResult } from "../../../core/exec.ts";
 import {
   computeWorkingTreeHash,
   getDirtyFiles,
@@ -46,6 +46,197 @@ export function extractAllowSuppressionsFromDiff(diffText: string): string[] {
     }
   }
   return suppressions;
+}
+
+/**
+ * An existing pull request that already tracks the head branch.
+ */
+export interface ExistingPrView {
+  number: number;
+  url: string;
+  state: string;
+}
+
+/**
+ * Parses the output of `gh pr view <branch> --json number,url,state`.
+ *
+ * The parser is deliberately defensive: malformed JSON, a missing/invalid
+ * field, or a PR that is not OPEN all return `null` so the caller falls
+ * through to the create path instead of editing an unknown PR.
+ */
+export function parseExistingPrView(stdout: string): ExistingPrView | null {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const number = record["number"];
+  const url = record["url"];
+  const state = record["state"];
+
+  if (typeof number !== "number" || !Number.isInteger(number)) return null;
+  if (typeof url !== "string" || url.trim().length === 0) return null;
+  if (typeof state !== "string") return null;
+  if (state.toUpperCase() !== "OPEN") return null;
+
+  return { number, url: url.trim(), state };
+}
+
+/**
+ * Parses the output of `gh pr list --head <branch> --state open --json number,url`.
+ *
+ * The list output carries no `state` field (the query already filtered on
+ * `--state open`), so the first well-formed entry is returned as an OPEN PR.
+ * Malformed or empty output returns `null`.
+ */
+export function parseExistingPrList(stdout: string): ExistingPrView | null {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsed)) return null;
+
+  for (const entry of parsed) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    const number = record["number"];
+    const url = record["url"];
+    if (typeof number !== "number" || !Number.isInteger(number)) continue;
+    if (typeof url !== "string" || url.trim().length === 0) continue;
+    return { number, url: url.trim(), state: "OPEN" };
+  }
+
+  return null;
+}
+
+/**
+ * The action the PR gate takes for a given branch.
+ */
+export type PrPublishAction = "update" | "create";
+
+/**
+ * Decides whether the gate updates an existing PR in place or creates a new
+ * one. A missing/closed/malformed PR view yields `create`.
+ */
+export function decidePrPublishAction(existing: ExistingPrView | null): PrPublishAction {
+  return existing ? "update" : "create";
+}
+
+/**
+ * Renders the notice returned to the caller. Both variants state that human
+ * approval is required to merge (Red-Line Gate).
+ */
+export function buildPrNotice(action: PrPublishAction, prUrl: string): string {
+  const verb = action === "update" ? "updated" : "opened";
+  return `PR ${verb} at ${prUrl}. Human approval is required to merge (Red-Line Gate).`;
+}
+
+/**
+ * Minimal executor shape used by the GitHub publishing path, so the flow can
+ * be exercised without a network or `gh` authentication.
+ */
+export type GhExec = (
+  command: string,
+  args: string[],
+  options?: ExecOptions,
+) => Promise<ExecResult>;
+
+export interface GhPublishParams {
+  worktreePath: string;
+  branch: string;
+  baseBranch: string;
+  title: string;
+  prBody: string;
+}
+
+export interface GhPublishResult {
+  action: PrPublishAction;
+  prUrl: string;
+  notice: string;
+}
+
+/**
+ * Publishes the slice to GitHub idempotently.
+ *
+ * When an OPEN pull request already tracks the head branch, the PR is updated
+ * in place (`gh pr edit`) and the SAME URL is returned. Otherwise a new PR is
+ * created (`gh pr create`), preserving the previous behaviour.
+ */
+export async function publishPrToGitHub(
+  params: GhPublishParams,
+  exec: GhExec = execCommand,
+): Promise<GhPublishResult> {
+  const { worktreePath, branch, baseBranch, title, prBody } = params;
+
+  const viewRes = await exec(
+    "gh",
+    ["pr", "view", branch, "--json", "number,url,state"],
+    { cwd: worktreePath, timeoutMs: 30_000 },
+  );
+  let existing: ExistingPrView | null =
+    viewRes.exitCode === 0 ? parseExistingPrView(viewRes.stdout) : null;
+
+  if (!existing) {
+    // Fallback for gh versions that do not resolve a branch to its PR via
+    // `gh pr view <branch>`.
+    const listRes = await exec(
+      "gh",
+      ["pr", "list", "--head", branch, "--state", "open", "--json", "number,url"],
+      { cwd: worktreePath, timeoutMs: 30_000 },
+    );
+    existing = listRes.exitCode === 0 ? parseExistingPrList(listRes.stdout) : null;
+  }
+
+  const action = decidePrPublishAction(existing);
+
+  if (action === "update" && existing) {
+    await exec(
+      "gh",
+      ["pr", "edit", String(existing.number), "--title", title, "--body", prBody],
+      { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
+    );
+    return {
+      action,
+      prUrl: existing.url,
+      notice: buildPrNotice(action, existing.url),
+    };
+  }
+
+  const createRes = await exec(
+    "gh",
+    [
+      "pr",
+      "create",
+      "--title",
+      title,
+      "--body",
+      prBody,
+      "--base",
+      baseBranch,
+      "--head",
+      branch,
+    ],
+    { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
+  );
+
+  const prUrl = createRes.stdout.trim().split(/\r?\n/).pop() ?? createRes.stdout.trim();
+  return { action, prUrl, notice: buildPrNotice(action, prUrl) };
 }
 
 export const worktreePrInputSchema = z.object({
@@ -500,38 +691,27 @@ export const nyxWorktreePrTool = defineTool({
         throwOnNonZero: true,
       });
 
-      const prCreate = await execCommand(
-        "gh",
-        [
-          "pr",
-          "create",
-          "--title",
-          input.title,
-          "--body",
-          prBody,
-          "--base",
-          baseBranch,
-          "--head",
-          branch,
-        ],
-        { cwd: worktreePath, timeoutMs: 30_000, throwOnNonZero: true },
-      );
+      const published = await publishPrToGitHub({
+        worktreePath,
+        branch,
+        baseBranch,
+        title: input.title,
+        prBody,
+      });
 
-      const prUrl = prCreate.stdout.trim().split(/\r?\n/).pop() ?? prCreate.stdout.trim();
       return {
         taskSlug: input.taskSlug,
         branch,
         headTreeHash,
         mode: "gh" as const,
-        prUrl,
+        prUrl: published.prUrl,
         localPrFilePath: null,
-        notice: `PR opened at ${prUrl}. Human approval is required to merge (Red-Line Gate).`,
+        notice: published.notice,
         verifiedReceipts,
         suppressions,
         prBody,
       };
     }
-
     // Local PR fallback when no gh auth or no remote (§1.1.6)
     const localPrFilePath = path.join(ctx.projectLayout.prsDir, `${input.taskSlug}.md`);
     fs.mkdirSync(ctx.projectLayout.prsDir, { recursive: true, mode: 0o700 });

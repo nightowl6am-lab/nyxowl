@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { execCommand } from "../../src/core/exec.ts";
+import { execCommand, type ExecResult } from "../../src/core/exec.ts";
 import { computeRepoId, getHeadTreeHash } from "../../src/core/git.ts";
 import { ensureProjectNyxowlDirs } from "../../src/core/paths.ts";
 import {
@@ -22,9 +22,15 @@ import {
 import { runCli } from "../../src/cli/index.ts";
 import { nyxProjectBootstrapTool } from "../../src/mcp/engines/bootstrap-navigator/index.ts";
 import {
+  buildPrNotice,
+  decidePrPublishAction,
   formatCoverageCell,
+  parseExistingPrList,
+  parseExistingPrView,
+  publishPrToGitHub,
   renderCoverageAndLimitationsSection,
   summarizeSurfaceExercise,
+  type GhExec,
   type VerifiedReceiptView,
 } from "../../src/mcp/engines/worktree-slice/pr-gate.ts";
 import {
@@ -477,5 +483,216 @@ describe("Receipt coverage honesty — PR gate rendering and signed evidence", (
     const slopEntry = prData.verifiedReceipts.find((r) => r.id === slopReceipt.id);
     expect(slopEntry?.coverage).toBeUndefined();
     expect(seamReceipt.id).toBeTruthy();
+  });
+});
+
+/**
+ * The GitHub publishing path must be idempotent: when an OPEN pull request
+ * already tracks the head branch, the PR is updated in place and the SAME url
+ * is returned. These tests never touch the network and never require `gh`
+ * authentication — the executor is stubbed.
+ */
+describe("PR publish idempotency — existing PR is updated in place", () => {
+  interface GhCall {
+    command: string;
+    args: string[];
+  }
+
+  function execResult(overrides: Partial<ExecResult> = {}): ExecResult {
+    return {
+      exitCode: 0,
+      signal: null,
+      stdout: "",
+      stderr: "",
+      combined: "",
+      timedOut: false,
+      truncated: false,
+      durationMs: 1,
+      ...overrides,
+    };
+  }
+
+  /**
+   * Builds a stub `gh` executor. `view` is the stdout of `gh pr view`,
+   * `list` the stdout of `gh pr list`, `create` the stdout of `gh pr create`.
+   */
+  function stubExec(options: {
+    view?: { stdout?: string; exitCode?: number };
+    list?: { stdout?: string; exitCode?: number };
+    create?: { stdout?: string; exitCode?: number };
+  }): { exec: GhExec; calls: GhCall[] } {
+    const calls: GhCall[] = [];
+    const exec: GhExec = async (command, args) => {
+      calls.push({ command, args });
+      if (args[0] === "pr" && args[1] === "view") {
+        return execResult({
+          stdout: options.view?.stdout ?? "",
+          exitCode: options.view?.exitCode ?? 0,
+        });
+      }
+      if (args[0] === "pr" && args[1] === "list") {
+        return execResult({
+          stdout: options.list?.stdout ?? "[]",
+          exitCode: options.list?.exitCode ?? 0,
+        });
+      }
+      if (args[0] === "pr" && args[1] === "edit") {
+        return execResult({ stdout: "" });
+      }
+      if (args[0] === "pr" && args[1] === "create") {
+        return execResult({
+          stdout: options.create?.stdout ?? "https://github.com/acme/repo/pull/99\n",
+          exitCode: options.create?.exitCode ?? 0,
+        });
+      }
+      return execResult({ exitCode: 1, stderr: "unexpected gh invocation" });
+    };
+    return { exec, calls };
+  }
+
+  const PARAMS = {
+    worktreePath: "/tmp/wt",
+    branch: "nyx/gate-hardening",
+    baseBranch: "main",
+    title: "feat: gate hardening",
+    prBody: "## Summary\nBody",
+  };
+
+  it("parses an existing open PR view defensively", () => {
+    expect(
+      parseExistingPrView('{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"OPEN"}'),
+    ).toEqual({ number: 26, url: "https://github.com/acme/repo/pull/26", state: "OPEN" });
+
+    // Malformed output never yields a PR.
+    expect(parseExistingPrView("not json at all")).toBeNull();
+    expect(parseExistingPrView("")).toBeNull();
+    expect(parseExistingPrView("[]")).toBeNull();
+    expect(parseExistingPrView('{"number":26,"state":"OPEN"}')).toBeNull();
+    expect(parseExistingPrView('{"number":"26","url":"u","state":"OPEN"}')).toBeNull();
+    expect(parseExistingPrView('{"number":26,"url":"u"}')).toBeNull();
+    // A non-open PR is not an update target.
+    expect(
+      parseExistingPrView('{"number":26,"url":"https://x/26","state":"CLOSED"}'),
+    ).toBeNull();
+  });
+
+  it("parses an open PR list defensively", () => {
+    expect(
+      parseExistingPrList('[{"number":26,"url":"https://github.com/acme/repo/pull/26"}]'),
+    ).toEqual({ number: 26, url: "https://github.com/acme/repo/pull/26", state: "OPEN" });
+
+    expect(parseExistingPrList("[]")).toBeNull();
+    expect(parseExistingPrList("garbage")).toBeNull();
+    expect(parseExistingPrList('{"number":26}')).toBeNull();
+    expect(parseExistingPrList('[{"url":"https://x/26"}]')).toBeNull();
+  });
+
+  it("decides update only for an existing PR", () => {
+    expect(decidePrPublishAction(null)).toBe("create");
+    expect(
+      decidePrPublishAction({ number: 26, url: "https://x/26", state: "OPEN" }),
+    ).toBe("update");
+  });
+
+  it("renders the update notice with the human-approval red line", () => {
+    const notice = buildPrNotice("update", "https://github.com/acme/repo/pull/26");
+    expect(notice).toBe(
+      "PR updated at https://github.com/acme/repo/pull/26. Human approval is required to merge (Red-Line Gate).",
+    );
+    expect(buildPrNotice("create", "https://x/1")).toContain("PR opened at https://x/1");
+  });
+
+  it("updates the existing open PR in place and returns the SAME url", async () => {
+    const { exec, calls } = stubExec({
+      view: {
+        stdout: '{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"OPEN"}',
+      },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("update");
+    expect(result.prUrl).toBe("https://github.com/acme/repo/pull/26");
+    expect(result.notice).toBe(
+      "PR updated at https://github.com/acme/repo/pull/26. Human approval is required to merge (Red-Line Gate).",
+    );
+
+    const editCall = calls.find((c) => c.args[0] === "pr" && c.args[1] === "edit");
+    expect(editCall).toBeTruthy();
+    expect(editCall?.args).toEqual([
+      "pr",
+      "edit",
+      "26",
+      "--title",
+      "feat: gate hardening",
+      "--body",
+      "## Summary\nBody",
+    ]);
+
+    // No second PR is created for the same branch.
+    expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "create")).toBe(false);
+  });
+
+  it("falls through to create when the PR view is missing", async () => {
+    const { exec, calls } = stubExec({
+      view: { exitCode: 1, stdout: "no pull requests found for branch" },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("create");
+    expect(result.prUrl).toBe("https://github.com/acme/repo/pull/99");
+    expect(result.notice).toContain("PR opened at");
+    expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "create")).toBe(true);
+  });
+
+  it("falls through to create when the PR is closed", async () => {
+    const { exec, calls } = stubExec({
+      view: {
+        stdout: '{"number":26,"url":"https://github.com/acme/repo/pull/26","state":"CLOSED"}',
+      },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("create");
+    expect(result.prUrl).toBe("https://github.com/acme/repo/pull/99");
+    expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "create")).toBe(true);
+    expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "edit")).toBe(false);
+  });
+
+  it("falls through to create when the PR view output is malformed", async () => {
+    const { exec, calls } = stubExec({
+      view: { stdout: "<<<not json>>>" },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("create");
+    expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "create")).toBe(true);
+  });
+
+  it("recovers an existing open PR through the pr list fallback", async () => {
+    const { exec, calls } = stubExec({
+      view: { exitCode: 1, stdout: "unknown flag" },
+      list: { stdout: '[{"number":26,"url":"https://github.com/acme/repo/pull/26"}]' },
+    });
+
+    const result = await publishPrToGitHub(PARAMS, exec);
+
+    expect(result.action).toBe("update");
+    expect(result.prUrl).toBe("https://github.com/acme/repo/pull/26");
+    const listCall = calls.find((c) => c.args[0] === "pr" && c.args[1] === "list");
+    expect(listCall?.args).toEqual([
+      "pr",
+      "list",
+      "--head",
+      "nyx/gate-hardening",
+      "--state",
+      "open",
+      "--json",
+      "number,url",
+    ]);
+    expect(calls.some((c) => c.args[0] === "pr" && c.args[1] === "create")).toBe(false);
   });
 });
