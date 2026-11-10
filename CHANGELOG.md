@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Per-task tool-call soft stop:** removed `budgets.maxToolCallsPerTask` and the cumulative `ERR_BUDGET_EXCEEDED` check that blocked tools after 400 project-wide calls. Token/output budgets and the `audit_log` table remain; legacy configs that still contain the key load successfully and the key is dropped.
 
 ### Changed
+- **Agent guidance:** removed the remaining task-budget wording from the orchestrator and devops contracts, and made the lifecycle wording plan-based. No agent now refers to the removed per-task tool-call budget.
 - **Verify mirrors CI:** `nyx_verify_slice` derives safe local commands from `.github/workflows/ci.yml` (including `test:coverage`, `skills:verify`, and `test:agents`) and prefers `test:coverage` in the no-workflow fallback, so a gate can no longer pass locally while the coverage job fails in CI.
 - **Non-pro model roster:** `nyx-probe`, `nyx-devops`, `nyx-designer`, `nyx-product`, and `nyx-testwriter` now use the supported non-pro models (`glm-5.3-flash#high`, `deepseek-v4.1-flash#high`, `qwen3.8-flash#xhigh`); `mimo-v2.6-pro`, `minimax-m3.1-flash`, and `qwen3.7-plus` are rejected with the available-model list.
 

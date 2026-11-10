@@ -82,7 +82,7 @@ owner decision argued with the measured numbers.
 
 ### 9. Budget and lifecycle
 
-A slice's tool budget covers the full lifecycle including cleanup. Leave no
+A slice's plan covers the full lifecycle including cleanup. Leave no
 worktree, branch, process, temporary file, or lock behind. Negative finishing is
 a defect even when the code is correct.
 

@@ -81,7 +81,7 @@ Editing CI workflows, deployment configuration, secrets, or repository protectio
 
 ## Lifecycle and Budget
 
-Plan the slice's tool budget for the full lifecycle, including cleanup. Before
+Plan the slice's work for the full lifecycle, including cleanup. Before
 handoff, confirm no worktree, branch, process, temporary file, or lock is left
 behind; stop every process started with `nyx_proc` and remove disposable
 worktrees through the sanctioned tooling. Negative finishing is a defect even
