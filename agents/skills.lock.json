@@ -23,7 +23,7 @@
           "upstreamPath": "plugins/agent-teams/skills/parallel-feature-development/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "7ca9bb19ddf505039ea258c2d976c7dd41c075de09ede04a6b8bec21853424b3",
+          "localSha256": "ec4ee02d86b777a3a2fbff5c965fdb779ebfb2329b83f1766a24d434dffa540d",
           "upstreamSha256": "9d39b7d0f3011a8e0f468d000987758f6ac493edc6e6fe73227fa3e75e209458",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },
@@ -785,7 +785,7 @@
           "upstreamPath": "skills/ci-cd-and-automation/SKILL.md",
           "license": "MIT",
           "licenseFile": "LICENSE",
-          "localSha256": "de548fcbc3d2f56b994b472c7d7595c0183f43a1daaf3e93b4c28c45ee39e11c",
+          "localSha256": "7fa0d8e41b160fbeace8eb86774b59cc0a035044c299988a5753802c948e725c",
           "upstreamSha256": "5e0e55c059670a7838dc9d58dc20a3a645c0d43c974416490112af7de522df95",
           "adaptation": "Adapted to NyxOwl tools and Hard Rules; upstream structure and methodology retained."
         },

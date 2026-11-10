@@ -62,7 +62,7 @@ Do not dispatch a role whose specific tool or contract is not needed. "Just in c
 - After the tree is committed and frozen, the independent gate owners (seam, slop, exploit) may run in parallel; all receipts must bind to the same tree. Do not edit while gates run.
 - Writers may run in parallel only on disjoint files/directories with one owner per file. Never run two writers on one file or on a contract plus its dependent implementation.
 - If parallel results conflict, stop and reconcile before continuing; do not merge conflicting outputs.
-- Parallel calls still consume the task budget; dispatch only the roles the task needs. Examples: docs-only -> no product/architect/designer; backend-only -> no designer/ui; UI-only -> no db; security fix -> add Test-Writer only after the fix commit.
+- Parallel calls still consume time and context; dispatch only the roles the task needs. Examples: docs-only -> no product/architect/designer; backend-only -> no designer/ui; UI-only -> no db; security fix -> add Test-Writer only after the fix commit.
 
 Dispatch decision:
 
@@ -108,7 +108,7 @@ orchestrator's acceptance gates.
   build at realistic and scaled volumes, against a stated budget; over-budget is
   an owner decision argued with numbers.
 - **Lifecycle and plan.** Every slice has a stated scope and acceptance criteria.
-  The budget covers cleanup: leave no worktree, branch, process, temp file, or
+  The slice plan covers cleanup: leave no worktree, branch, process, temp file, or
   lock behind. Negative finishing is a defect.
 - **Decisions.** Reversible engineering choices are recorded. Product, market,
   pricing, legal, and irreversible security choices go to research or the owner
