@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { z } from "zod";
+import { buildHandoffDigest } from "../../../core/handoff-compress.ts";
 import { assertWithinTokenBudget } from "../../../core/tokens.ts";
 import { defineTool } from "../../tool.ts";
 
@@ -27,6 +28,9 @@ export const taskHandoffInputSchema = z.object({
 export const taskHandoffOutputSchema = z.object({
   handoffId: z.number().int(),
   tokenCount: z.number().int(),
+  originalTokenCount: z.number().int(),
+  compressed: z.boolean(),
+  compressionNotes: z.array(z.string()),
   handoffFilePath: z.string(),
   locksReleased: z.number().int(),
   compactionInstruction: z.string(),
@@ -55,27 +59,19 @@ export const nyxTaskHandoffTool = defineTool({
       );
     }
 
-    const digestLines = [
-      `# Nyxowl Task Handoff`,
-      `- **Completed:** ${input.completedTask}`,
-      `- **Next:** ${input.nextTask}`,
-      `- **Files (${input.filesChanged.length}):** ${input.filesChanged.join(", ") || "none"}`,
-      `- **Receipts:** ${input.receipts.join(", ") || "none"}`,
-      `- **Decisions:**`,
-      ...input.keyDecisions.map((d) => `  - ${d}`),
-    ];
-    if (input.subagentSummary) {
-      digestLines.push(
-        `- **Subagent (${input.subagentSummary.role} / ${input.subagentSummary.slice}):** ${input.subagentSummary.status} -> ${input.subagentSummary.nextAction}`,
-      );
-    }
-    const digestMarkdown = digestLines.join("\n");
-
-    // Reject oversized digests rather than truncating (§1.5.5, §6 Engine 7)
-    const tokenCount = assertWithinTokenBudget(
-      digestMarkdown,
+    // The digest is compressed deterministically when over budget instead of
+    // rejecting the call: a rejected handoff wastes a turn and leaves the next
+    // session without a handoff at all.
+    const digest = buildHandoffDigest(
+      {
+        completedTask: input.completedTask,
+        filesChanged: input.filesChanged,
+        keyDecisions: input.keyDecisions,
+        nextTask: input.nextTask,
+        receipts: input.receipts,
+        ...(input.subagentSummary ? { subagentSummary: input.subagentSummary } : {}),
+      },
       ctx.config.budgets.handoffTokens,
-      "Task Handoff Digest",
     );
 
     let handoffId = 0;
@@ -96,8 +92,8 @@ export const nyxTaskHandoffTool = defineTool({
           JSON.stringify(input.keyDecisions),
           input.nextTask,
           JSON.stringify(input.receipts),
-          digestMarkdown,
-          tokenCount,
+          digest.digestMarkdown,
+          digest.tokenCount,
           nowIso,
         );
       handoffId = Number(insertRes.lastInsertRowid);
@@ -106,19 +102,22 @@ export const nyxTaskHandoffTool = defineTool({
       locksReleased = Number(delRes.changes);
     });
 
-    fs.writeFileSync(ctx.projectLayout.handoffPath, digestMarkdown + "\n", {
+    fs.writeFileSync(ctx.projectLayout.handoffPath, digest.digestMarkdown + "\n", {
       encoding: "utf8",
       mode: 0o600,
     });
 
     return {
       handoffId,
-      tokenCount,
+      tokenCount: digest.tokenCount,
+      originalTokenCount: digest.originalTokenCount,
+      compressed: digest.compressed,
+      compressionNotes: digest.compressionNotes,
       handoffFilePath: ctx.projectLayout.handoffPath,
       locksReleased,
       compactionInstruction:
         "Context handoff persisted. Safe to compact conversation history and resume via nyx_context_hydrate.",
-      digestMarkdown,
+      digestMarkdown: digest.digestMarkdown,
     };
   },
 });
