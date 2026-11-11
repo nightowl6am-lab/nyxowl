@@ -53,7 +53,7 @@ nyx_project_bootstrap({
 
 Docs-only path: skip product, architect, and designer; edit the document yourself; dispatch `nyx-api` for `nyx_seam_check` and `nyx_verify_slice`, `nyx-ui` for `nyx_slop_check`, and `nyx-sec` for `nyx_exploit_probe`.
 
-Do not dispatch a role whose specific tool or contract is not needed. "Just in case" dispatch burns tokens and can create stale or duplicate receipts. Never assign two writers to one file. Before each dispatch, call `nyx_task_dispatch` to resolve the role skill, promoted keys, lock plan, and budget; then invoke the role.
+Do not dispatch a role whose specific tool or contract is not needed. "Just in case" dispatch burns tokens and can create stale or duplicate receipts. Never assign two writers to one file. Before each dispatch, call `nyx_task_dispatch` to resolve the role skill, promoted keys, lock plan, budget, and the declared capability manifest; a false or missing capability flag means the tool cannot do that thing, so do not plan around it.
 
 ## Parallel Dispatch
 
@@ -208,6 +208,8 @@ Every handoff contains:
 - Assumptions recorded instead of questions.
 
 Publish the handoff with `nyx_blackboard_publish` and return `subagent-summary-v1`. The orchestrator reads it with `nyx_blackboard_read` and stores artifacts with `nyx_artifact_read`.
+
+If the digest exceeds the token budget, `nyx_task_handoff` compresses it deterministically, keeps the exact next action and files, and returns `compressed: true`. It never rejects the handoff for size.
 
 ## Escalation
 

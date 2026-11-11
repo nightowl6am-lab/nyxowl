@@ -20,6 +20,19 @@ Three words are never interchangeable:
 A verdict that exercises a subset reports `partial` or `none` with counts. It is
 never described as "full coverage" unless the tool itself reports `full`.
 
+## Scope vocabulary
+
+- **full** — every configured step and surface in scope ran and passed.
+- **narrowed** — an explicitly configured subset ran (`verify.scopeSteps`). The
+  receipt records the exact selection and is never `full`, even when every
+  selected step passes.
+- **not-applicable** — no configured step applies. The justification must be
+  machine-checkable, and passing unrelated steps cannot stand in for it.
+
+Prerequisites and state are resolved before execution. Unmet prerequisites fail
+closed with a machine-readable configuration or environment reason; they never
+produce a code-failure RED or a GREEN with an unstated narrower scope.
+
 ## Required outcomes
 
 ### 1. Evidence completeness

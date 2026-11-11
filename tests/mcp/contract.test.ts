@@ -268,13 +268,13 @@ describe("Step 2 — MCP Server Contract & Engines 5 (Blackboard/Locks) and 7 (C
     expect(entriesWriter[0]?.content).not.toContain("<untrusted_data");
   });
 
-  it("enforces <=400 token handoff limit, writes HANDOFF.md, and hydrates context", async () => {
-    // 1. Oversized handoff (>400 tokens) is rejected, not truncated
+  it("compresses an oversized handoff under budget, writes HANDOFF.md, and hydrates context", async () => {
+    // 1. Oversized handoff (>400 tokens) is compressed deterministically, not rejected
     const hugeDecisions = Array.from(
       { length: 60 },
       (_, i) => `Decision #${i}: We chose architectural pattern alpha-beta-gamma-${i} for subsystem ${i}.`,
     );
-    const rejectedHandoff = await client.callTool({
+    const compressedHandoff = await client.callTool({
       name: "nyx_task_handoff",
       arguments: {
         completedTask: "Huge task",
@@ -284,10 +284,18 @@ describe("Step 2 — MCP Server Contract & Engines 5 (Blackboard/Locks) and 7 (C
         receipts: ["01JTESTRECEIPT"],
       },
     });
-    expect(rejectedHandoff.isError).toBe(true);
-    expect((rejectedHandoff.structuredContent as { code: string }).code).toBe(
-      "ERR_BUDGET_EXCEEDED",
-    );
+    expect(compressedHandoff.isError).toBeFalsy();
+    const compressedData = compressedHandoff.structuredContent as {
+      compressed: boolean;
+      tokenCount: number;
+      originalTokenCount: number;
+      digestMarkdown: string;
+    };
+    expect(compressedData.compressed).toBe(true);
+    expect(compressedData.tokenCount).toBeLessThanOrEqual(400);
+    expect(compressedData.originalTokenCount).toBeGreaterThan(400);
+    expect(compressedData.digestMarkdown).toContain("**Next:**");
+    expect(compressedData.digestMarkdown).toContain("**Compressed:** yes");
 
     // 2. Concise handoff succeeds and writes HANDOFF.md
     const okHandoff = await client.callTool({

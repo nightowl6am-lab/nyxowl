@@ -49,6 +49,51 @@ describe("documentation links", () => {
     expect(fs.existsSync(path.join(docsDir, "updating.md"))).toBe(true);
   });
 
+  it("keeps every README/docs file structurally valid after edits", () => {
+    const issues: string[] = [];
+    for (const file of markdownFiles()) {
+      const relative = path.relative(repoRoot, file);
+      const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+      let openFence: string | null = null;
+      let previousHeading = 0;
+      let h1Count = 0;
+      for (const [index, line] of lines.entries()) {
+        const trimmed = line.trimStart();
+        const fence = trimmed.startsWith("```") ? "```" : trimmed.startsWith("~~~") ? "~~~" : null;
+        if (fence !== null) {
+          if (openFence === null) {
+            openFence = fence;
+          } else if (openFence === fence) {
+            openFence = null;
+          }
+          continue;
+        }
+        if (openFence !== null) {
+          continue;
+        }
+        const heading = /^(#{1,6})\s+/.exec(line);
+        if (!heading || !heading[1]) {
+          continue;
+        }
+        const level = heading[1].length;
+        if (level === 1) {
+          h1Count += 1;
+        }
+        if (previousHeading > 0 && level > previousHeading + 1) {
+          issues.push(`${relative}:${index + 1} heading jumps from H${previousHeading} to H${level}`);
+        }
+        previousHeading = level;
+      }
+      if (openFence !== null) {
+        issues.push(`${relative}: unclosed ${openFence} fence`);
+      }
+      if (h1Count !== 1) {
+        issues.push(`${relative}: expected exactly one H1, found ${h1Count}`);
+      }
+    }
+    expect(issues).toEqual([]);
+  });
+
   it("resolves every relative Markdown link in README.md and docs/*.md", () => {
     const missing: string[] = [];
 

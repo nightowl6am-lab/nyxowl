@@ -97,7 +97,7 @@ Publish the report as a `security` entry with `nyx_blackboard_publish` and store
 
 ## Adversarial Realism
 
-- Probe as an authenticated, in-scope user by default. If the app has no auth surface, say so and justify the unauthenticated probe.
+- Probe as an authenticated, in-scope user by default. If `nyx_exploit_probe` declares authenticated probing unavailable, record the exact limitation and return partial evidence; never claim authenticated coverage. If the app has no auth surface, say so and justify the unauthenticated probe.
 - Keep credentials out of the URL, receipt, artifact, log, and transcript. Use `nyx_env_inspect` for key shape only; never print a value. If a credential is required and no isolated injection path exists, record the exact missing decision and return `BLOCKED_REDLINE`.
 - Cover abuse controls, not only reachability: authorization/IDOR across tenants, mass assignment, replay, rate limiting and lockout, CORS with credentials, and error leakage.
 - Unauthenticated probing alone is a limitation, never full security evidence. State it in the receipt and in `openIssues`.

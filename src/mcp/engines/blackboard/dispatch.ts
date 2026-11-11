@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { defineTool } from "../../tool.ts";
 import { agentSkillPath, loadAgentSkill } from "../../../cli/skills.ts";
+import {
+  CAPABILITY_FLAG_NAMES,
+  getRoleCapabilities,
+  type CapabilityFlag,
+  type ToolCapability,
+} from "../../../core/capabilities.ts";
 
 export const taskDispatchInputSchema = z.object({
   targetRole: z.enum([
@@ -20,6 +26,16 @@ export const taskDispatchInputSchema = z.object({
   repoPath: z.string().optional(),
 });
 
+const capabilityFlagShape = Object.fromEntries(
+  CAPABILITY_FLAG_NAMES.map((flag) => [flag, z.boolean()]),
+) as Record<CapabilityFlag, z.ZodBoolean>;
+
+const dispatchCapabilitySchema = z.object({
+  tool: z.string(),
+  ...capabilityFlagShape,
+  limitations: z.array(z.string()),
+});
+
 export const taskDispatchOutputSchema = z.object({
   targetRole: z.string(),
   taskSummary: z.string(),
@@ -34,8 +50,25 @@ export const taskDispatchOutputSchema = z.object({
     subagentSummaryTokens: z.number().int(),
     maxToolOutputTokens: z.number().int(),
   }),
+  /**
+   * Declared capabilities for every tool this role may call. A missing flag is
+   * unavailable: the orchestrator must not plan around an undeclared ability.
+   */
+  capabilities: z.array(dispatchCapabilitySchema),
+  capabilityManifestVersion: z.literal(1),
   outputContract: z.literal("subagent-summary-v1"),
 });
+
+function flattenCapability(capability: ToolCapability): z.infer<typeof dispatchCapabilitySchema> {
+  const flags = Object.fromEntries(
+    CAPABILITY_FLAG_NAMES.map((flag) => [flag, capability[flag]]),
+  ) as Record<CapabilityFlag, boolean>;
+  return {
+    tool: capability.tool,
+    ...flags,
+    limitations: [...capability.limitations],
+  };
+}
 
 export const nyxTaskDispatchTool = defineTool({
   name: "nyx_task_dispatch",
@@ -78,6 +111,8 @@ export const nyxTaskDispatchTool = defineTool({
         subagentSummaryTokens: ctx.config.budgets.subagentSummaryTokens,
         maxToolOutputTokens: ctx.config.budgets.maxToolOutputTokens,
       },
+      capabilities: getRoleCapabilities(input.targetRole).map(flattenCapability),
+      capabilityManifestVersion: 1 as const,
       outputContract: "subagent-summary-v1" as const,
     };
   },
