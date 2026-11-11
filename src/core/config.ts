@@ -47,6 +47,20 @@ export interface NyxConfig {
     slop: GatePolicy;
     exploit: GatePolicy;
   };
+  /**
+   * Verify preflight policy. `scope: "narrowed"` runs only `scopeSteps` (or all
+   * resolved steps when null) and is never reported as full coverage.
+   * `state` declares require/forbid paths checked BEFORE any command runs.
+   */
+  verify: {
+    scope: "full" | "narrowed";
+    scopeSteps: string[] | null;
+    maxStepDurationMs: number | null;
+    state: {
+      requirePaths: string[];
+      forbidPaths: string[];
+    };
+  };
   slop: {
     scope: "diff" | "full";
     disable: string[];
@@ -116,6 +130,15 @@ export const DEFAULT_CONFIG: NyxConfig = {
     seam: "required",
     slop: "required",
     exploit: "auto",
+  },
+  verify: {
+    scope: "full",
+    scopeSteps: null,
+    maxStepDurationMs: null,
+    state: {
+      requirePaths: [],
+      forbidPaths: [],
+    },
   },
   slop: {
     scope: "diff",
@@ -347,6 +370,64 @@ function validateAndMergeConfig(
               );
             }
             next.gates[k] = v as GatePolicy;
+          }
+        }
+        break;
+      }
+      case "verify": {
+        if (typeof val !== "object" || val === null || Array.isArray(val)) {
+          throw new NyxError("ERR_CONFIG_INVALID", `${sourceLabel}: verify must be object`);
+        }
+        const vObj = val as Record<string, unknown>;
+        if ("scope" in vObj && vObj["scope"] !== undefined) {
+          if (vObj["scope"] !== "full" && vObj["scope"] !== "narrowed") {
+            throw new NyxError(
+              "ERR_CONFIG_INVALID",
+              `${sourceLabel}: verify.scope must be full | narrowed`,
+            );
+          }
+          next.verify.scope = vObj["scope"];
+        }
+        if ("scopeSteps" in vObj && vObj["scopeSteps"] !== undefined) {
+          const raw = vObj["scopeSteps"];
+          if (
+            raw !== null &&
+            (!Array.isArray(raw) || !raw.every((step) => typeof step === "string"))
+          ) {
+            throw new NyxError(
+              "ERR_CONFIG_INVALID",
+              `${sourceLabel}: verify.scopeSteps must be string[] or null`,
+            );
+          }
+          next.verify.scopeSteps = raw === null ? null : [...raw];
+        }
+        if ("maxStepDurationMs" in vObj && vObj["maxStepDurationMs"] !== undefined) {
+          const raw = vObj["maxStepDurationMs"];
+          if (raw !== null && (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1)) {
+            throw new NyxError(
+              "ERR_CONFIG_INVALID",
+              `${sourceLabel}: verify.maxStepDurationMs must be a positive integer or null`,
+            );
+          }
+          next.verify.maxStepDurationMs = raw as number | null;
+        }
+        if ("state" in vObj && vObj["state"] !== undefined) {
+          const raw = vObj["state"];
+          if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+            throw new NyxError("ERR_CONFIG_INVALID", `${sourceLabel}: verify.state must be object`);
+          }
+          const sObj = raw as Record<string, unknown>;
+          for (const key of ["requirePaths", "forbidPaths"] as const) {
+            if (key in sObj && sObj[key] !== undefined) {
+              const paths = sObj[key];
+              if (!Array.isArray(paths) || !paths.every((p) => typeof p === "string")) {
+                throw new NyxError(
+                  "ERR_CONFIG_INVALID",
+                  `${sourceLabel}: verify.state.${key} must be string[]`,
+                );
+              }
+              next.verify.state[key] = [...paths];
+            }
           }
         }
         break;

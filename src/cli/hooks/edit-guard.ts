@@ -55,6 +55,55 @@ function checkFileLockConflict(options: {
   }
 }
 
+/**
+ * Resolves the edit target against the host cwd AND registered worktrees.
+ *
+ * The OpenCode plugin forwards the edit tool's relative `filePath` but the
+ * hook process inherits the server cwd (the main checkout). Resolving only
+ * against the cwd would misclassify a legitimate worktree edit as a main
+ * checkout edit. Candidate selection is fail-closed: a worktree candidate is
+ * used only when it stays inside that worktree and exists (or its parent
+ * directory exists).
+ */
+function resolveEditTarget(
+  rawFilePath: string,
+  cwd: string,
+  nyxowlHome?: string,
+): string {
+  const absFromCwd = path.resolve(cwd, rawFilePath);
+  if (path.isAbsolute(rawFilePath) || absFromCwd.includes("/.nyxowl/worktrees/")) {
+    return absFromCwd;
+  }
+  try {
+    const repoId = computeRepoIdSync(cwd);
+    const projPaths = resolveProjectNyxowlPaths(repoId, nyxowlHome);
+    if (!fs.existsSync(projPaths.stateDbFile)) {
+      return absFromCwd;
+    }
+    const db = openProjectDb(projPaths.stateDbFile);
+    try {
+      const rows = db.db
+        .prepare("SELECT worktree_path FROM worktrees WHERE status != 'removed'")
+        .all() as Array<{ worktree_path: string }>;
+      for (const row of rows) {
+        const worktree = path.resolve(row.worktree_path);
+        const candidate = path.resolve(worktree, rawFilePath);
+        if (!candidate.startsWith(`${worktree}${path.sep}`)) {
+          continue;
+        }
+        if (fs.existsSync(candidate) || fs.existsSync(path.dirname(candidate))) {
+          return candidate;
+        }
+      }
+    } finally {
+      db.close();
+    }
+  } catch {
+    // Fall through to the cwd resolution; the caller still applies the guard.
+  }
+  return absFromCwd;
+}
+
 export function evaluateEditGuardPayload(
   payload: HookInputPayload,
   options?: {
@@ -88,7 +137,7 @@ export function evaluateEditGuardPayload(
   }
 
   const cwd = payload.cwd ?? env["NYXOWL_PROJECT"] ?? process.cwd();
-  const absFile = path.resolve(cwd, rawFilePath);
+  const absFile = resolveEditTarget(rawFilePath, cwd, options?.nyxowlHome);
   const normAbs = absFile.replace(/\\/g, "/");
 
   // 2. Main checkout protection: edits during a Nyxowl session must target an isolated worktree

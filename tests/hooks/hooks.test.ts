@@ -266,6 +266,50 @@ describe("Step 9 — Host Hooks (guard, edit-guard, session-start, pre-compact)"
     expect(dbOwnerAllowed?.decision).toBe("allow");
   });
 
+  it("resolves a relative worktree edit even when the hook cwd is the main checkout", () => {
+    const repoId = computeRepoIdSync(projectDir);
+    const projPaths = ensureProjectNyxowlDirs(repoId, nyxowlHome);
+    const worktreeDir = path.join(projPaths.worktreesRootDir, "feat-relative");
+    fs.mkdirSync(path.join(worktreeDir, "src"), { recursive: true });
+    fs.writeFileSync(path.join(worktreeDir, "src", "server.ts"), "export const x = 1;\n");
+
+    const db = openProjectDb(projPaths.stateDbFile);
+    const nowIso = new Date().toISOString();
+    db.withWriteTransaction((conn) => {
+      conn
+        .prepare(
+          `INSERT INTO worktrees (task_slug, branch, root, worktree_path, base_branch, base_sha, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "feat-relative",
+          "nyx/feat-relative",
+          projPaths.worktreesRootDir,
+          worktreeDir,
+          "main",
+          "0000000000000000000000000000000000000000",
+          "active",
+          nowIso,
+          nowIso,
+        );
+    });
+    db.close();
+
+    // The OpenCode plugin forwards a relative file path while the hook process
+    // inherits the main checkout as cwd. The guard must resolve the target
+    // inside the registered worktree, not deny it as a main-checkout edit.
+    const decision = evaluateEditGuardPayload(
+      {
+        tool_name: "Edit",
+        tool_input: { file_path: "src/server.ts" },
+        agent_name: "nyx-api",
+        cwd: projectDir,
+      },
+      { env: { NYXOWL_SESSION: "1", NYXOWL_PROJECT: projectDir }, nyxowlHome },
+    );
+    expect(decision?.decision).toBe("allow");
+  });
+
   it("enforces fail-safe deny on malformed guard input and p95 latency < 150ms", async () => {
     const prevSession = process.env["NYXOWL_SESSION"];
     process.env["NYXOWL_SESSION"] = "1";

@@ -50,6 +50,30 @@
         "exploit": { "type": "string", "enum": ["required", "auto", "off"], "default": "auto" }
       }
     },
+    "verify": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": { "type": "string", "enum": ["full", "narrowed"], "default": "full" },
+        "scopeSteps": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "string",
+            "enum": ["typecheck", "lint", "test", "coverage", "build", "skills", "agents"]
+          },
+          "default": null
+        },
+        "maxStepDurationMs": { "type": ["integer", "null"], "minimum": 1, "default": null },
+        "state": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requirePaths": { "type": "array", "items": { "type": "string" }, "default": [] },
+            "forbidPaths": { "type": "array", "items": { "type": "string" }, "default": [] }
+          }
+        }
+      }
+    },
     "slop": {
       "type": "object",
       "additionalProperties": false,
