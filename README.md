@@ -9,7 +9,7 @@
 
 ## 2-Command Quickstart
 
-Requires OpenCode v2.2.5 on PATH (`npm install -g opencode-ai`).
+Requires OpenCode v2.2.5 on PATH (`npm install -g @opencode/cli@2.2.5`).
 
 ```bash
 npm install -g nyxowl

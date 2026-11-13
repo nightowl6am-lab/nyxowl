@@ -1,6 +1,10 @@
 {
   "name": "nyxowl",
   "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightowl6am-lab/nyxowl.git"
+  },
   "description": "OpenCode-only, Zero-Slop, Security-Hardened, Token-Efficient Product & Engineering Team (1 Primary Agent + 10 Specialized Subagents) backed by an 8-Engine Heavy Runtime MCP Server",
   "license": "Apache-2.0",
   "type": "module",
