@@ -298,7 +298,7 @@ Expected final lines:
 
 ```
 M7_FULL_EVAL: PASS
-SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)
+SLICE5_DOGFOOD: PASS (target=private-production-repo; test=pnpm run test)
 ```
 
 The full matrix covers 10 expected `PROVEN` cases, 5 negatives with the exact
@@ -306,7 +306,7 @@ expected `(verdict, reason)` (`n1`/`n3` `UNPROVEN`/`NO_DETECTOR_HIT_ON_VULN`;
 `n2`/`n4`/`n5` `REFUTED`/`PATCHED_STILL_LEAKS`), and 8 red-team proofs that must
 stay non-`PROVEN`. It fails closed on any false `PROVEN`, any negative
 verdict/reason mismatch, any expected-`PROVEN` miss, or any failed `tw-recheck`.
-The real-repository dogfood clones a tracked-only `real-estate-os`, commits a
+The real-repository dogfood clones a tracked-only `private-production-repo`, commits a
 real Vitest smoke test in an external worktree, runs the repo's real
 `pnpm run test` from DNA, and requires GREEN verify/seam/slop/exploit receipts
 plus a four-receipt local PR. It never reads `.env`, never installs, and never

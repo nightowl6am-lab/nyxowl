@@ -1,6 +1,6 @@
 {
   "name": "nyxowl",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nightowl6am-lab/nyxowl.git"
@@ -27,7 +27,19 @@
     "schemas",
     "data",
     "docs",
-    "test-writer",
+    "test-writer/agent",
+    "test-writer/bin",
+    "test-writer/bootstrap",
+    "test-writer/gate",
+    "test-writer/grader",
+    "test-writer/DECISIONS.md",
+    "test-writer/HELPER_API.md",
+    "test-writer/INTEGRATION.md",
+    "test-writer/PLAN_STATUS.md",
+    "test-writer/README_OWNER.md",
+    "test-writer/SANDBOX.md",
+    "test-writer/requirements.in",
+    "test-writer/requirements.lock",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",

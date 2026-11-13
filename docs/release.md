@@ -10,7 +10,7 @@ release that fails any gate below.
 - [ ] `CHANGELOG.md` has honest entries for every user-visible change.
 - [x] Full M7 evidence is present: `test-writer/qa/EVIDENCE-M7.md` records
       `M7_FULL_EVAL: PASS` with recall 1.0, false_reject 0, and false_proven 0,
-      plus `SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)`.
+      plus `SLICE5_DOGFOOD: PASS (target=private-production-repo; test=pnpm run test)`.
 - [ ] The version in `package.json` is the intended release version.
 - [ ] `docs/updating.md` and `README.md` describe the current CLI behavior.
 
@@ -74,7 +74,7 @@ Expected highlights:
   `M1M3_SELFTESTS: PASS`.
 - The full-M7 matrix prints `M7_FULL_EVAL: PASS` with recall 1.0 and
   false_proven 0; the real-repository dogfood prints
-  `SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)`.
+  `SLICE5_DOGFOOD: PASS (target=private-production-repo; test=pnpm run test)`.
 
 ## 4. CI gates
 

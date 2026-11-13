@@ -12,7 +12,7 @@ Last updated: 2026-11-08.
 | M4 | complete |
 | M5 | complete |
 | M6 | complete; advisory finish, three-run matrix, parent E2E, and the live OpenCode host-isolation transcript passed on attempt 2 per `qa/EVIDENCE-M6.md` |
-| M7 | complete; full-M7 23-case matrix (10 positives, 5 negatives, 8 red-team), three-run worst-of-3, and the real-repository `real-estate-os` dogfood passed. Evidence: `qa/EVIDENCE-M7.md` |
+| M7 | complete; full-M7 23-case matrix (10 positives, 5 negatives, 8 red-team), three-run worst-of-3, and the real-repository `private-production-repo` dogfood passed. Evidence: `qa/EVIDENCE-M7.md` |
 
 ## Rootless install gate
 
@@ -92,7 +92,7 @@ These are rootless checks and do not replace the owner acceptance above.
 - Full M7 (PR D): 23 deterministic cases across `qa/m7_cases/`,
   `qa/m7_cases_full/`, and `qa/m7_redteam/`, the model-free
   `qa/m7_full_eval.py` three-run matrix, and the real-repository
-  `qa/m7_real_dogfood.mjs` (`real-estate-os`, real `pnpm run test`). Measured:
+  `qa/m7_real_dogfood.mjs` (`private-production-repo`, real `pnpm run test`). Measured:
   recall 1.0, false_reject 0, false_proven 0, negatives 15/15 exact,
   red-team 24/24 non-`PROVEN`, gate_runs 69, recheck_runs 30, model_tokens 0,
   prompt_chars 59187, wall 8.377 min; `refuted_correct` 9/9 = 1.0 over the
