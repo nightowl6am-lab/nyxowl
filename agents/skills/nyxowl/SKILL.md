@@ -242,11 +242,11 @@ End every task with a human answer first, then the machine contract.
 Orchestrator example (human summary, then contract):
 
 ```text
-The slice is complete: docs/agent-readiness.md changed, and gate status is GREEN but limited because verify ran 0 configured commands. There is no remote configured; the local PR body is at /home/ocagent/nyxowl-demo/prs/reporting.md.
+The slice is complete: docs/agent-readiness.md changed, and gate status is GREEN but limited because verify ran 0 configured commands. There is no remote configured; the local PR body is at ~/project/prs/reporting.md.
 ```
 
 ```json
-{"worktree":"/abs/wt","branch":"nyx/reporting","slicesCompleted":["reporting"],"receipts":[{"id":"verify","status":"GREEN"}],"prUrlOrPath":"/home/ocagent/nyxowl-demo/prs/reporting.md","nextHumanAction":"review the local PR body"}
+{"worktree":"/abs/wt","branch":"nyx/reporting","slicesCompleted":["reporting"],"receipts":[{"id":"verify","status":"GREEN"}],"prUrlOrPath":"~/project/prs/reporting.md","nextHumanAction":"review the local PR body"}
 ```
 
 Subagent example (human sentence, then contract):

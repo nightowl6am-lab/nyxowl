@@ -149,7 +149,7 @@ network, remote service, secret, production root, or `tw-grader` is used.
 | --- | --- |
 | `TW_VENV_PYTHON=$HOME/.nyxowl/test-writer/venv/bin/python python3 test-writer/qa/m7_full_eval.py --rounds 3 --out /tmp/opencode/m7-full-eval-r3` | `M7_FULL_EVAL: PASS` |
 | `TW_VENV_PYTHON=$HOME/.nyxowl/test-writer/venv/bin/python python3 test-writer/qa/m7_full_eval.py --rounds 1 --out /tmp/opencode/m7-full-eval-metricfix-r1b` | `M7_FULL_EVAL: PASS` after the metric fix |
-| `TW_VENV_PYTHON=$HOME/.nyxowl/test-writer/venv/bin/python node test-writer/qa/m7_real_dogfood.mjs` | `SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)` |
+| `TW_VENV_PYTHON=$HOME/.nyxowl/test-writer/venv/bin/python node test-writer/qa/m7_real_dogfood.mjs` | `SLICE5_DOGFOOD: PASS (target=private-production-repo; test=pnpm run test)` |
 | `python3 -m compileall -q test-writer` | exit 0 |
 | `python3 test-writer/fixtures/build_fixtures.py --verify` | `FIXTURES_VERIFY: PASS` |
 | `TW_VENV_PYTHON=$HOME/.nyxowl/test-writer/venv/bin/python python3 test-writer/selftests/run_all.py` | 239 tests, `M0_SELFTESTS: PASS`, `M1M3_SELFTESTS: PASS` |
@@ -252,14 +252,14 @@ writes a dogfood-only `.nyxowl/config.json`
 external worktree, commits a real Vitest smoke regression test, runs the
 target's real DNA test command, verifies, checks seam/slop/exploit, opens the
 four-receipt local PR, checks the allowlisted dependency, and removes the
-worktree. The primary target is `real-estate-os`; `nyxowl-self` is the fallback.
+worktree. The primary target is `private-production-repo`; `nyxowl-self` is the fallback.
 
 Final run:
 
 ```
-## target=real-estate-os
+## target=private-production-repo
 step | status | detail
-source-check | PASS | /home/ocagent/work/real-estate-os/repo
+source-check | PASS | /abs/dogfood/repo
 clone | PASS | tracked-only local clone
 no-env | PASS | no .env file and no tracked .env/.env.* secret path
 config | PASS | linkEnv=false, install=off, github=local
@@ -275,7 +275,7 @@ nyx_exploit_probe | PASS | status=GREEN; 6 vectors
 nyx_worktree_pr | PASS | mode=local; verify:GREEN, seam:GREEN, slop:GREEN, exploit:GREEN
 nyx_dep_guard | PASS | zod allowlisted offline
 nyx_worktree_manage | PASS | removed
-SLICE5_DOGFOOD: PASS (target=real-estate-os; test=pnpm run test)
+SLICE5_DOGFOOD: PASS (target=private-production-repo; test=pnpm run test)
 ```
 
 The `nyxowl-self` fallback reached verify GREEN but stopped at seam with a real

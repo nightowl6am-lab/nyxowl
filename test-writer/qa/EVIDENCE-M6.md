@@ -1,7 +1,7 @@
 # M6 evidence
 
 Date: 2026-11-07
-Worktree: `/home/ocagent/work/nyxowl/worktrees/nyxowl-test-writer-m6`
+Worktree: `/abs/worktree/nyxowl-test-writer-m6`
 Branch: `wt/test-writer-m6`
 Base: `67bdc0a` (M5 merged)
 Scope: M6 advisory finish, host-isolation permissions, model-free three-run
@@ -111,7 +111,7 @@ below as history.
 
 | Item | Value |
 | --- | --- |
-| OS user | `ocagent` (rootless; no sudo, no `/opt`, no `/var/lib`) |
+| OS user | `<user>` (rootless; no sudo, no `/opt`, no `/var/lib`) |
 | Node / npm | `v24.22.2` / npm 11.x |
 | Python (host) | `3.12.3` |
 | Python (runtime venv) | `3.12.3`, pytest `9.2.0`, hypothesis `6.170.15` |
@@ -207,7 +207,7 @@ and the passing run covers:
 ```bash
 bash test-writer/bootstrap/install-user.sh
 # USER_INSTALL: PASS
-# Installed /home/ocagent/.nyxowl/test-writer as the current user.
+# Installed ~/.nyxowl/test-writer as the current user.
 ```
 
 ```text
@@ -226,7 +226,7 @@ NYXOWL_HOME="$LIVE" NYXOWL_TESTWRITER_INSTALL=0 node dist/cli/bin.js doctor
 ```
 
 Doctor result: `Nyxowl v1.0.0 initialized`, OpenCode installed at
-`/home/ocagent/.npm-global/bin/opencode` (v2.2.5, Tier A), and
+`~/.npm-global/bin/opencode` (v2.2.5, Tier A), and
 `MCP Smoke Test: OK (38 tools registered)`.
 
 Generated config for the first correction: `$LIVE/hosts/opencode/opencode.json`.
@@ -648,7 +648,7 @@ tools, so the allowed tools are not visible.
 ## Fresh independent sixth-pass re-run (2026-11-07, this verifier)
 
 This section was produced by a fresh independent verifier in worktree
-`/home/ocagent/work/nyxowl/worktrees/nyxowl-test-writer-m6` on branch
+`/abs/worktree/nyxowl-test-writer-m6` on branch
 `wt/test-writer-m6`. Nothing from prior verifier reports was trusted; every
 result below was re-derived in this session. Only this evidence file was edited.
 `npm ci` was not needed (`node_modules` was present and no lockfile changed).
@@ -661,7 +661,7 @@ result below was re-derived in this session. Only this evidence file was edited.
 | Python (host) | `3.12.3` |
 | Runtime venv | `$HOME/.nyxowl/test-writer/venv/bin/python` (Python 3.12.3), pytest `9.2.0`, hypothesis `6.170.15` |
 | bubblewrap | `/usr/bin/bwrap` (0.9.0) |
-| OpenCode | `2.2.5` at `/home/ocagent/.npm-global/bin/opencode`, Tier A |
+| OpenCode | `2.2.5` at `~/.npm-global/bin/opencode`, Tier A |
 | Network / secrets / remote services | none |
 
 ### Compiler gates (worktree, fresh)

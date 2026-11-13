@@ -156,7 +156,7 @@ Status:
   zero false `PROVEN` verdicts.
 - **Full M7: complete** (PR D). The 23-case matrix (10 positives, 5 negatives,
   8 red-team proofs), the three-run worst-of-3 matrix, and the real-repository
-  `real-estate-os` dogfood passed. Measured: recall 1.0, false_reject 0,
+  `private-production-repo` dogfood passed. Measured: recall 1.0, false_reject 0,
   false_proven 0, negatives 15/15 exact, red-team 24/24 non-`PROVEN`,
   `model_tokens` 0. Evidence:
   [`test-writer/qa/EVIDENCE-M7.md`](./test-writer/qa/EVIDENCE-M7.md).

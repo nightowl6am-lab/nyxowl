@@ -9,7 +9,7 @@
 // four-receipt local PR -> allowlisted dependency check -> worktree removal.
 //
 // There is no install, network, sudo, root, secret read, or commandsOverride.
-// The primary target is real-estate-os; nyxowl-self is the fallback.
+// The optional primary target is provided by NYXOWL_DOGFOOD_REPO; nyxowl-self is always the fallback.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -71,28 +71,31 @@ function dogfoodConfig(dependency) {
   );
 }
 
+const EXTERNAL_DOGFOOD_REPO = ENV["NYXOWL_DOGFOOD_REPO"];
 const TARGETS = [
-  {
-    name: "real-estate-os",
-    source: "/home/ocagent/work/real-estate-os/repo",
-    testFile: "apps/web/tests/unit/slice5-dogfood.test.ts",
-    dependency: "zod",
-    nodeModules(source) {
-      const rels = ["node_modules", "apps/web/node_modules"];
-      const packagesDir = path.join(source, "packages");
-      if (fs.existsSync(packagesDir)) {
-        for (const entry of fs.readdirSync(packagesDir, { withFileTypes: true })) {
-          if (!entry.isDirectory()) continue;
-          const rel = path.join("packages", entry.name, "node_modules");
-          if (fs.existsSync(path.join(source, rel))) rels.push(rel);
-        }
-      }
-      return rels;
-    },
-  },
+  ...(EXTERNAL_DOGFOOD_REPO
+    ? [{
+        name: ENV["NYXOWL_DOGFOOD_NAME"] ?? "private-production-repo",
+        source: EXTERNAL_DOGFOOD_REPO,
+        testFile: ENV["NYXOWL_DOGFOOD_TEST_FILE"] ?? "apps/web/tests/unit/slice5-dogfood.test.ts",
+        dependency: ENV["NYXOWL_DOGFOOD_DEPENDENCY"] ?? "zod",
+        nodeModules(source) {
+          const rels = ["node_modules", "apps/web/node_modules"];
+          const packagesDir = path.join(source, "packages");
+          if (fs.existsSync(packagesDir)) {
+            for (const entry of fs.readdirSync(packagesDir, { withFileTypes: true })) {
+              if (!entry.isDirectory()) continue;
+              const rel = path.join("packages", entry.name, "node_modules");
+              if (fs.existsSync(path.join(source, rel))) rels.push(rel);
+            }
+          }
+          return rels;
+        },
+      }]
+    : []),
   {
     name: "nyxowl-self",
-    source: "/home/ocagent/work/nyxowl/nyxowl",
+    source: ROOT,
     testFile: "tests/unit/slice5-dogfood.test.ts",
     dependency: "zod",
     nodeModules() {
