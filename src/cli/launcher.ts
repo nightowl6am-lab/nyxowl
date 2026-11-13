@@ -119,7 +119,7 @@ export async function launchNyxowlSession(options?: {
       "ERR_HOST_UNSUPPORTED",
       [
         "OpenCode is not installed on PATH.",
-        "Install OpenCode: npm install -g opencode-ai",
+        "Install OpenCode: npm install -g @opencode/cli@2.2.5",
       ].join("\n"),
     );
   }
