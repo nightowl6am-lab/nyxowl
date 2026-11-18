@@ -402,9 +402,14 @@ describe("pr-gate — dispatch, receipt validation and mode branches", () => {
     expect(String(payload["message"])).toContain("treeHash");
   });
 
-  it("rejects an NA exploit receipt when the DNA declares an HTTP surface", async () => {
+  it("rejects an NA exploit receipt when the worktree declares an HTTP surface", async () => {
     const seed = await setupWorktreeRepo("httpsurface");
-    const headTreeHash = await getHeadTreeHash(seed.wt);
+    const headTreeHash = await commitIn(seed.wt, () => {
+      fs.writeFileSync(
+        path.join(seed.wt, "package.json"),
+        JSON.stringify({ name: "fixture", dependencies: { express: "^5.0.0" } }),
+      );
+    });
     for (const kind of ["verify", "seam", "slop"] as ReceiptKind[]) {
       await insertReceipt(seed.wt, kind, { status: "GREEN", treeHash: headTreeHash });
     }
@@ -414,6 +419,9 @@ describe("pr-gate — dispatch, receipt validation and mode branches", () => {
       naJustification: "no HTTP surface discovered",
     });
 
+    // The worktree is authoritative: a cached DNA row that says there is no
+    // HTTP surface (for example, extracted before this branch) must not make
+    // the NA receipt acceptable.
     const repoId = await computeRepoId(seed.wt);
     const db = new StateDb(ensureProjectLayout(repoId, nyxHome).stateDbPath);
     try {
@@ -424,7 +432,7 @@ describe("pr-gate — dispatch, receipt validation and mode branches", () => {
         .run(
           repoId,
           "manifest-hash-fixture",
-          JSON.stringify({ httpSurface: true }),
+          JSON.stringify({ httpSurface: false }),
           new Date().toISOString(),
         );
     } finally {

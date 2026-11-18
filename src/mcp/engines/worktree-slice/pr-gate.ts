@@ -18,6 +18,7 @@ import {
   type SignedReceipt,
 } from "../../../core/receipts.ts";
 import { NYXOWL_VERSION } from "../../../core/version.ts";
+import { extractProjectDna } from "../bootstrap-navigator/dna.ts";
 import { defineTool } from "../../tool.ts";
 import {
   collectPrChecks,
@@ -770,18 +771,11 @@ export const nyxWorktreePrTool = defineTool({
     }
 
     // Step 2: Validate receipt HMACs and required kinds for headTreeHash (§1.1.5, §7.3)
-    const dnaRow = ctx.db.db
-      .prepare("SELECT dna_json FROM dna WHERE repo_id = ?")
-      .get(ctx.repoId) as { dna_json: string } | undefined;
-    let httpSurface = false;
-    if (dnaRow) {
-      try {
-        const parsed = JSON.parse(dnaRow.dna_json) as { httpSurface?: boolean };
-        httpSurface = Boolean(parsed.httpSurface);
-      } catch {
-        // Default false
-      }
-    }
+    // The worktree being published is authoritative for the HTTP-surface
+    // decision. A DNA row cached from the main checkout can predate the branch
+    // (for example a server dependency added in this slice), which would let an
+    // NA exploit receipt pass a tree that actually serves HTTP.
+    const httpSurface = extractProjectDna(worktreePath, ctx.repoId).httpSurface;
 
     const requiredKinds: ReceiptKind[] = [];
     const disabledGates: string[] = [];
