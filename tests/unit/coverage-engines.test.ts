@@ -687,6 +687,12 @@ describe("worktree provisioning — lockfile, node_modules and env links", () =>
       fs.writeFileSync(path.join(dir, "package-lock.json"), "fixture\n");
       expect(detectLockfileInstallCommand(dir)?.cmd).toBe("npm");
       fs.rmSync(path.join(dir, "package-lock.json"));
+      fs.writeFileSync(path.join(dir, "yarn.lock"), "fixture\n");
+      expect(detectLockfileInstallCommand(dir)).toEqual({
+        cmd: "yarn",
+        args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+      });
+      fs.rmSync(path.join(dir, "yarn.lock"));
       fs.writeFileSync(path.join(dir, "uv.lock"), "fixture\n");
       expect(detectLockfileInstallCommand(dir)?.cmd).toBe("uv");
       fs.rmSync(path.join(dir, "uv.lock"));

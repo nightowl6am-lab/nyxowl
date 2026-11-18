@@ -61,13 +61,27 @@ export async function buildHydrateDigest(ctx: ToolExecutionContext): Promise<{
     }
   }
 
-  const wtRow = ctx.db.db
+  // A worktree row can outlive its directory (manual deletion, a failed
+  // cleanup, a moved checkout). Only rows that still resolve to an existing
+  // directory describe a worktree the caller can actually operate on, so the
+  // most recently updated live row wins instead of the most recent row.
+  const wtRows = ctx.db.db
     .prepare(
-      "SELECT task_slug, branch, worktree_path, root FROM worktrees WHERE status = 'active' ORDER BY updated_at DESC LIMIT 1",
+      "SELECT task_slug, branch, worktree_path, root FROM worktrees WHERE status = 'active' ORDER BY updated_at DESC",
     )
-    .get() as
-    | { task_slug: string; branch: string; worktree_path: string; root: string }
-    | undefined;
+    .all() as Array<{
+    task_slug: string;
+    branch: string;
+    worktree_path: string;
+    root: string;
+  }>;
+  const wtRow = wtRows.find((row) => {
+    try {
+      return fs.existsSync(row.worktree_path);
+    } catch {
+      return false;
+    }
+  });
 
   const activeWorktree = wtRow
     ? {

@@ -20,22 +20,34 @@ export function buildHydrateDigestForHook(
     if (fs.existsSync(projPaths.stateDbFile)) {
       const db = openProjectDb(projPaths.stateDbFile);
       try {
-        const wt = db.db
+        // Keep the hook aligned with nyx_context_hydrate: a row whose directory
+        // no longer exists is not an active worktree, and the slice must belong
+        // to the task that is actually active.
+        const wtRows = db.db
           .prepare(
-            "SELECT task_slug AS slug, branch, worktree_path FROM worktrees WHERE status = 'active' ORDER BY updated_at DESC LIMIT 1",
+            "SELECT task_slug AS slug, branch, worktree_path FROM worktrees WHERE status = 'active' ORDER BY updated_at DESC",
           )
-          .get() as { slug: string; branch: string; worktree_path: string } | undefined;
+          .all() as Array<{ slug: string; branch: string; worktree_path: string }>;
+        const wt = wtRows.find((row) => {
+          try {
+            return fs.existsSync(row.worktree_path);
+          } catch {
+            return false;
+          }
+        });
         if (wt) {
           lines.push(`Active Worktree: ${wt.slug} (${wt.branch}) at ${wt.worktree_path}`);
         } else {
           lines.push("Active Worktree: none (call nyx_worktree_start before editing)");
         }
 
-        const slice = db.db
-          .prepare("SELECT slice_id, label FROM slices ORDER BY seq DESC LIMIT 1")
-          .get() as { slice_id: string; label: string } | undefined;
-        if (slice) {
-          lines.push(`Latest Slice: ${slice.slice_id} (${slice.label})`);
+        if (wt) {
+          const slice = db.db
+            .prepare("SELECT slice_id, label FROM slices WHERE task_slug = ? ORDER BY seq DESC LIMIT 1")
+            .get(wt.slug) as { slice_id: string; label: string } | undefined;
+          if (slice) {
+            lines.push(`Latest Slice: ${slice.slice_id} (${slice.label})`);
+          }
         }
 
         const handoff = db.db

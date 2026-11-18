@@ -162,6 +162,7 @@ export function detectLockfileInstallCommand(
     { file: "package-lock.json", cmd: "npm", args: ["ci", "--ignore-scripts"] },
     { file: "bun.lockb", cmd: "bun", args: ["install", "--frozen-lockfile", "--ignore-scripts"] },
     { file: "bun.lock", cmd: "bun", args: ["install", "--frozen-lockfile", "--ignore-scripts"] },
+    { file: "yarn.lock", cmd: "yarn", args: ["install", "--frozen-lockfile", "--ignore-scripts"] },
     { file: "uv.lock", cmd: "uv", args: ["sync", "--frozen"] },
     { file: "poetry.lock", cmd: "poetry", args: ["install", "--no-interaction"] },
     { file: "go.sum", cmd: "go", args: ["mod", "download"] },
