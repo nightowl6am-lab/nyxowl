@@ -189,7 +189,7 @@ describe("nyx_verify_slice CI parity", () => {
       - run: npm run test:coverage
 `,
     });
-    // ci.yml wins when both exist.
+    // ci.yml is read first, then ci.yaml; both contribute commands.
     fs.mkdirSync(ciYaml, { recursive: true });
     fs.writeFileSync(path.join(ciYaml, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } }));
     fs.writeFileSync(
@@ -198,6 +198,7 @@ describe("nyx_verify_slice CI parity", () => {
     );
     expect(detectCiVerifyCommands(ciYaml)).toEqual([
       { step: "coverage", command: "npm run test:coverage" },
+      { step: "build", command: "npm run build" },
     ]);
   });
 
@@ -287,5 +288,70 @@ describe("nyx_verify_slice CI parity", () => {
     expect(preflight.blocked).toContainEqual(
       expect.objectContaining({ step: "lint", class: "config" }),
     );
+  });
+
+  it("reads verify commands from any workflow file, not only ci.yml", () => {
+    const dir = writeRepo("other-workflow-name", {
+      pkg: { lint: "eslint src", test: "vitest run" },
+    });
+    fs.mkdirSync(path.join(dir, ".github", "workflows"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".github", "workflows", "tests.yml"),
+      "jobs:\n  test:\n    steps:\n      - run: npm run lint\n      - run: npm run test\n",
+    );
+
+    expect(detectCiVerifyCommands(dir)).toEqual([
+      { step: "lint", command: "npm run lint" },
+      { step: "test", command: "npm run test" },
+    ]);
+  });
+
+  it("keeps one command per canonical step across multiple workflow files", () => {
+    const dir = writeRepo("dedupe-steps-across-files", { pkg: { lint: "eslint src" } });
+    fs.mkdirSync(path.join(dir, ".github", "workflows"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".github", "workflows", "ci.yml"),
+      "jobs:\n  a:\n    steps:\n      - run: npm run lint\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, ".github", "workflows", "nightly.yml"),
+      "jobs:\n  b:\n    steps:\n      - run: yarn run lint --max-warnings 0\n",
+    );
+
+    expect(detectCiVerifyCommands(dir)).toEqual([{ step: "lint", command: "npm run lint" }]);
+  });
+
+  it("does not append a separate test step when CI already runs coverage", () => {
+    const dir = writeRepo("no-double-suite", {
+      pkg: { typecheck: "tsc", test: "vitest run", "test:coverage": "vitest run --coverage" },
+      workflow: `jobs:
+  verify:
+    steps:
+      - run: npm run typecheck
+      - run: npm run test:coverage
+`,
+    });
+
+    expect(
+      resolveVerifyCommands(dir, NULL_CMDS, { test: "npm run test" }),
+    ).toEqual([
+      { step: "typecheck", command: "npm run typecheck" },
+      { step: "coverage", command: "npm run test:coverage" },
+    ]);
+  });
+
+  it("does not append coverage when CI already runs the suite", () => {
+    const dir = writeRepo("no-double-suite-reverse", {
+      pkg: { test: "vitest run", "test:coverage": "vitest run --coverage" },
+      workflow: `jobs:
+  verify:
+    steps:
+      - run: npm run test
+`,
+    });
+
+    expect(
+      resolveVerifyCommands(dir, NULL_CMDS, { coverage: "npm run test:coverage" }),
+    ).toEqual([{ step: "test", command: "npm run test" }]);
   });
 });

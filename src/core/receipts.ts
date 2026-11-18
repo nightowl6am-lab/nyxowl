@@ -312,7 +312,7 @@ export function verifyReceipt(
     if (receipt.kind === "exploit" && options.httpSurface === true) {
       return {
         valid: false,
-        reason: "exploit receipt cannot be NA when DNA httpSurface is true",
+        reason: "exploit receipt cannot be NA when the worktree declares an HTTP surface",
       };
     }
   }
