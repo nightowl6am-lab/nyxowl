@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   detectCiVerifyCommands,
   resolveVerifyCommands,
+  resolveVerifyPreflight,
 } from "../../src/mcp/engines/probe-exploit/verify.ts";
 
 const NULL_CMDS = { typecheck: null, lint: null, test: null, build: null };
@@ -233,5 +234,58 @@ describe("nyx_verify_slice CI parity", () => {
 `,
     });
     expect(detectCiVerifyCommands(dir)).toEqual([{ step: "lint", command: "npm run lint" }]);
+  });
+
+  it("preserves pnpm, yarn and bun run commands from CI verbatim", () => {
+    const dir = writeRepo("other-package-managers", {
+      pkg: { typecheck: "tsc", lint: "eslint src", "test:coverage": "vitest run --coverage" },
+      workflow: `jobs:
+  verify:
+    steps:
+      - run: pnpm run typecheck
+      - run: yarn run lint
+      - run: bun run test:coverage
+      - run: bun test
+      - run: yarn install --frozen-lockfile
+`,
+    });
+
+    expect(detectCiVerifyCommands(dir)).toEqual([
+      { step: "typecheck", command: "pnpm run typecheck" },
+      { step: "lint", command: "yarn run lint" },
+      { step: "coverage", command: "bun run test:coverage" },
+    ]);
+    expect(resolveVerifyCommands(dir, NULL_CMDS)).toEqual([
+      { step: "typecheck", command: "pnpm run typecheck" },
+      { step: "lint", command: "yarn run lint" },
+      { step: "coverage", command: "bun run test:coverage" },
+    ]);
+  });
+
+  it("checks package-script prerequisites for non-npm run commands", () => {
+    const dir = writeRepo("preflight-other-package-managers", {
+      pkg: { typecheck: "tsc" },
+    });
+
+    const preflight = resolveVerifyPreflight({
+      worktreePath: dir,
+      steps: [
+        { step: "typecheck", command: "pnpm run typecheck" },
+        { step: "lint", command: "yarn run lint" },
+      ],
+      e2e: { e2e: null, browser: null },
+    });
+
+    const typecheck = preflight.steps.find((entry) => entry.step === "typecheck");
+    expect(typecheck?.ready).toBe(true);
+    expect(typecheck?.prerequisites).toContainEqual(
+      expect.objectContaining({ id: "package-script:typecheck", met: true }),
+    );
+
+    const lint = preflight.steps.find((entry) => entry.step === "lint");
+    expect(lint?.ready).toBe(false);
+    expect(preflight.blocked).toContainEqual(
+      expect.objectContaining({ step: "lint", class: "config" }),
+    );
   });
 });
