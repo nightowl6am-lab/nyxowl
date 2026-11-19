@@ -4,6 +4,15 @@ All notable changes to `nyxowl` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-11-19
+
+### Fixed
+- **HTTP-surface gate from the worktree:** `nyx_exploit_probe` and `nyx_worktree_pr` now decide the HTTP-surface question from the tree being gated instead of a DNA row cached from the main checkout.
+- **Duplicate suite in CI parity:** when CI already runs `test:coverage`, the gate no longer appends the separate `test` command from DNA (and the reverse).
+- **Stale worktree rows:** `nyx_context_hydrate` and the session-start hook now select only active worktree rows whose directory still exists.
+- **Yarn provisioning:** `nyx_worktree_start` now detects `yarn.lock` and provisions with `yarn install --frozen-lockfile --ignore-scripts`.
+- **CI parity for non-npm projects:** `nyx_verify_slice` now preserves `pnpm run`, `yarn run`, and `bun run` package-script commands from CI workflows.
+
 ## [1.0.1] - 2026-11-13
 
 ### Changed
